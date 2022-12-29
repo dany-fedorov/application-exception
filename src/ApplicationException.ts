@@ -310,3 +310,5 @@ export class ApplicationException extends Error {
     return this.setDetails(d);
   }
 }
+
+export const AppEx = ApplicationException;

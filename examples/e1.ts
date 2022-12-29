@@ -1,5 +1,5 @@
-import { ApplicationException } from '../src/ApplicationException';
+import { AppEx } from '../src/ApplicationException';
 
-const e = ApplicationException.new('123');
+const e = AppEx.new('123');
 
 console.log(e);
