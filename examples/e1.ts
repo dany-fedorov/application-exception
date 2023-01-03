@@ -1,5 +1,5 @@
-import { AppEx } from '../src/ApplicationException';
-// import { makeCaughtObjectReportJson } from 'caught-object-report-json';
+import {AppEx, jsonStringifySafe} from '../src/ApplicationException';
+import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 
 // const e = AppEx.new('123');
 
@@ -54,5 +54,6 @@ const ee = MyAppException.plines(
 //
 // console.log(ee);
 
-console.log(ee.toJSON());
-// console.log(makeCaughtObjectReportJson(ee));
+// console.log(ee.toJSON());
+// console.log(ee.name)
+console.log(jsonStringifySafe(makeCaughtObjectReportJson(ee), 2));

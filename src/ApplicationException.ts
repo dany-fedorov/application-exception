@@ -421,13 +421,15 @@ export class ApplicationException extends Error {
     new (icfg: AppExIcfg): ApplicationException;
     new: typeof ApplicationException.new;
     lines: typeof ApplicationException.lines;
+    prefixedLines: typeof ApplicationException.prefixedLines;
     plines: typeof ApplicationException.plines;
     subclass: typeof ApplicationException.subclass;
   } {
     const Class = class extends this {};
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/name#telling_the_constructor_name_of_an_object
     Object.defineProperty(Class, 'name', {
       value: className,
-      writable: true,
+      writable: false,
       enumerable: false,
       configurable: true,
     });
@@ -442,6 +444,7 @@ export class ApplicationException extends Error {
         },
       );
     };
+    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/name
     Object.defineProperty(Class.prototype, 'name', {
       value: className,
       writable: true,
