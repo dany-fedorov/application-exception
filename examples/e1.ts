@@ -1,13 +1,14 @@
 import { AppEx } from '../src/ApplicationException';
+import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 
 // const e = AppEx.new('123');
 
 const MyAppException = AppEx.subclass(
   'MyAppException',
   class MyAppExceptionDefaults {
-    id() {
-      return { value: '123' };
-    }
+    // id() {
+    //   return { value: '123' };
+    // }
 
     // code() {
     //   return { value: 'default code' };
@@ -41,13 +42,17 @@ const ee = MyAppException.plines(
     a: 12345,
     b: 'b-string',
   })
-  .displayMessage('dmsg dmsg {{{json self.details 2}}}');
+  .displayMessage('dmsg dmsg {{{json self.details 2}}}')
+  .causes([new Error('im err')]);
 // .code('codecode');
 
-console.log('- displayMessage');
-console.log(ee.getDisplayMessage());
-console.log('- message');
-console.log(ee.getMessage());
-console.log('---');
+// console.log('- displayMessage');
+// console.log(ee.getDisplayMessage());
+// console.log('- message');
+// console.log(ee.getMessage());
+// console.log('---');
+//
+// console.log(ee);
 
-console.log(ee);
+console.log(ee.toJSON());
+// console.log(makeCaughtObjectReportJson(ee));

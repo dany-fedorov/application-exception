@@ -5,6 +5,7 @@ import type {
   PojoConstructorSync,
 } from 'pojo-constructor';
 import { constructPojoSync } from 'pojo-constructor';
+import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 
 const replacerFunc = (config?: JsonStringifySafeConfig) => {
   const visited = new WeakSet();
@@ -88,6 +89,7 @@ export type AppExOwnProps = {
   code?: string;
   numCode?: number;
   details?: Record<string, unknown>;
+  causes?: unknown[];
 };
 
 export type AppExOptions = {
@@ -510,7 +512,7 @@ export class ApplicationException extends Error {
     return this;
   }
 
-  private resolveDisplayMessage(): string | undefined {
+  private getRawDisplayMessage(): string | undefined {
     if (typeof this._own.displayMessage === 'string') {
       return this._own.displayMessage;
     }
@@ -524,14 +526,14 @@ export class ApplicationException extends Error {
     return {
       ...this.getDetails(),
       self: {
-        message: this.message,
-
         id: this._own.id,
         timestamp: this._own.timestamp,
         displayMessage: this._own.displayMessage,
         code: this._own.code,
         numCode: this._own.numCode,
         details: this._own.details,
+
+        message: this.message,
 
         _options: this._options,
         _own: this._own,
@@ -554,19 +556,19 @@ export class ApplicationException extends Error {
   private mutCompileDisplayMessage(): void {
     if (
       typeof this._compiled.compiledDisplayMessage === 'string' ||
-      this.resolveDisplayMessage() === undefined
+      this.getRawDisplayMessage() === undefined
     ) {
       return;
     }
     const compiled = this.compileTemplate(
-      this.resolveDisplayMessage() as string,
+      this.getRawDisplayMessage() as string,
       this.getCompilationContext(),
     );
     this._compiled.compiledDisplayMessage = compiled;
   }
 
   private getCompiledDisplayMessage(): string | undefined {
-    if (this.resolveDisplayMessage() === undefined) {
+    if (this.getRawDisplayMessage() === undefined) {
       return undefined;
     }
     this.mutCompileDisplayMessage();
@@ -610,12 +612,16 @@ export class ApplicationException extends Error {
     this._compiled.compiledMessage = compiled;
   }
 
-  getMessage(): string {
+  getCompiledMessage(): string {
     this.mutCompileMessage();
     if (this._compiled?.compiledMessage === undefined) {
       return this.message;
     }
     return this._compiled?.compiledMessage;
+  }
+
+  getMessage(): string {
+    return this.getCompiledMessage();
   }
 
   setDetails(d: Record<string, unknown>): this {
@@ -628,12 +634,58 @@ export class ApplicationException extends Error {
   }
 
   addDetails(d: Record<string, unknown>) {
-    console.log(this.getDetails());
     return this.setDetails({ ...(this.getDetails() ?? {}), ...(d ?? {}) });
   }
 
   details(d: Record<string, unknown>) {
     return this.addDetails(d);
+  }
+
+  getCauses() {
+    return this._own.causes;
+  }
+
+  setCauses(causes: unknown[]): this {
+    this._own.causes = causes;
+    return this;
+  }
+
+  causes(cs: unknown[]): this {
+    return this.setCauses(cs);
+  }
+
+  getCausesJson() {
+    const causes = this.getCauses();
+    if (!Array.isArray(causes)) {
+      return undefined;
+    }
+    return causes.map((c) =>
+      makeCaughtObjectReportJson(c, {
+        onCaughtMaking(caught) {
+          console.warn(`${ApplicationException.name}#getCausesJson: ${caught}`);
+        },
+      }),
+    );
+  }
+
+  toJSON() {
+    return Object.fromEntries(
+      [
+        ['constructor_name', this.constructor.name],
+        ['compiled_message', this.getCompiledMessage()],
+        ['compiled_display_message', this.getDisplayMessage()],
+        ['code', this.getCode()],
+        ['num_code', this.getNumCode()],
+        ['details', this.getDetails()],
+        ['stack', this.stack],
+        ['id', this.getId()],
+        ['causes', this.getCausesJson()],
+        ['timestamp', this.getTimestamp()],
+        ['raw_message', this.message],
+        ['raw_display_message', this.getRawDisplayMessage()],
+        ['v', 'appex/v0.1'],
+      ].filter(([, v]) => v !== undefined),
+    );
   }
 }
 
