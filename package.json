@@ -1,7 +1,7 @@
 {
   "name": "application-exception",
-  "version": "0.0.2",
-  "description": "Better exceptions for TypeScript.",
+  "version": "0.0.3",
+  "description": "Better exceptions for TypeScript",
   "main": "./index.js",
   "scripts": {
     "test": "NODE_OPTIONS='--stack-trace-limit=1000' ./node_modules/.bin/jest",
