@@ -162,7 +162,7 @@ class AppExIcfgDefaultsPojoConstructor
   }
 }
 
-const PRIVATE_PROPS = Symbol('PRIVATE_PROPS');
+const APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS = Symbol('PRIVATE_PROPS');
 
 type AppExIcfgPojoConstructorPrivateProps = {
   inputDefaults: Partial<AppExIcfg> | null;
@@ -205,34 +205,43 @@ function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
 class AppExIcfgPojoConstructor
   implements PojoConstructorSync<AppExIcfg, AppExIcfgPojoConstructorInput>
 {
-  [PRIVATE_PROPS]: AppExIcfgPojoConstructorPrivateProps = {
-    inputDefaults: null,
-    defaultDefaults: null,
-    getInputDefaults(input: AppExIcfgPojoConstructorInput): Partial<AppExIcfg> {
-      if (this.inputDefaults === null) {
-        this.inputDefaults = constructPojoSync(input.Defaults, input);
-      }
-      return this.inputDefaults;
-    },
+  [APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS]: AppExIcfgPojoConstructorPrivateProps =
+    {
+      inputDefaults: null,
+      defaultDefaults: null,
+      getInputDefaults(
+        input: AppExIcfgPojoConstructorInput,
+      ): Partial<AppExIcfg> {
+        if (this.inputDefaults === null) {
+          this.inputDefaults = constructPojoSync(input.Defaults, input);
+        }
+        return this.inputDefaults;
+      },
 
-    getDefaultDefaults(input: AppExIcfgPojoConstructorInput): AppExIcfg {
-      if (this.defaultDefaults === null) {
-        this.defaultDefaults = constructPojoSync(
-          AppExIcfgDefaultsPojoConstructor,
-          input,
-        );
-      }
-      return this.defaultDefaults;
-    },
-  };
+      getDefaultDefaults(input: AppExIcfgPojoConstructorInput): AppExIcfg {
+        if (this.defaultDefaults === null) {
+          this.defaultDefaults = constructPojoSync(
+            AppExIcfgDefaultsPojoConstructor,
+            input,
+          );
+        }
+        return this.defaultDefaults;
+      },
+    };
 
   id(input: AppExIcfgPojoConstructorInput) {
     return resolveAppExIcfgProp({
       propName: 'id',
       typeCheck: (v) => typeof v === 'string',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
@@ -241,8 +250,14 @@ class AppExIcfgPojoConstructor
       propName: 'timestamp',
       typeCheck: (v) => v instanceof Date,
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
@@ -251,8 +266,14 @@ class AppExIcfgPojoConstructor
       propName: 'displayMessage',
       typeCheck: (v) => typeof v === 'string',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
@@ -261,8 +282,14 @@ class AppExIcfgPojoConstructor
       propName: 'code',
       typeCheck: (v) => typeof v === 'string',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
@@ -271,15 +298,25 @@ class AppExIcfgPojoConstructor
       propName: 'numCode',
       typeCheck: (v) => typeof v === 'number',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
   details(input: AppExIcfgPojoConstructorInput) {
     const { icfgInput } = input;
-    const inputDefaults = this[PRIVATE_PROPS].getInputDefaults(input);
-    const defaultDefaults = this[PRIVATE_PROPS].getDefaultDefaults(input);
+    const inputDefaults =
+      this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(input);
+    const defaultDefaults =
+      this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+        input,
+      );
     const hasThisProp = (obj: Partial<AppExIcfg>): boolean =>
       hasProp(obj, 'details') &&
       typeof obj['details'] === 'object' &&
@@ -304,8 +341,14 @@ class AppExIcfgPojoConstructor
       propName: 'useClassNameAsCode',
       typeCheck: (v) => typeof v === 'boolean',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
@@ -314,8 +357,14 @@ class AppExIcfgPojoConstructor
       propName: 'useMessageAsDisplayMessage',
       typeCheck: (v) => typeof v === 'boolean',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 
@@ -324,8 +373,14 @@ class AppExIcfgPojoConstructor
       propName: 'message',
       typeCheck: (v) => typeof v === 'string',
       icfgInput: input.icfgInput,
-      inputDefaults: this[PRIVATE_PROPS].getInputDefaults(input),
-      defaultDefaults: this[PRIVATE_PROPS].getDefaultDefaults(input),
+      inputDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getInputDefaults(
+          input,
+        ),
+      defaultDefaults:
+        this[APP_EX_ICFG_POJO_CONSTRUCTOR_PRIVATE_PROPS].getDefaultDefaults(
+          input,
+        ),
     });
   }
 }

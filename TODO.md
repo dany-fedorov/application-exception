@@ -1,0 +1,4 @@
+- Use safe-json-stringify for handlebars and expose the configuration
+- tests
+- semantic-release
+- docs
