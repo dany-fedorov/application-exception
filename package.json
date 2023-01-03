@@ -7,9 +7,9 @@
     "test": "NODE_OPTIONS='--stack-trace-limit=1000' ./node_modules/.bin/jest",
     "build": "tsc -p ./tsconfig.build.json # && tsconfig-replace-paths --project tsconfig.paths.json -s ./src",
     "prepare-me": "rm -rf ./dist && npm run build",
-    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module && mv dist ./npm-module && cp package.json ./npm-module && cp README.md ./npm-module && cp LICENSE ./npm-module",
-    "publish-me": "npm run prepublish-me && cd npm-module && npm publish --access public --registry https://registry.npmjs.org/",
-    "postpublish-me": "rm -fr npm-module",
+    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mv dist ./npm-module-build && cp package.json ./npm-module-build && cp README.md ./npm-module-build && cp LICENSE ./npm-module-build",
+    "publish-me": "npm run prepublish-me && cd npm-module-build && npm publish --access public --registry https://registry.npmjs.org/",
+    "postpublish-me": "rm -fr npm-module-build",
     "build-watch": "chokidar './src/**/*.ts' -c 'npm run build' -i './node_modules/**/*' --initial",
     "ts-file": "ts-node -r tsconfig-paths/register -T -s",
     "test-ci": "npm run test -- --ci --coverage"

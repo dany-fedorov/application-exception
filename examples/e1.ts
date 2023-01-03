@@ -1,5 +1,5 @@
 import { AppEx } from '../src/ApplicationException';
-import { makeCaughtObjectReportJson } from 'caught-object-report-json';
+// import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 
 // const e = AppEx.new('123');
 
