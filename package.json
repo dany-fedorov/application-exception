@@ -11,7 +11,7 @@
     "publish-me": "npm run prepublish-me && cd npm-module && npm publish --access public --registry https://registry.npmjs.org/",
     "postpublish-me": "rm -fr npm-module",
     "build-watch": "chokidar './src/**/*.ts' -c 'npm run build' -i './node_modules/**/*' --initial",
-    "tsfile": "ts-node -r tsconfig-paths/register -T -s",
+    "ts-file": "ts-node -r tsconfig-paths/register -T -s",
     "test-ci": "npm run test -- --ci --coverage"
   },
   "repository": {
@@ -54,7 +54,8 @@
   },
   "dependencies": {
     "caught-object-report-json": "0.1.18",
-    "pojo-constructor": "0.4.5",
+    "handlebars": "^4.7.7",
+    "pojo-constructor": "^3.0.0",
     "safe-stable-stringify": "2.4.1",
     "ulid": "^2.3.0"
   }
