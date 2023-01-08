@@ -87,8 +87,18 @@ function mkHbsHelpers() {
 }
 
 export type AppExOwnProps = {
+  /**
+   * Unique id of this exception. Unless id is provided, it is set automatically for each instance.
+   * Default `id` is an [ULID](https://www.npmjs.com/package/ulid) prefixed with `AE_`.
+   */
   id: string;
+  /**
+   * A time at which exception was created.
+   */
   timestamp: Date;
+  /**
+   * This should be a user-friendly message suitable to display in a modal window or as an stderr output of a CLI tool.
+   */
   displayMessage?: string;
   code?: string;
   numCode?: number;
