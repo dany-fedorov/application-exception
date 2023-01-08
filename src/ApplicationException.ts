@@ -1,4 +1,3 @@
-import { ulid } from 'ulid';
 import * as hbs from 'handlebars';
 import type {
   PojoConstructorPropMethodValue,
@@ -10,6 +9,7 @@ import {
   constructPojoSync,
 } from 'pojo-constructor';
 import { makeCaughtObjectReportJson } from 'caught-object-report-json';
+import { customAlphabet } from 'nanoid';
 
 const replacerFunc = (config?: JsonStringifySafeConfig) => {
   const visited = new WeakSet();
@@ -141,9 +141,13 @@ export type AppExCompiledProps = {
   compiledDisplayMessage?: string;
 };
 
-function makeApplicationExceptionId(nowDate: Date): string {
-  return ulid(nowDate.getTime());
-}
+/**
+ * http://www.crockford.com/base32.html
+ */
+const makeApplicationExceptionId = customAlphabet(
+  '0123456789ABCDEFGHJKMNPQRSTVWXYZ',
+  26,
+);
 
 function hasProp<O extends object, K extends keyof O, V extends Required<O>[K]>(
   obj: O,
@@ -182,9 +186,9 @@ class AppExIcfgDefaultsPojoConstructor
     return { value: new Date(nowDate) };
   }
 
-  id({ nowDate }: AppExIcfgDefaultsPojoConstructorInput) {
+  id() {
     return {
-      value: makeApplicationExceptionId(nowDate),
+      value: makeApplicationExceptionId(),
     };
   }
 
@@ -436,7 +440,7 @@ export type ApplicationExceptionJson = {
 export class ApplicationException extends Error {
   private readonly _own: AppExOwnProps;
   private readonly _compiled: AppExCompiledProps;
-  private readonly _options: AppExOptions;
+  private _options: AppExOptions;
 
   constructor(icfg: AppExIcfg) {
     super(icfg.message);
@@ -779,6 +783,22 @@ export class ApplicationException extends Error {
     );
   }
 
+  setOptions(options: AppExOptions): this {
+    this._options = options;
+    return this;
+  }
+
+  getOptions(): AppExOptions {
+    return this._options;
+  }
+
+  addOptions(options: Partial<AppExOptions>): this {
+    return this.setOptions({
+      ...this.getOptions(),
+      ...options,
+    });
+  }
+
   /**
    * Builder methods
    */
@@ -819,8 +839,12 @@ export class ApplicationException extends Error {
     return this.addDetails(d);
   }
 
-  causes(...cs: unknown[]): this {
+  causedBy(...cs: unknown[]): this {
     return this.addCauses(...cs);
+  }
+
+  options(opts: Partial<AppExOptions>): this {
+    return this.addOptions(opts);
   }
 
   /**

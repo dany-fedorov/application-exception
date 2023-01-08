@@ -40,16 +40,16 @@ different projects are going to have different exceptions. And the citation abov
 handle as many exceptions as possible with normal control flow.
 
 The use case for this library that I have in mind is an application back-end which is a thin layer over one or more data
-sources (e.g. a databases or third-party APIs) and you throw exceptions expecting a front-end to handle them. It is
+sources (e.g. databases or third-party APIs) and when you throw exceptions expecting a front-end to handle them. It is
 likely that in case of working on a project like this you also win more from delivering quickly then you win from
-writing exceptional quality code.
+writing exceptional (pun intended) quality code.
 
 I'll be happy if this library is useful for somebody except myself, but please make sure that you really need it.
 
 ## Features
 
 - Provides a selection of fields most likely to be useful when building an API back-end or a CLI program
-- Builder pattern
+- Builder pattern for better DX
 - Provides a JSON representation available with `toJSON` method
 - Configurable with good defaults
 
@@ -74,7 +74,7 @@ console.log('message:'.padEnd(10), e.getMessage());
 prints
 
 ```text
-Id:        AE_01GP7M92ZN5NZ48HN9ZECTB9WC
+Id:        AE_00Q6F4K3K7FPYQNEFJA1GV465Z
 Timestamp: 2023-01-08T02:45:12.309Z
 Message:   Something went wrong
 ```
@@ -96,23 +96,66 @@ console.log('message:'.padEnd(10), e.getMessage());
 prints
 
 ```text
-id:        AE_01GP7MKS25TSY4CN6QWZ64P4PS
+id:        AE_BT006J8JET62NVQM16Z890ENPR
 timestamp: 2023-01-08T02:51:02.597Z
 message:   I'm an error message
 ```
 
 ### Fields
 
-TODO: Example with builder pattern
+All fields are listed in `AppExOwnProps` type.
+
+(Run
+with `npm run ts-file ./examples/builder-pattern-example.ts` or see
+example's [source code](./examples/builder-pattern-example.ts))
+
+```typescript
+function addUser(email: string): void {
+  try {
+    storeUser(email);
+  } catch (caught) {
+    if (caught instanceof Error && caught.message === 'User already exists') {
+      throw AppEx.new(`User with this email already exists - ${email}`)
+        .displayMessage(
+          'We already have a user with this email in the system, maybe you signed up earlier?',
+        )
+        .code('USER_ALREADY_EXISTS')
+        .numCode(400)
+        .causedBy(caught)
+        .details({
+          email,
+        });
+    } else {
+      throw AppEx.new('Could not create user')
+        .displayMessage('Something went wrong, please visit help center')
+        .numCode(500)
+        .causedBy(caught)
+        .details({email});
+    }
+  }
+}
+```
 
 ### Constructor variants
 
+TODO
+
 ### Templating
+
+TODO
 
 ### Extending: Using ApplicationException.subclass
 
+TODO
+
 ### Extending: Extending ApplicationException class
+
+TODO
 
 ### Extending: Custom constructor
 
+TODO
+
 ### Extending: Setting a type for `details` field
+
+TODO
