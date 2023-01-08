@@ -82,4 +82,16 @@ message:   I'm an error message
 
 ### Fields
 
+TODO: Example with builder pattern
 
+### Constructor variants
+
+### Templating
+
+### Extending: Using ApplicationException.subclass
+
+### Extending: Extending ApplicationException class
+
+### Extending: Custom constructor
+
+### Extending: Setting a type for `details` field

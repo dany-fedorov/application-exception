@@ -90,6 +90,7 @@ export type AppExOwnProps = {
   /**
    * Unique id of this exception. Unless id is provided, it is set automatically for each instance.
    * Default `id` is an [ULID](https://www.npmjs.com/package/ulid) prefixed with `AE_`.
+   * Prefix is configured with {@link AppExOptions.idPrefix}
    */
   id: string;
   /**
@@ -97,12 +98,26 @@ export type AppExOwnProps = {
    */
   timestamp: Date;
   /**
-   * This is a user-friendly message suitable to display in a modal window or as an stderr output of a CLI tool.
+   * A user-friendly message suitable to display in a modal window or as a stderr of a CLI tool.
    */
   displayMessage?: string;
+  /**
+   * An error code.
+   */
   code?: string;
+  /**
+   * A numeric error code. Intended use cases are
+   * - HTTP response status
+   * - CLI exit code
+   */
   numCode?: number;
+  /**
+   * An object with properties related to the exception.
+   */
   details?: Record<string, unknown>;
+  /**
+   * A list of errors that caused this one.
+   */
   causes?: unknown[];
 };
 
