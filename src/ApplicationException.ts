@@ -419,16 +419,23 @@ export class ApplicationException extends Error {
     this._own = {
       id: icfg.id,
       timestamp: icfg.timestamp,
-      ...(!hasProp(icfg, 'displayMessage')
-        ? {}
-        : { displayMessage: icfg.displayMessage }),
+      ...Object.fromEntries(
+        (
+          ['displayMessage', 'numCode', 'details', 'causes'] as Array<
+            keyof AppExIcfg
+          >
+        ).flatMap((propName) => {
+          if (!hasProp(icfg, propName)) {
+            return [];
+          }
+          return [[propName, icfg[propName]]];
+        }),
+      ),
       ...(!hasProp(icfg, 'code')
         ? !icfg.useClassNameAsCode
           ? {}
           : { code: this.constructor.name }
         : { code: icfg.code }),
-      ...(!hasProp(icfg, 'numCode') ? {} : { numCode: icfg.numCode }),
-      ...(!hasProp(icfg, 'details') ? {} : { details: icfg.details }),
     };
     this._compiled = {};
     this._options = {
@@ -439,7 +446,7 @@ export class ApplicationException extends Error {
   }
 
   /**
-   * Static lifecycle helpers
+   * Static helpers
    */
 
   static normalizeInstanceConfig(icfgInput: Partial<AppExIcfg>): AppExIcfg {
@@ -542,7 +549,7 @@ export class ApplicationException extends Error {
   }
 
   /**
-   * Instance lifecycle helpers
+   * Instance helpers
    */
 
   private getCompilationContext() {
@@ -709,7 +716,6 @@ export class ApplicationException extends Error {
     return this.setDetails(
       this._options.mergeDetails(this.getDetails() ?? {}, d ?? {}),
     );
-    // { ...(this.getDetails() ?? {}), ...(d ?? {}) });
   }
 
   getCauses() {

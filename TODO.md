@@ -1,6 +1,6 @@
 - [x] a way to make message defaultable - .new accept no arg?
 - [x] a way to make details typed [supported with extending classes]
-- [ ] a way to provide a merge function to merge details
+- [x] a way to provide a merge function to merge details
 - [ ] make more files to make code easier to understand 
 - [ ] add json schema options
 - tests
