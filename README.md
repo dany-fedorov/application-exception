@@ -5,6 +5,9 @@
 [![Package License MIT](https://img.shields.io/npm/l/pojo-constructor.svg)](https://www.npmjs.org/package/application-exception)
 [![Npm Version](https://img.shields.io/npm/v/application-exception.svg)](https://www.npmjs.org/package/application-exception)
 
+> **Warning**
+> Please use fixed version (remove ^ from package.json).
+
 ## Motivation
 
 > *"Programs that use exceptions as part of their normal processing suffer from all the readability and
@@ -33,9 +36,6 @@ I'll be happy if this library is useful for somebody except myself, but please m
 - Builder pattern
 - Provides a JSON representation available with `toJSON` method
 - Configurable with good defaults
-
-> **Warning**
-> Please use fixed version (remove ^ from package.json).
 
 ## Guide
 
