@@ -244,10 +244,10 @@ describe('ApplicationException: Regular constructor', function () {
     delete json.stack;
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    expect(typeof json.causes[0].stack_prop).toBe('string');
+    expect(typeof json.causes[0].stack).toBe('string');
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    delete json.causes[0].stack_prop;
+    delete json.causes[0].stack;
     expect(json).toMatchInlineSnapshot(`
       Object {
         "causes": Array [
