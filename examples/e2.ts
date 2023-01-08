@@ -10,6 +10,12 @@ class MyAppException extends ApplicationException {
   }
 
   static create(b: number): MyAppException {
+    const e = this.createDefaultInstance({
+      message: 'Hey b is {{b}}',
+    });
+    console.log(e);
+    console.log(e.details);
+    console.log(e.getId());
     return (
       this.createDefaultInstance({
         message: 'Hey b is {{b}}',
@@ -41,6 +47,7 @@ class MyAppException extends ApplicationException {
 // });
 
 const e = MyAppException.create(123);
+console.log(e);
 console.log(e.toJSON());
 
 // for (let i = 0; i < 10; i++) {

@@ -5,7 +5,7 @@
   "main": "./index.js",
   "scripts": {
     "test": "NODE_OPTIONS='--stack-trace-limit=1000' ./node_modules/.bin/jest",
-    "build": "tsc -p ./tsconfig.build.json # && tsconfig-replace-paths --project tsconfig.paths.json -s ./src",
+    "build": "tsc -p ./tsconfig.build.json",
     "prepare-me": "rm -rf ./dist && npm run build",
     "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mv dist ./npm-module-build && cp package.json ./npm-module-build && cp README.md ./npm-module-build && cp LICENSE ./npm-module-build",
     "publish-me": "npm run prepublish-me && cd npm-module-build && npm publish --access public --registry https://registry.npmjs.org/",
@@ -48,7 +48,6 @@
     "ts-jest": "^28.0.5",
     "ts-node": "^10.8.2",
     "tsconfig-paths": "^4.1.0",
-    "tsconfig-replace-paths": "^0.0.11",
     "typedoc": "^0.23.23",
     "typescript": "^4.7.4"
   },

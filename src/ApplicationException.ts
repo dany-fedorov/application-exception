@@ -292,19 +292,11 @@ class AppExIcfgPojoConstructor
 {
   [PRIVATE] = new AppExIcfgPojoConstructorPrivateProps();
 
-  id(
-    input: AppExIcfgPojoConstructorInput,
-    cache: PojoConstructorSyncCachingProxy<
-      AppExIcfg,
-      AppExIcfgPojoConstructorInput
-    >,
-  ) {
-    const idBody = this[PRIVATE].resolveAppExIcfgProp(input, {
+  id(input: AppExIcfgPojoConstructorInput) {
+    return this[PRIVATE].resolveAppExIcfgProp(input, {
       propName: 'id',
       typeCheck: (v) => typeof v === 'string',
     });
-    const idPrefix = cache.idPrefix(input);
-    return { value: [idPrefix.value, idBody.value].join('') };
   }
 
   timestamp(input: AppExIcfgPojoConstructorInput) {
@@ -321,27 +313,11 @@ class AppExIcfgPojoConstructor
     });
   }
 
-  code(
-    input: AppExIcfgPojoConstructorInput,
-    cache: PojoConstructorSyncCachingProxy<
-      AppExIcfg,
-      AppExIcfgPojoConstructorInput
-    >,
-  ) {
-    const code = this[PRIVATE].resolveAppExIcfgProp(input, {
+  code(input: AppExIcfgPojoConstructorInput) {
+    return this[PRIVATE].resolveAppExIcfgProp(input, {
       propName: 'code',
       typeCheck: (v) => typeof v === 'string',
     });
-    if (typeof code.value === 'string') {
-      return code;
-    }
-    if (
-      cache.useClassNameAsCode().value === true &&
-      typeof input?.class?.name === 'string'
-    ) {
-      return { value: input.class.name };
-    }
-    return {};
   }
 
   numCode(input: AppExIcfgPojoConstructorInput) {
@@ -471,7 +447,7 @@ export class ApplicationException extends Error {
       mergeDetails: icfg.mergeDetails,
     };
     this._own = {
-      id: [this._options.idPrefix, icfg.id].join(''),
+      id: icfg.id,
       timestamp: icfg.timestamp,
       ...Object.fromEntries(
         (
@@ -487,6 +463,7 @@ export class ApplicationException extends Error {
       ),
     };
     this._compiled = {};
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 
   /**
@@ -514,7 +491,9 @@ export class ApplicationException extends Error {
   static createDefaultInstance(
     icfgInput: Partial<AppExIcfg>,
   ): ApplicationException {
-    return new this(this.normalizeInstanceConfig(icfgInput));
+    return new ApplicationException(
+      ApplicationException.normalizeInstanceConfig(icfgInput),
+    );
   }
 
   static compileTemplate(
@@ -639,7 +618,7 @@ export class ApplicationException extends Error {
   }
 
   getId(): string {
-    return this._own.id;
+    return [this._options.idPrefix, this._own.id].join('');
   }
 
   setTimestamp(ts: Date): this {
@@ -764,7 +743,7 @@ export class ApplicationException extends Error {
     return this._own.details;
   }
 
-  addDetails(d: Partial<Parameters<this['setDetails']>[0]>) {
+  addDetails(d: Partial<Parameters<this['setDetails']>[0]>): this {
     return this.setDetails(
       this._options.mergeDetails(this.getDetails() ?? {}, d ?? {}),
     );
@@ -836,7 +815,7 @@ export class ApplicationException extends Error {
     return this.displayMessagePrefixedLines(prefix, ...lines);
   }
 
-  details(d: Partial<Parameters<this['setDetails']>[0]>) {
+  details(d: Partial<Parameters<this['setDetails']>[0]>): this {
     return this.addDetails(d);
   }
 

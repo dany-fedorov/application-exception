@@ -10,6 +10,7 @@
     "src",
     "examples",
     "tests",
-    "webpack.config.ts"
+    ".eslintrc.js",
+    "jest.config.ts"
   ]
 }
