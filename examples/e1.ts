@@ -1,30 +1,27 @@
-import {AppEx, jsonStringifySafe} from '../src/ApplicationException';
+import { AppEx, jsonStringifySafe } from '../src/ApplicationException';
 import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 
 // const e = AppEx.new('123');
 
-const MyAppException = AppEx.subclass(
-  'MyAppException',
-  class MyAppExceptionDefaults {
-    // id() {
-    //   return { value: '123' };
-    // }
+const MyAppException = AppEx.subclass('MyAppException', {
+  // id() {
+  //   return { value: '123' };
+  // }
 
-    // code() {
-    //   return { value: 'default code' };
-    // }
+  // code() {
+  //   return { value: 'default code' };
+  // }
 
-    details() {
-      return { value: { defaultDetail: 112323 } };
-    }
-
-    useClassNameAsCode() {
-      return {
-        value: true,
-      };
-    }
+  details() {
+    return { value: { defaultDetail: 112323 } };
   },
-);
+
+  useClassNameAsCode() {
+    return {
+      value: true,
+    };
+  },
+});
 
 // class KeepException extends AppEx {
 //   constructor(icfg: AppExIcfg) {
