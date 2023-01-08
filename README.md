@@ -103,7 +103,10 @@ message:   I'm an error message
 
 ### Fields
 
-All fields are listed in `AppExOwnProps` type.
+All fields are listed in `AppExOwnProps` type.<br>
+
+You can use builder methods to set all of these fields except for `message` field because once message is set on `Error`
+instance it is impossible to change it.
 
 (Run
 with `npm run ts-file ./examples/builder-pattern-example.ts` or see
@@ -122,9 +125,7 @@ function addUser(email: string): void {
         .code('USER_ALREADY_EXISTS')
         .numCode(400)
         .causedBy(caught)
-        .details({
-          email,
-        });
+        .details({email});
     } else {
       throw AppEx.new('Could not create user')
         .displayMessage('Something went wrong, please visit help center')

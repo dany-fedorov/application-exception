@@ -24,9 +24,7 @@ function addUser(email: string): void {
         .code('USER_ALREADY_EXISTS')
         .numCode(400)
         .causedBy(caught)
-        .details({
-          email,
-        });
+        .details({ email });
     } else {
       throw AppEx.new('Could not create user')
         .displayMessage('Something went wrong, please visit help center')
