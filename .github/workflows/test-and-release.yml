@@ -33,6 +33,10 @@ jobs:
         uses: "jpb06/jest-badges-action@latest"
         with:
           branches: main
+          coverage-summary-path: ./coverage/coverage-summary.json
+          commit-message: "chore: Update tests coverage badges [skip ci]"
+          commit-user: github-actions[bot]
+          commit-user-email: github-actions[bot]@users.noreply.github.com
 
       - name: Build
         run: npm run prepublish-me
