@@ -585,14 +585,14 @@ export class ApplicationException extends Error {
     return {
       ...this.getDetails(),
       self: {
-        id: this._own.id,
-        timestamp: this._own.timestamp,
-        displayMessage: this._own.displayMessage,
-        code: this._own.code,
-        numCode: this._own.numCode,
-        details: this._own.details,
+        id: this.getId(),
+        timestamp: this.getTimestamp(),
+        code: this.getCode(),
+        numCode: this.getNumCode(),
+        details: this.getDetails(),
 
-        message: this.message,
+        message: this.getRawMessage(),
+        displayMessage: this.getRawDisplayMessage(),
 
         _options: this._options,
         _own: this._own,

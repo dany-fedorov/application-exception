@@ -139,9 +139,23 @@ function addUser(email: string): void {
 
 ### Constructor variants
 
+`ApplicationException.new` is the simplest constructor variant.
+
+(Run
+with `npm run ts-file ./examples/constructor-variants-example.ts` or see
+example's [source code](./examples/constructor-variants-example.ts))
+
 TODO
 
 ### Templating
+
+(Run
+with `npm run ts-file ./examples/simple-templating-example.ts` or see
+example's [source code](./examples/simple-templating-example.ts))
+
+(Run
+with `npm run ts-file ./examples/all-templating-helpers-example.ts` or see
+example's [source code](./examples/all-templating-helpers-example.ts))
 
 TODO
 
