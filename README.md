@@ -8,6 +8,22 @@
 > **Warning**
 > Please use fixed version (remove ^ from package.json).
 
+<!-- TOC -->
+
+* [Motivation](#motivation)
+* [Features](#features)
+* [Guide](#guide)
+    * [Defaults](#defaults)
+    * [Fields](#fields)
+    * [Constructor variants](#constructor-variants)
+    * [Templating](#templating)
+    * [Extending: Using ApplicationException.subclass](#extending--using-applicationexceptionsubclass)
+    * [Extending: Extending ApplicationException class](#extending--extending-applicationexception-class)
+    * [Extending: Custom constructor](#extending--custom-constructor)
+    * [Extending: Setting a type for `details` field](#extending--setting-a-type-for-details-field)
+
+<!-- TOC -->
+
 ## Motivation
 
 > *"Programs that use exceptions as part of their normal processing suffer from all the readability and
