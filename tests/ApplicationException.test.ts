@@ -3,6 +3,7 @@ import { AppExIcfg, ApplicationException } from '../src';
 jest.useFakeTimers().setSystemTime(new Date('2023-01-01'));
 
 const APPLICATION_EXCEPTION_DEFAULTS: AppExIcfg = {
+  idPrefix: 'ID_PREFIX_',
   message: 'test message',
   id: 'test-id',
   timestamp: new Date(),
@@ -23,15 +24,15 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-        Object {
-          "compiled_message": "test message",
-          "constructor_name": "ApplicationException",
-          "id": "test-id",
-          "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
-          "v": "appex/v0.1",
-        }
-      `);
+      Object {
+        "compiled_message": "test message",
+        "constructor_name": "ApplicationException",
+        "id": "ID_PREFIX_test-id",
+        "raw_message": "test message",
+        "timestamp": 2023-01-01T00:00:00.000Z,
+        "v": "appex/v0.1",
+      }
+    `);
   });
 
   test('useClassNameAsCode: true', () => {
@@ -46,16 +47,16 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-        Object {
-          "code": "ApplicationException",
-          "compiled_message": "test message",
-          "constructor_name": "ApplicationException",
-          "id": "test-id",
-          "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
-          "v": "appex/v0.1",
-        }
-      `);
+      Object {
+        "code": "ApplicationException",
+        "compiled_message": "test message",
+        "constructor_name": "ApplicationException",
+        "id": "ID_PREFIX_test-id",
+        "raw_message": "test message",
+        "timestamp": 2023-01-01T00:00:00.000Z,
+        "v": "appex/v0.1",
+      }
+    `);
   });
 
   describe('useMessageAsDisplayMessage', function () {
@@ -71,17 +72,17 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-                  Object {
-                    "compiled_display_message": "test message",
-                    "compiled_message": "test message",
-                    "constructor_name": "ApplicationException",
-                    "id": "test-id",
-                    "raw_display_message": "test message",
-                    "raw_message": "test message",
-                    "timestamp": 2023-01-01T00:00:00.000Z,
-                    "v": "appex/v0.1",
-                  }
-              `);
+        Object {
+          "compiled_display_message": "test message",
+          "compiled_message": "test message",
+          "constructor_name": "ApplicationException",
+          "id": "ID_PREFIX_test-id",
+          "raw_display_message": "test message",
+          "raw_message": "test message",
+          "timestamp": 2023-01-01T00:00:00.000Z,
+          "v": "appex/v0.1",
+        }
+      `);
     });
 
     test('useMessageAsDisplayMessage: true / provided displayMessage overrides', () => {
@@ -97,17 +98,17 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-                  Object {
-                    "compiled_display_message": "test display message",
-                    "compiled_message": "test message",
-                    "constructor_name": "ApplicationException",
-                    "id": "test-id",
-                    "raw_display_message": "test display message",
-                    "raw_message": "test message",
-                    "timestamp": 2023-01-01T00:00:00.000Z,
-                    "v": "appex/v0.1",
-                  }
-              `);
+        Object {
+          "compiled_display_message": "test display message",
+          "compiled_message": "test message",
+          "constructor_name": "ApplicationException",
+          "id": "ID_PREFIX_test-id",
+          "raw_display_message": "test display message",
+          "raw_message": "test message",
+          "timestamp": 2023-01-01T00:00:00.000Z,
+          "v": "appex/v0.1",
+        }
+      `);
     });
   });
 
@@ -139,27 +140,27 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-          Object {
-            "compiled_message": "test message",
-            "constructor_name": "ApplicationException",
-            "details": Object {
-              "a": 111,
-              "b": 2,
-              "c": Object {
-                "d": 333,
-              },
-              "deep": Object {
-                "da": 111,
-                "db": 2,
-                "dc": 333,
-              },
+        Object {
+          "compiled_message": "test message",
+          "constructor_name": "ApplicationException",
+          "details": Object {
+            "a": 111,
+            "b": 2,
+            "c": Object {
+              "d": 333,
             },
-            "id": "test-id",
-            "raw_message": "test message",
-            "timestamp": 2023-01-01T00:00:00.000Z,
-            "v": "appex/v0.1",
-          }
-        `);
+            "deep": Object {
+              "da": 111,
+              "db": 2,
+              "dc": 333,
+            },
+          },
+          "id": "ID_PREFIX_test-id",
+          "raw_message": "test message",
+          "timestamp": 2023-01-01T00:00:00.000Z,
+          "v": "appex/v0.1",
+        }
+      `);
     });
   });
 
@@ -174,16 +175,16 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-        Object {
-          "code": "the-new-code",
-          "compiled_message": "test message",
-          "constructor_name": "ApplicationException",
-          "id": "test-id",
-          "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
-          "v": "appex/v0.1",
-        }
-      `);
+      Object {
+        "code": "the-new-code",
+        "compiled_message": "test message",
+        "constructor_name": "ApplicationException",
+        "id": "ID_PREFIX_test-id",
+        "raw_message": "test message",
+        "timestamp": 2023-01-01T00:00:00.000Z,
+        "v": "appex/v0.1",
+      }
+    `);
   });
 
   test('numCode', () => {
@@ -197,16 +198,16 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-        Object {
-          "compiled_message": "test message",
-          "constructor_name": "ApplicationException",
-          "id": "test-id",
-          "num_code": 404,
-          "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
-          "v": "appex/v0.1",
-        }
-      `);
+      Object {
+        "compiled_message": "test message",
+        "constructor_name": "ApplicationException",
+        "id": "ID_PREFIX_test-id",
+        "num_code": 404,
+        "raw_message": "test message",
+        "timestamp": 2023-01-01T00:00:00.000Z,
+        "v": "appex/v0.1",
+      }
+    `);
   });
 
   test('timestamp', () => {
@@ -220,15 +221,15 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-        Object {
-          "compiled_message": "test message",
-          "constructor_name": "ApplicationException",
-          "id": "test-id",
-          "raw_message": "test message",
-          "timestamp": 3032-01-01T00:00:00.000Z,
-          "v": "appex/v0.1",
-        }
-      `);
+      Object {
+        "compiled_message": "test message",
+        "constructor_name": "ApplicationException",
+        "id": "ID_PREFIX_test-id",
+        "raw_message": "test message",
+        "timestamp": 3032-01-01T00:00:00.000Z,
+        "v": "appex/v0.1",
+      }
+    `);
   });
 
   test('causes', () => {
@@ -248,60 +249,60 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.causes[0].stack_prop;
     expect(json).toMatchInlineSnapshot(`
-        Object {
-          "causes": Array [
-            Object {
-              "as_json": Object {
-                "format": "safe-stable-stringify@2.4.1",
-                "value": Object {},
-              },
-              "as_string": Object {
-                "format": "String",
-                "value": "Error: Je suis Erreur",
-              },
-              "constructor_name": "Error",
-              "is_error_instance": true,
-              "message_prop": "Je suis Erreur",
-              "typeof": "object",
-              "v": "corj/v0.1",
+      Object {
+        "causes": Array [
+          Object {
+            "as_json": Object {
+              "format": "safe-stable-stringify@2.4.1",
+              "value": Object {},
             },
-            Object {
-              "as_json": Object {
-                "format": "safe-stable-stringify@2.4.1",
-                "value": "And I'm just a string",
-              },
-              "as_string": Object {
-                "format": "String",
-                "value": "And I'm just a string",
-              },
-              "constructor_name": "String",
-              "is_error_instance": false,
-              "typeof": "string",
-              "v": "corj/v0.1",
+            "as_string": Object {
+              "format": "String",
+              "value": "Error: Je suis Erreur",
             },
-            Object {
-              "as_json": Object {
-                "format": "safe-stable-stringify@2.4.1",
-                "value": 9876,
-              },
-              "as_string": Object {
-                "format": "String",
-                "value": "9876",
-              },
-              "constructor_name": "Number",
-              "is_error_instance": false,
-              "typeof": "number",
-              "v": "corj/v0.1",
+            "constructor_name": "Error",
+            "is_error_instance": true,
+            "message_prop": "Je suis Erreur",
+            "typeof": "object",
+            "v": "corj/v0.1",
+          },
+          Object {
+            "as_json": Object {
+              "format": "safe-stable-stringify@2.4.1",
+              "value": "And I'm just a string",
             },
-          ],
-          "compiled_message": "test message",
-          "constructor_name": "ApplicationException",
-          "id": "test-id",
-          "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
-          "v": "appex/v0.1",
-        }
-      `);
+            "as_string": Object {
+              "format": "String",
+              "value": "And I'm just a string",
+            },
+            "constructor_name": "String",
+            "is_error_instance": false,
+            "typeof": "string",
+            "v": "corj/v0.1",
+          },
+          Object {
+            "as_json": Object {
+              "format": "safe-stable-stringify@2.4.1",
+              "value": 9876,
+            },
+            "as_string": Object {
+              "format": "String",
+              "value": "9876",
+            },
+            "constructor_name": "Number",
+            "is_error_instance": false,
+            "typeof": "number",
+            "v": "corj/v0.1",
+          },
+        ],
+        "compiled_message": "test message",
+        "constructor_name": "ApplicationException",
+        "id": "ID_PREFIX_test-id",
+        "raw_message": "test message",
+        "timestamp": 2023-01-01T00:00:00.000Z,
+        "v": "appex/v0.1",
+      }
+    `);
   });
 });
 
