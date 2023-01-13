@@ -1,12 +1,12 @@
 import * as hbs from 'handlebars';
 import type {
   PojoConstructorPropMethodValue,
-  PojoConstructorSync,
-  PojoConstructorSyncCachingProxy,
+  PojoConstructorPropsSync,
 } from 'pojo-constructor';
 import {
   constructPojoFromInstanceSync,
   constructPojoSync,
+  PojoConstructorHelpersHostSync,
 } from 'pojo-constructor';
 import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 import { customAlphabet } from 'nanoid';
@@ -89,10 +89,9 @@ function mkHbsHelpers() {
 export type AppExOwnProps = {
   /**
    * Unique id of this exception. Unless id is provided, it is set automatically for each instance.
-   * Default `id` is an [ULID](https://www.npmjs.com/package/ulid) prefixed with `AE_`.
    * Prefix is configured with {@link AppExOptions.idPrefix}
    */
-  id: string;
+  idBody: string;
   /**
    * A time at which exception was created.
    */
@@ -163,7 +162,7 @@ type AppExIcfgDefaultsPojoConstructorInput = Omit<
   'defaults'
 >;
 
-type AppExIcfgPojoConstructorDefaultsBuilder = PojoConstructorSync<
+type AppExIcfgPojoConstructorDefaultsBuilder = PojoConstructorPropsSync<
   Partial<AppExIcfg>,
   AppExIcfgDefaultsPojoConstructorInput
 >;
@@ -176,7 +175,7 @@ type AppExIcfgPojoConstructorInput = {
 };
 
 class AppExIcfgDefaultsPojoConstructor
-  implements PojoConstructorSync<AppExIcfg, AppExIcfgPojoConstructorInput>
+  implements PojoConstructorPropsSync<AppExIcfg, AppExIcfgPojoConstructorInput>
 {
   message() {
     return { value: 'Something went wrong' };
@@ -186,7 +185,7 @@ class AppExIcfgDefaultsPojoConstructor
     return { value: new Date(nowDate) };
   }
 
-  id() {
+  idBody() {
     return {
       value: makeApplicationExceptionId(),
     };
@@ -292,13 +291,13 @@ function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
 }
 
 class AppExIcfgPojoConstructor
-  implements PojoConstructorSync<AppExIcfg, AppExIcfgPojoConstructorInput>
+  implements PojoConstructorPropsSync<AppExIcfg, AppExIcfgPojoConstructorInput>
 {
   [PRIVATE] = new AppExIcfgPojoConstructorPrivateProps();
 
-  id(input: AppExIcfgPojoConstructorInput) {
+  idBody(input: AppExIcfgPojoConstructorInput) {
     return this[PRIVATE].resolveAppExIcfgProp(input, {
-      propName: 'id',
+      propName: 'idBody',
       typeCheck: (v) => typeof v === 'string',
     });
   }
@@ -340,10 +339,9 @@ class AppExIcfgPojoConstructor
 
   details(
     input: AppExIcfgPojoConstructorInput,
-    cache: PojoConstructorSyncCachingProxy<
-      AppExIcfg,
-      AppExIcfgPojoConstructorInput
-    >,
+    {
+      cache,
+    }: PojoConstructorHelpersHostSync<AppExIcfg, AppExIcfgPojoConstructorInput>,
   ) {
     const { icfgInput } = input;
     const inputDefaults = this[PRIVATE].getInputDefaults(input);
@@ -451,7 +449,7 @@ export class ApplicationException extends Error {
       mergeDetails: icfg.mergeDetails,
     };
     this._own = {
-      id: icfg.id,
+      idBody: icfg.idBody,
       timestamp: icfg.timestamp,
       ...Object.fromEntries(
         (
@@ -495,9 +493,7 @@ export class ApplicationException extends Error {
   static createDefaultInstance(
     icfgInput: Partial<AppExIcfg>,
   ): ApplicationException {
-    return new ApplicationException(
-      ApplicationException.normalizeInstanceConfig(icfgInput),
-    );
+    return new this(this.normalizeInstanceConfig(icfgInput));
   }
 
   static compileTemplate(
@@ -616,13 +612,17 @@ export class ApplicationException extends Error {
    * Setters & getters
    */
 
-  setId(ID: string): this {
-    this._own.id = ID;
+  setIdBody(ID: string): this {
+    this._own.idBody = ID;
     return this;
   }
 
+  getIdBody(): string {
+    return this._own.idBody;
+  }
+
   getId(): string {
-    return [this._options.idPrefix, this._own.id].join('');
+    return [this._options.idPrefix, this.getIdBody()].join('');
   }
 
   setTimestamp(ts: Date): this {
@@ -630,8 +630,8 @@ export class ApplicationException extends Error {
     return this;
   }
 
-  getTimestamp(): Date {
-    return this._own.timestamp;
+  getTimestamp(): string {
+    return this._own.timestamp.toISOString();
   }
 
   setNumCode(n: number): this {
@@ -804,7 +804,7 @@ export class ApplicationException extends Error {
    */
 
   id(ID: string): this {
-    return this.setId(ID);
+    return this.setIdBody(ID);
   }
 
   timestamp(ts: Date): this {
@@ -854,8 +854,8 @@ export class ApplicationException extends Error {
     return Object.fromEntries(
       [
         ['constructor_name', this.constructor.name],
-        ['compiled_message', this.getMessage()],
-        ['compiled_display_message', this.getDisplayMessage()],
+        ['message', this.getMessage()],
+        ['display_message', this.getDisplayMessage()],
         ['code', this.getCode()],
         ['num_code', this.getNumCode()],
         ['details', this.getDetails()],

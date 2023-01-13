@@ -36,13 +36,13 @@
 // console.log(err);
 // console.log(err.getget());
 
- import {ApplicationException} from "../src";
+import { ApplicationException } from '../src';
 
 // const e = AppEx.createDefaultInstance({});
 const e = new ApplicationException({
   idPrefix: 'ID_PREFIX_',
+  idBody: 'test-id',
   message: 'test message',
-  id: 'test-id',
   timestamp: new Date(),
   mergeDetails: (d0, d1) => ({ ...d0, ...d1 }),
   useMessageAsDisplayMessage: false,

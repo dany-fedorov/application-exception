@@ -59,9 +59,9 @@ I'll be happy if this library is useful for somebody except myself, but please m
 
 By default `ApplicationException` sets `id`, `timestamp` and `message` fields.
 
-(Run
+<sub>(Run
 with `npm run ts-file ./examples/default-fields-example.ts` or see
-example's [source code](./examples/default-fields-example.ts))
+example's [source code](./examples/default-fields-example.ts))</sub>
 
 ```typescript
 const e = AppEx.new();
@@ -81,9 +81,9 @@ Message:   Something went wrong
 
 You can provide a custom message to `ApplicationException.new`.
 
-(Run
+<sub>(Run
 with `npm run ts-file ./examples/default-fields-with-custom-message-example.ts` or see
-example's [source code](./examples/default-fields-with-custom-message-example.ts))
+example's [source code](./examples/default-fields-with-custom-message-example.ts))</sub>
 
 ```typescript
 const e = AppEx.new(`I'm an error message`);
@@ -108,9 +108,23 @@ All fields are listed in `AppExOwnProps` type.<br>
 You can use builder methods to set all of these fields except for `message` field because once message is set on `Error`
 instance it is impossible to change it.
 
-(Run
+Here is a simple example.
+
+<sub>(Run with `npm run ts-file ./examples/builder-pattern-simple-example.ts` or see
+example's [source code](./examples/builder-pattern-simple-example.ts))</sub>
+
+```typescript
+throw AppEx.new(`Could not fetch a resource with id ${id}`)
+  .numCode(404)
+  .code('RESOURCE_NOT_FOUND')
+  .details({id});
+```
+
+This is a more complicated example.
+
+<sub>(Run
 with `npm run ts-file ./examples/builder-pattern-example.ts` or see
-example's [source code](./examples/builder-pattern-example.ts))
+example's [source code](./examples/builder-pattern-example.ts))</sub>
 
 ```typescript
 function addUser(email: string): void {
@@ -141,27 +155,88 @@ function addUser(email: string): void {
 
 `ApplicationException.new` is the simplest constructor variant.
 
-(Run
-with `npm run ts-file ./examples/constructor-variants-example.ts` or see
-example's [source code](./examples/constructor-variants-example.ts))
+Other constructors available by default are `lines` and `prefixedLines` (or `plines`).
 
-TODO
+<sub>(Run
+with `npm run ts-file ./examples/constructor-variants-example.ts` or see
+example's [source code](./examples/constructor-variants-example.ts))</sub>
+
+```typescript
+const e1 = AppEx.lines(
+  'Could not fetch user from ThirdParty',
+  `- HTTP: GET https://example.org/api/v1`,
+  `- Request headers: ${JSON.stringify(req.headers)}`,
+  `- Response status: ${JSON.stringify(res.status)}`,
+  `- Response headers: ${JSON.stringify(res.headers)}`,
+);
+
+const e2 = AppEx.prefixedLines(
+  'UserService.getUser',
+  'Could not fetch user from ThirdParty',
+  ['- HTTP'.padEnd(20), 'GET https://example.org/api/v1'].join(' - '),
+  ['- Request headers'.padEnd(20), JSON.stringify(req.headers)].join(' - '),
+  ['- Response status'.padEnd(20), JSON.stringify(res.status)].join(' - '),
+  ['- Response headers'.padEnd(20), JSON.stringify(res.headers)].join(' - '),
+);
+```
 
 ### Templating
 
-(Run
+Fields `message` and `displayMessage` are actually [Handlebars](https://handlebarsjs.com/) templates.
+
+<sub>(Run
 with `npm run ts-file ./examples/simple-templating-example.ts` or see
-example's [source code](./examples/simple-templating-example.ts))
+example's [source code](./examples/simple-templating-example.ts))</sub>
 
-(Run
+```typescript
+const e = AppEx.new('Bad thing happened').displayMessage(
+  'Something went wrong, please contact tech support and provide this id - {{self.id}}',
+);
+
+console.log(e.getDisplayMessage());
+```
+
+prints
+
+```text
+Something went wrong, please contact tech support and provide this id - AE_0DFG6FGFRCY2THPMMCNXAZF4KF
+```
+
+You can use fields specified in `details` on the top level. Use `self` to access exception object in handlebars
+template. `self` contains all fields available through builder methods on it's top level, like `id` or `code`.
+Also, there is a `json` helper function present in compilation context.
+
+All compilation context available is presented in the following example.
+
+<sub>(Run
 with `npm run ts-file ./examples/all-templating-helpers-example.ts` or see
-example's [source code](./examples/all-templating-helpers-example.ts))
+example's [source code](./examples/all-templating-helpers-example.ts))</sub>
 
-TODO
+```typescript
+const e = AppEx.new('Bad thing happened')
+  .details({
+    a: 12345,
+    b: 'b-field',
+  })
+  .displayMessageLines(
+    '- top level fields',
+    '- - a - {{a}}',
+    '- - b - {{b}}',
+    '- self',
+    '- - self.id - {{self.id}}',
+    '- - self.timestamp - {{self.timestamp}}',
+    '- - self.code - {{self.code}}',
+    '- - self.numCode - {{self.numCode}}',
+    '- - self.details - {{{json self.details}}}',
+    '- - self.details indented - {{{json self.details 2}}}',
+  );
+```
 
 ### Extending: Using ApplicationException.subclass
 
-TODO
+<sub>(Run
+with `npm run ts-file ./examples/subclass-example.ts` or see
+example's [source code](./examples/subclass-example.ts))</sub>
 
 ### Extending: Extending ApplicationException class
 

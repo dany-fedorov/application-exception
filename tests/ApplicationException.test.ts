@@ -5,7 +5,7 @@ jest.useFakeTimers().setSystemTime(new Date('2023-01-01'));
 const APPLICATION_EXCEPTION_DEFAULTS: AppExIcfg = {
   idPrefix: 'ID_PREFIX_',
   message: 'test message',
-  id: 'test-id',
+  idBody: 'test-id',
   timestamp: new Date(),
   mergeDetails: (d0, d1) => ({ ...d0, ...d1 }),
   useMessageAsDisplayMessage: false,
