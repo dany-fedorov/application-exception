@@ -25,11 +25,11 @@ describe('ApplicationException: Regular constructor', function () {
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
       Object {
-        "compiled_message": "test message",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
+        "message": "test message",
         "raw_message": "test message",
-        "timestamp": 2023-01-01T00:00:00.000Z,
+        "timestamp": "2023-01-01T00:00:00.000Z",
         "v": "appex/v0.1",
       }
     `);
@@ -49,11 +49,11 @@ describe('ApplicationException: Regular constructor', function () {
     expect(json).toMatchInlineSnapshot(`
       Object {
         "code": "ApplicationException",
-        "compiled_message": "test message",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
+        "message": "test message",
         "raw_message": "test message",
-        "timestamp": 2023-01-01T00:00:00.000Z,
+        "timestamp": "2023-01-01T00:00:00.000Z",
         "v": "appex/v0.1",
       }
     `);
@@ -73,13 +73,13 @@ describe('ApplicationException: Regular constructor', function () {
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
         Object {
-          "compiled_display_message": "test message",
-          "compiled_message": "test message",
           "constructor_name": "ApplicationException",
+          "display_message": "test message",
           "id": "ID_PREFIX_test-id",
+          "message": "test message",
           "raw_display_message": "test message",
           "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
+          "timestamp": "2023-01-01T00:00:00.000Z",
           "v": "appex/v0.1",
         }
       `);
@@ -99,13 +99,13 @@ describe('ApplicationException: Regular constructor', function () {
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
         Object {
-          "compiled_display_message": "test display message",
-          "compiled_message": "test message",
           "constructor_name": "ApplicationException",
+          "display_message": "test display message",
           "id": "ID_PREFIX_test-id",
+          "message": "test message",
           "raw_display_message": "test display message",
           "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
+          "timestamp": "2023-01-01T00:00:00.000Z",
           "v": "appex/v0.1",
         }
       `);
@@ -141,7 +141,6 @@ describe('ApplicationException: Regular constructor', function () {
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
         Object {
-          "compiled_message": "test message",
           "constructor_name": "ApplicationException",
           "details": Object {
             "a": 111,
@@ -156,8 +155,9 @@ describe('ApplicationException: Regular constructor', function () {
             },
           },
           "id": "ID_PREFIX_test-id",
+          "message": "test message",
           "raw_message": "test message",
-          "timestamp": 2023-01-01T00:00:00.000Z,
+          "timestamp": "2023-01-01T00:00:00.000Z",
           "v": "appex/v0.1",
         }
       `);
@@ -177,11 +177,11 @@ describe('ApplicationException: Regular constructor', function () {
     expect(json).toMatchInlineSnapshot(`
       Object {
         "code": "the-new-code",
-        "compiled_message": "test message",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
+        "message": "test message",
         "raw_message": "test message",
-        "timestamp": 2023-01-01T00:00:00.000Z,
+        "timestamp": "2023-01-01T00:00:00.000Z",
         "v": "appex/v0.1",
       }
     `);
@@ -199,12 +199,12 @@ describe('ApplicationException: Regular constructor', function () {
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
       Object {
-        "compiled_message": "test message",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
+        "message": "test message",
         "num_code": 404,
         "raw_message": "test message",
-        "timestamp": 2023-01-01T00:00:00.000Z,
+        "timestamp": "2023-01-01T00:00:00.000Z",
         "v": "appex/v0.1",
       }
     `);
@@ -222,11 +222,11 @@ describe('ApplicationException: Regular constructor', function () {
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
       Object {
-        "compiled_message": "test message",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
+        "message": "test message",
         "raw_message": "test message",
-        "timestamp": 3032-01-01T00:00:00.000Z,
+        "timestamp": "3032-01-01T00:00:00.000Z",
         "v": "appex/v0.1",
       }
     `);
@@ -295,11 +295,11 @@ describe('ApplicationException: Regular constructor', function () {
             "v": "corj/v0.2",
           },
         ],
-        "compiled_message": "test message",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
+        "message": "test message",
         "raw_message": "test message",
-        "timestamp": 2023-01-01T00:00:00.000Z,
+        "timestamp": "2023-01-01T00:00:00.000Z",
         "v": "appex/v0.1",
       }
     `);
