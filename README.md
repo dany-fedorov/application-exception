@@ -232,17 +232,18 @@ const e = AppEx.new('Bad thing happened')
   );
 ```
 
-### Extending: Using ApplicationException.subclass
+### Extending ApplicationException class
+
+Overriding static method `defaults` allows to specify default values of exception fields.
+
+<sub>(Run with `npm run ts-file ./examples/extending-class-example.ts` or see
+example's [source code](./examples/extending-class-example.t))</sub>
+
+TODO
 
 <sub>(Run
 with `npm run ts-file ./examples/subclass-example.ts` or see
 example's [source code](./examples/subclass-example.ts))</sub>
-
-### Extending: Extending ApplicationException class
-
-TODO
-
-### Extending: Custom constructor
 
 TODO
 

@@ -2,11 +2,12 @@ import * as hbs from 'handlebars';
 import type {
   PojoConstructorPropMethodValue,
   PojoConstructorPropsSync,
+  PojoConstructorProxySync,
+  PojoConstructorHelpersHostSync,
 } from 'pojo-constructor';
 import {
   constructPojoFromInstanceSync,
   constructPojoSync,
-  PojoConstructorHelpersHostSync,
 } from 'pojo-constructor';
 import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 import { customAlphabet } from 'nanoid';
@@ -120,9 +121,15 @@ export type AppExOwnProps = {
   causes?: unknown[];
 };
 
+const TIMESTAMP_FORMAT_IN_JSON_VALUES = ['iso', 'milliseconds'] as const;
+export type TimestampFormatInJson =
+  typeof TIMESTAMP_FORMAT_IN_JSON_VALUES[number];
+
 export type AppExOptions = {
+  applySuperDefaults: boolean;
   useClassNameAsCode: boolean;
   useMessageAsDisplayMessage: boolean;
+  timestampFormatInJson: TimestampFormatInJson;
   mergeDetails: (
     d0: Record<string, unknown>,
     d1: Record<string, unknown>,
@@ -159,18 +166,19 @@ function hasProp<O extends object, K extends keyof O, V extends Required<O>[K]>(
 
 type AppExIcfgDefaultsPojoConstructorInput = Omit<
   AppExIcfgPojoConstructorInput,
-  'defaults'
+  'defaultsProps'
 >;
 
-type AppExIcfgPojoConstructorDefaultsBuilder = PojoConstructorPropsSync<
+export type ApplicationExceptionDefaultsProps = PojoConstructorPropsSync<
   Partial<AppExIcfg>,
   AppExIcfgDefaultsPojoConstructorInput
 >;
 
 type AppExIcfgPojoConstructorInput = {
   icfgInput: Partial<AppExIcfg>;
-  nowDate: Date;
-  defaults?: AppExIcfgPojoConstructorDefaultsBuilder;
+  now: Date;
+  defaultsProps?: ApplicationExceptionDefaultsProps;
+  superDefaultsProps?: ApplicationExceptionDefaultsProps;
   class: { new (icfg: AppExIcfg): ApplicationException; name: string };
 };
 
@@ -181,8 +189,8 @@ class AppExIcfgDefaultsPojoConstructor
     return { value: 'Something went wrong' };
   }
 
-  timestamp({ nowDate }: AppExIcfgDefaultsPojoConstructorInput) {
-    return { value: new Date(nowDate) };
+  timestamp({ now }: AppExIcfgDefaultsPojoConstructorInput) {
+    return { value: new Date(now) };
   }
 
   idBody() {
@@ -197,6 +205,14 @@ class AppExIcfgDefaultsPojoConstructor
 
   useMessageAsDisplayMessage() {
     return { value: false };
+  }
+
+  applySuperDefaults() {
+    return { value: true };
+  }
+
+  timestampFormatInJson() {
+    return { value: 'iso' as TimestampFormatInJson };
   }
 
   mergeDetails() {
@@ -223,14 +239,38 @@ class AppExIcfgDefaultsPojoConstructor
 const PRIVATE = Symbol('PRIVATE_SYM');
 
 class AppExIcfgPojoConstructorPrivateProps {
+  superDefaults: Partial<AppExIcfg> | null = null;
   inputDefaults: Partial<AppExIcfg> | null = null;
   defaultDefaults: AppExIcfg | null = null;
+
+  getSuperDefaults(
+    resolved: PojoConstructorProxySync<
+      AppExIcfg,
+      AppExIcfgDefaultsPojoConstructorInput
+    >,
+    input: AppExIcfgPojoConstructorInput,
+  ): Partial<AppExIcfg> | null {
+    if (
+      resolved.applySuperDefaults().value === true &&
+      this.superDefaults === null &&
+      input.superDefaultsProps
+    ) {
+      this.superDefaults = constructPojoFromInstanceSync(
+        input.superDefaultsProps,
+        input,
+      );
+    }
+    return this.superDefaults;
+  }
 
   getInputDefaults(
     input: AppExIcfgPojoConstructorInput,
   ): Partial<AppExIcfg> | null {
-    if (this.inputDefaults === null && input.defaults) {
-      this.inputDefaults = constructPojoFromInstanceSync(input.defaults, input);
+    if (this.inputDefaults === null && input.defaultsProps) {
+      this.inputDefaults = constructPojoFromInstanceSync(
+        input.defaultsProps,
+        input,
+      );
     }
     return this.inputDefaults;
   }
@@ -246,16 +286,24 @@ class AppExIcfgPojoConstructorPrivateProps {
   }
 
   resolveAppExIcfgProp<K extends keyof AppExIcfg>(
+    resolved: PojoConstructorProxySync<
+      AppExIcfg,
+      AppExIcfgDefaultsPojoConstructorInput
+    >,
     input: AppExIcfgPojoConstructorInput,
     resolvePropInput: Omit<
       ResolveAppExIcfgPropInput<K>,
-      'inputDefaults' | 'defaultDefaults' | 'icfgInput'
+      'inputDefaults' | 'defaultDefaults' | 'superDefaults' | 'icfgInput'
     >,
   ): PojoConstructorPropMethodValue<AppExIcfg[K]> {
     return resolveAppExIcfgProp({
       ...resolvePropInput,
       icfgInput: input.icfgInput,
       inputDefaults: this.getInputDefaults(input),
+      superDefaults:
+        resolvePropInput.propName === 'applySuperDefaults'
+          ? null
+          : this.getSuperDefaults(resolved, input),
       defaultDefaults: this.getDefaultDefaults(input),
     });
   }
@@ -263,24 +311,34 @@ class AppExIcfgPojoConstructorPrivateProps {
 
 type ResolveAppExIcfgPropInput<K extends keyof AppExIcfg> = {
   propName: K;
-  typeCheck: (value: AppExIcfg[K]) => boolean;
+  isValid: (value: AppExIcfg[K]) => boolean;
   icfgInput: Partial<AppExIcfg>;
   inputDefaults: Partial<AppExIcfg> | null;
+  superDefaults: Partial<AppExIcfg> | null;
   defaultDefaults: AppExIcfg;
 };
 
 function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
   input: ResolveAppExIcfgPropInput<K>,
 ): PojoConstructorPropMethodValue<AppExIcfg[K]> {
-  const { propName, typeCheck, icfgInput, inputDefaults, defaultDefaults } =
-    input;
+  const {
+    propName,
+    isValid,
+    icfgInput,
+    inputDefaults,
+    superDefaults,
+    defaultDefaults,
+  } = input;
   const hasThisProp = (obj: Partial<AppExIcfg>): boolean =>
-    hasProp(obj, propName) && typeCheck(obj[propName]);
+    hasProp(obj, propName) && isValid(obj[propName]);
   if (hasThisProp(icfgInput)) {
     return { value: icfgInput[propName] as AppExIcfg[K] };
   }
   if (inputDefaults !== null && hasThisProp(inputDefaults)) {
     return { value: inputDefaults[propName] as AppExIcfg[K] };
+  }
+  if (superDefaults !== null && hasThisProp(superDefaults)) {
+    return { value: superDefaults[propName] as AppExIcfg[K] };
   }
   if (hasThisProp(defaultDefaults)) {
     return { value: defaultDefaults[propName] };
@@ -295,112 +353,213 @@ class AppExIcfgPojoConstructor
 {
   [PRIVATE] = new AppExIcfgPojoConstructorPrivateProps();
 
-  idBody(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  idBody(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'idBody',
-      typeCheck: (v) => typeof v === 'string',
+      isValid: (v) => typeof v === 'string',
     });
   }
 
-  timestamp(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  timestamp(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'timestamp',
-      typeCheck: (v) => v instanceof Date,
+      isValid: (v) => v instanceof Date,
     });
   }
 
-  displayMessage(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  displayMessage(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'displayMessage',
-      typeCheck: (v) => typeof v === 'string',
+      isValid: (v) => typeof v === 'string',
     });
   }
 
-  code(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  code(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'code',
-      typeCheck: (v) => typeof v === 'string',
+      isValid: (v) => typeof v === 'string',
     });
   }
 
-  numCode(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  numCode(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'numCode',
-      typeCheck: (v) => typeof v === 'number',
+      isValid: (v) => typeof v === 'number',
     });
   }
 
-  mergeDetails(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  mergeDetails(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'mergeDetails',
-      typeCheck: (v) => typeof v === 'function',
+      isValid: (v) => typeof v === 'function',
     });
   }
 
   details(
     input: AppExIcfgPojoConstructorInput,
-    {
-      cache,
-    }: PojoConstructorHelpersHostSync<AppExIcfg, AppExIcfgPojoConstructorInput>,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
   ) {
     const { icfgInput } = input;
     const inputDefaults = this[PRIVATE].getInputDefaults(input);
     const defaultDefaults = this[PRIVATE].getDefaultDefaults(input);
+    const superDefaults = this[PRIVATE].getSuperDefaults(helpers.cache, input);
     const hasThisProp = (obj: Partial<AppExIcfg>): boolean =>
       hasProp(obj, 'details') &&
       typeof obj['details'] === 'object' &&
       obj['details'] !== null &&
       !Array.isArray(obj);
     const hasInIcfgInput = hasThisProp(icfgInput);
+    const hasInDefaultDefaults = hasThisProp(defaultDefaults);
+    const hasInSuperDefaults =
+      superDefaults !== null && hasThisProp(superDefaults);
     const hasInInputDefaults =
       inputDefaults !== null && hasThisProp(inputDefaults);
-    const hasInDefaultDefaults = hasThisProp(defaultDefaults);
-    const mergeDetails = cache.mergeDetails(input).value;
-    if (hasInIcfgInput || hasInInputDefaults || hasInDefaultDefaults) {
+    const mergeDetails = helpers.cache.mergeDetails(input).value;
+    if (
+      hasInIcfgInput ||
+      hasInInputDefaults ||
+      hasInDefaultDefaults ||
+      hasInSuperDefaults
+    ) {
+      const defaultDefaultsVal = !hasInDefaultDefaults
+        ? {}
+        : (defaultDefaults['details'] as Record<string, unknown>);
+      const inputDefaultsVal = !hasInInputDefaults
+        ? {}
+        : (inputDefaults['details'] as Record<string, unknown>);
+      const superDefaultsVal = !hasInSuperDefaults
+        ? {}
+        : (superDefaults['details'] as Record<string, unknown>);
+      const inputVal = !hasInIcfgInput
+        ? {}
+        : (icfgInput['details'] as Record<string, unknown>);
       return {
         value: mergeDetails(
           mergeDetails(
-            !hasInDefaultDefaults
-              ? {}
-              : (defaultDefaults['details'] as Record<string, unknown>),
-            !hasInInputDefaults
-              ? {}
-              : (inputDefaults['details'] as Record<string, unknown>),
+            mergeDetails(defaultDefaultsVal, superDefaultsVal),
+            inputDefaultsVal,
           ),
-          !hasInIcfgInput
-            ? {}
-            : (icfgInput['details'] as Record<string, unknown>),
+          inputVal,
         ),
       };
     }
     return {};
   }
 
-  useClassNameAsCode(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  useClassNameAsCode(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'useClassNameAsCode',
-      typeCheck: (v) => typeof v === 'boolean',
+      isValid: (v) => typeof v === 'boolean',
     });
   }
 
-  useMessageAsDisplayMessage(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  useMessageAsDisplayMessage(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'useMessageAsDisplayMessage',
-      typeCheck: (v) => typeof v === 'boolean',
+      isValid: (v) => typeof v === 'boolean',
     });
   }
 
-  idPrefix(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  timestampFormatInJson(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
+      propName: 'timestampFormatInJson',
+      isValid: (v) => TIMESTAMP_FORMAT_IN_JSON_VALUES.includes(v),
+    });
+  }
+
+  applySuperDefaults(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
+      propName: 'applySuperDefaults',
+      isValid: (v) => typeof v === 'boolean',
+    });
+  }
+
+  idPrefix(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'idPrefix',
-      typeCheck: (v) => typeof v === 'string',
+      isValid: (v) => typeof v === 'string',
     });
   }
 
-  message(input: AppExIcfgPojoConstructorInput) {
-    return this[PRIVATE].resolveAppExIcfgProp(input, {
+  message(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
       propName: 'message',
-      typeCheck: (v) => typeof v === 'string',
+      isValid: (v) => typeof v === 'string',
     });
   }
 }
@@ -435,6 +594,21 @@ export type ApplicationExceptionJson = {
   v: typeof APP_EX_JSON_VERSION_0_1;
 };
 
+export type ApplicationExceptionStatic = {
+  new (icfg: AppExIcfg): ApplicationException;
+
+  new: typeof ApplicationException.new;
+  lines: typeof ApplicationException.lines;
+  prefixedLines: typeof ApplicationException.prefixedLines;
+  plines: typeof ApplicationException.plines;
+  subclass: typeof ApplicationException.subclass;
+
+  compileTemplate: typeof ApplicationException.compileTemplate;
+  defaults: typeof ApplicationException.defaults;
+  normalizeInstanceConfig: typeof ApplicationException.normalizeInstanceConfig;
+  createDefaultInstance: typeof ApplicationException.createDefaultInstance;
+};
+
 export class ApplicationException extends Error {
   private readonly _own: AppExOwnProps;
   private readonly _compiled: AppExCompiledProps;
@@ -446,6 +620,8 @@ export class ApplicationException extends Error {
       idPrefix: icfg.idPrefix,
       useClassNameAsCode: icfg.useClassNameAsCode,
       useMessageAsDisplayMessage: icfg.useMessageAsDisplayMessage,
+      timestampFormatInJson: icfg.timestampFormatInJson,
+      applySuperDefaults: icfg.applySuperDefaults,
       mergeDetails: icfg.mergeDetails,
     };
     this._own = {
@@ -472,20 +648,22 @@ export class ApplicationException extends Error {
    * Static helpers
    */
 
-  static defaults(): AppExIcfgPojoConstructorDefaultsBuilder | null {
+  static defaults(): ApplicationExceptionDefaultsProps | null {
     return null;
   }
 
   static normalizeInstanceConfig(icfgInput: Partial<AppExIcfg>): AppExIcfg {
     const nowDate = new Date();
-    const defaults = this.defaults();
+    const defaultsProps = this.defaults();
+    const superDefaultsProps = Object.getPrototypeOf(this)?.defaults?.();
     return constructPojoSync<AppExIcfg, AppExIcfgPojoConstructorInput>(
       AppExIcfgPojoConstructor,
       {
-        nowDate,
+        now: nowDate,
         icfgInput,
-        ...(!defaults ? {} : { defaults }),
         class: this,
+        ...(!defaultsProps ? {} : { defaultsProps }),
+        ...(!superDefaultsProps ? {} : { superDefaultsProps }),
       },
     );
   }
@@ -532,22 +710,16 @@ export class ApplicationException extends Error {
    * Subclass helper
    */
 
-  static subclass(
+  static subclass<
+    CreateCtor extends (...args: any[]) => ApplicationException = (
+      ...args: any[]
+    ) => ApplicationException,
+  >(
     className: string,
-    defaults: AppExIcfgPojoConstructorDefaultsBuilder,
-  ): {
-    new (icfg: AppExIcfg): ApplicationException;
-
-    createDefaultInstance: typeof ApplicationException.createDefaultInstance;
-    new: typeof ApplicationException.new;
-    lines: typeof ApplicationException.lines;
-    prefixedLines: typeof ApplicationException.prefixedLines;
-    plines: typeof ApplicationException.plines;
-    subclass: typeof ApplicationException.subclass;
-
-    defaults: typeof ApplicationException.defaults;
-    normalizeInstanceConfig: typeof ApplicationException.normalizeInstanceConfig;
-    compileTemplate: typeof ApplicationException.compileTemplate;
+    defaults: ApplicationExceptionDefaultsProps,
+    createConstructor?: CreateCtor,
+  ): ApplicationExceptionStatic & {
+    create: CreateCtor;
   } {
     const Class = class extends this {};
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/name#telling_the_constructor_name_of_an_object
@@ -570,6 +742,17 @@ export class ApplicationException extends Error {
       enumerable: false,
       configurable: true,
     });
+    if (typeof createConstructor === 'function') {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
+      Class.create = createConstructor;
+    } else {
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-expect-error
+      Class.create = ApplicationException.new;
+    }
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-expect-error
     return Class;
   }
 
@@ -630,8 +813,26 @@ export class ApplicationException extends Error {
     return this;
   }
 
-  getTimestamp(): string {
+  getTimestamp(): Date {
+    return this._own.timestamp;
+  }
+
+  getTimestampIsoString(): string {
     return this._own.timestamp.toISOString();
+  }
+
+  getTimestampMilliseconds(): string {
+    return String(this._own.timestamp.getTime());
+  }
+
+  getTimestampForJson(): string {
+    switch (this._options.timestampFormatInJson) {
+      case 'milliseconds':
+        return this.getTimestampMilliseconds();
+      case 'iso':
+      default:
+        return this.getTimestampIsoString();
+    }
   }
 
   setNumCode(n: number): this {
@@ -862,7 +1063,7 @@ export class ApplicationException extends Error {
         ['stack', this.stack],
         ['id', this.getId()],
         ['causes', this.getCausesJson()],
-        ['timestamp', this.getTimestamp()],
+        ['timestamp', this.getTimestampForJson()],
         ['raw_message', this.getRawMessage()],
         ['raw_display_message', this.getRawDisplayMessage()],
         ['v', APP_EX_JSON_VERSION_0_1],
