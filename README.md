@@ -17,8 +17,10 @@
     * [Fields](#fields)
     * [Constructor variants](#constructor-variants)
     * [Templating](#templating)
-    * [Extending ApplicationException class](#extending-applicationexception-class)
-    * [Extending: Setting a type for `details` field](#extending--setting-a-type-for-details-field)
+    * [Custom exceptions: Extending ApplicationException class](#custom-exceptions--extending-applicationexception-class)
+    * [Custom exceptions: Using `subclass` static method](#custom-exceptions--using-subclass-static-method)
+    * [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions--providing-custom-handlebars-helpers)
+    * [Custom exceptions: Setting a type for `details` field](#custom-exceptions--setting-a-type-for-details-field)
 
 <!-- TOC -->
 
@@ -255,7 +257,7 @@ TODO
 with `npm run ts-file ./examples/custom-handlebars-helpers.ts` or see
 example's [source code](./examples/custom-handlebars-helpers.ts))</sub>
 
-### Extending: Setting a type for `details` field
+### Custom exceptions: Setting a type for `details` field
 
 examples/e2.ts
 
