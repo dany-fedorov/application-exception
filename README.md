@@ -519,3 +519,24 @@ This allows for code completion.
 And highlighting not allowed fields by TypeScript aware IDEs.
 
 ![Details Field Webstorm TypeScript Error Highlighting](./details-field-webstorm-typescript-error-highlight.png)
+
+# API
+
+## Fields
+
+TODO
+
+## Options
+
+TODO
+
+## Helper methods (lifecycle methods)
+
+TODO
+
+## Handlebars Helpers
+
+- pad
+- json
+ 
+TODO

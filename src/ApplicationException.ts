@@ -709,6 +709,26 @@ export type ApplicationExceptionStatic = {
   createDefaultInstance: typeof ApplicationException.createDefaultInstance;
 };
 
+type AppExTemplateCompilationContext<Details = Record<string, unknown>> = {
+  [k: string]: unknown;
+  self: {
+    id: string;
+    timestamp: Date;
+    code?: string;
+    numCode?: number;
+    details?: Details;
+
+    message: string;
+    displayMessage?: string;
+
+    constructor_name: string;
+
+    _options: AppExOptions;
+    _own: AppExOwnProps;
+    _compiled: AppExCompiledProps;
+  };
+};
+
 export class ApplicationException extends Error {
   private readonly _own: AppExOwnProps;
   private readonly _compiled: AppExCompiledProps;
@@ -778,10 +798,10 @@ export class ApplicationException extends Error {
     );
   }
 
-  static createDefaultInstance(
+  static createDefaultInstance<Class extends ApplicationException>(
     icfgInput: Partial<AppExIcfg>,
-  ): ApplicationException {
-    return new this(this.normalizeInstanceConfig(icfgInput));
+  ): Class {
+    return new this(this.normalizeInstanceConfig(icfgInput)) as Class;
   }
 
   static compileTemplate(
@@ -796,25 +816,35 @@ export class ApplicationException extends Error {
 
   /**
    * Constructor variants
+   *
+   * generic Class is required because https://github.com/microsoft/TypeScript/issues/5863
    */
 
-  static new(message?: string): ApplicationException {
-    return this.createDefaultInstance(message === undefined ? {} : { message });
+  static new<Class extends ApplicationException = ApplicationException>(
+    message?: string,
+  ): Class {
+    return this.createDefaultInstance<Class>(
+      message === undefined ? {} : { message },
+    );
   }
 
-  static lines(...lines: string[]): ApplicationException {
-    return this.new(lines.join('\n'));
+  static lines<Class extends ApplicationException = ApplicationException>(
+    ...lines: string[]
+  ): Class {
+    return this.new<Class>(lines.join('\n'));
   }
 
-  static prefixedLines(
+  static prefixedLines<
+    Class extends ApplicationException = ApplicationException,
+  >(prefix: string, ...lines: string[]): Class {
+    return this.lines<Class>(...lines.map((l) => `${prefix}: ${l}`));
+  }
+
+  static plines<Class extends ApplicationException = ApplicationException>(
     prefix: string,
     ...lines: string[]
-  ): ApplicationException {
-    return this.lines(...lines.map((l) => `${prefix}: ${l}`));
-  }
-
-  static plines(prefix: string, ...lines: string[]): ApplicationException {
-    return this.prefixedLines(prefix, ...lines);
+  ): Class {
+    return this.prefixedLines<Class>(prefix, ...lines);
   }
 
   /**
@@ -870,18 +900,24 @@ export class ApplicationException extends Error {
    * Instance helpers
    */
 
-  private getCompilationContext() {
+  getTemplateCompilationContext(): AppExTemplateCompilationContext<
+    Parameters<this['setDetails']>[0]
+  > {
+    const code = this.getCode();
+    const numCode = this.getNumCode();
+    const details = this.getDetails();
+    const displayMessage = this.getRawDisplayMessage();
     return {
       ...this.getDetails(),
       self: {
         id: this.getId(),
         timestamp: this.getTimestamp(),
-        code: this.getCode(),
-        numCode: this.getNumCode(),
-        details: this.getDetails(),
+        ...(!code ? {} : { code }),
+        ...(!numCode ? {} : { numCode }),
+        ...(!details ? {} : { details }),
 
         message: this.getRawMessage(),
-        displayMessage: this.getRawDisplayMessage(),
+        ...(!displayMessage ? {} : { displayMessage }),
 
         constructor_name: this.constructor.name,
 
@@ -892,7 +928,7 @@ export class ApplicationException extends Error {
     };
   }
 
-  private compileTemplate(
+  compileTemplate(
     templateString: string,
     compilationContext: Record<string, unknown>,
   ): string {
@@ -999,7 +1035,7 @@ export class ApplicationException extends Error {
     }
     const compiled = this.compileTemplate(
       this.getRawDisplayMessage() as string,
-      this.getCompilationContext(),
+      this.getTemplateCompilationContext(),
     );
     this._compiled.compiledDisplayMessage = compiled;
   }
@@ -1031,7 +1067,7 @@ export class ApplicationException extends Error {
     }
     const compiled = this.compileTemplate(
       this.message,
-      this.getCompilationContext(),
+      this.getTemplateCompilationContext(),
     );
     this._compiled.compiledMessage = compiled;
   }
@@ -1156,8 +1192,8 @@ export class ApplicationException extends Error {
     return this.addDetails(d);
   }
 
-  causedBy(...cs: unknown[]): this {
-    return this.addCauses(...cs);
+  causedBy(...causes: unknown[]): this {
+    return this.addCauses(...causes);
   }
 
   options(opts: Partial<AppExOptions>): this {

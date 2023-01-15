@@ -264,10 +264,10 @@ describe('ApplicationException: Regular constructor', function () {
               "value": "Error: Je suis Erreur",
             },
             "constructor_name": "Error",
-            "is_error_instance": true,
+            "instanceof_error": true,
             "message": "Je suis Erreur",
             "typeof": "object",
-            "v": "corj/v0.2",
+            "v": "corj/v0.3",
           },
           Object {
             "as_json": Object {
@@ -279,9 +279,9 @@ describe('ApplicationException: Regular constructor', function () {
               "value": "And I'm just a string",
             },
             "constructor_name": "String",
-            "is_error_instance": false,
+            "instanceof_error": false,
             "typeof": "string",
-            "v": "corj/v0.2",
+            "v": "corj/v0.3",
           },
           Object {
             "as_json": Object {
@@ -293,9 +293,9 @@ describe('ApplicationException: Regular constructor', function () {
               "value": "9876",
             },
             "constructor_name": "Number",
-            "is_error_instance": false,
+            "instanceof_error": false,
             "typeof": "number",
-            "v": "corj/v0.2",
+            "v": "corj/v0.3",
           },
         ],
         "constructor_name": "ApplicationException",
