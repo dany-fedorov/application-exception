@@ -46,10 +46,12 @@ I'll be happy if this library is useful for somebody except myself, but please m
 
 ## Features
 
-- Provides a selection of fields most likely to be useful when building an API back-end or a CLI program
+- Provides a selection of fields commonly used with exceptions
 - Builder pattern for better DX
-- Provides a JSON representation available with `toJSON` method
+- Provides a JSON representation available with `toJSON` method (including nested exceptions set with `.causedBy`)
+- Error message templating with handlebars
 - Configurable with good defaults
+- Ergonomically create custom exceptions
 
 ## Guide
 
