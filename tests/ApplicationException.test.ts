@@ -10,6 +10,8 @@ const APPLICATION_EXCEPTION_DEFAULTS: AppExIcfg = {
   mergeDetails: (d0, d1) => ({ ...d0, ...d1 }),
   useMessageAsDisplayMessage: false,
   useClassNameAsCode: false,
+  timestampFormatInJson: 'iso',
+  applySuperDefaults: true,
 };
 
 describe('ApplicationException: Regular constructor', function () {

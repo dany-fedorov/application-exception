@@ -17,9 +17,7 @@
     * [Fields](#fields)
     * [Constructor variants](#constructor-variants)
     * [Templating](#templating)
-    * [Extending: Using ApplicationException.subclass](#extending--using-applicationexceptionsubclass)
-    * [Extending: Extending ApplicationException class](#extending--extending-applicationexception-class)
-    * [Extending: Custom constructor](#extending--custom-constructor)
+    * [Extending ApplicationException class](#extending-applicationexception-class)
     * [Extending: Setting a type for `details` field](#extending--setting-a-type-for-details-field)
 
 <!-- TOC -->
@@ -237,7 +235,7 @@ const e = AppEx.new('Bad thing happened')
 Overriding static method `defaults` allows to specify default values of exception fields.
 
 <sub>(Run with `npm run ts-file ./examples/extending-class-example.ts` or see
-example's [source code](./examples/extending-class-example.t))</sub>
+example's [source code](./examples/extending-class-example.ts))</sub>
 
 TODO
 
@@ -248,5 +246,7 @@ example's [source code](./examples/subclass-example.ts))</sub>
 TODO
 
 ### Extending: Setting a type for `details` field
+
+examples/e2.ts
 
 TODO
