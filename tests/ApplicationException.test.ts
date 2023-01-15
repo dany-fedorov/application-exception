@@ -8,6 +8,7 @@ const APPLICATION_EXCEPTION_DEFAULTS: AppExIcfg = {
   idBody: 'test-id',
   timestamp: new Date(),
   mergeDetails: (d0, d1) => ({ ...d0, ...d1 }),
+  handlebarsHelpers: {},
   useMessageAsDisplayMessage: false,
   useClassNameAsCode: false,
   timestampFormatInJson: 'iso',

@@ -58,8 +58,26 @@ function mkProblemMessage(s: string): string {
   return `${ApplicationException.name} problem: ${s}`;
 }
 
-function mkHbsHelpers() {
+function mkHbsDefaultHelpers() {
   return {
+    pad: function hbsJsonHelper(...args: unknown[]): string {
+      // TODO: make safer
+      try {
+        if (args.length === 3) {
+          return (args[1] as string).padEnd(args[0] as number);
+        } else if (args.length === 4) {
+          return (args[2] as string).padEnd(
+            args[0] as number,
+            args[1] as string,
+          );
+        } else {
+          return '';
+        }
+      } catch (caught: unknown) {
+        console.warn((caught as any)?.stack || caught);
+        return '';
+      }
+    },
     json: function hbsJsonHelper(...args: unknown[]): string {
       try {
         const { value, indent, options } = parseJsonHelperArgs(args);
@@ -134,6 +152,7 @@ export type AppExOptions = {
     d0: Record<string, unknown>,
     d1: Record<string, unknown>,
   ) => Record<string, unknown>;
+  handlebarsHelpers: Record<string, (...args: any[]) => string>;
   idPrefix: string;
 };
 
@@ -226,6 +245,12 @@ class AppExIcfgDefaultsPojoConstructor
           ...d1,
         };
       },
+    };
+  }
+
+  handlebarsHelpers() {
+    return {
+      value: mkHbsDefaultHelpers(),
     };
   }
 
@@ -435,6 +460,66 @@ class AppExIcfgPojoConstructor
     });
   }
 
+  handlebarsHelpers(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorHelpersHostSync<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    const { icfgInput } = input;
+    const inputDefaults = this[PRIVATE].getInputDefaults(input);
+    const defaultDefaults = this[PRIVATE].getDefaultDefaults(input);
+    const superDefaultsArray = this[PRIVATE].getSuperDefaultsArray(
+      helpers.cache,
+      input,
+    );
+    const hasThisProp = (obj: Partial<AppExIcfg>): boolean =>
+      hasProp(obj, 'handlebarsHelpers') &&
+      typeof obj['handlebarsHelpers'] === 'object' &&
+      obj['handlebarsHelpers'] !== null &&
+      !Array.isArray(obj);
+    const hasInIcfgInput = hasThisProp(icfgInput);
+    const hasInInputDefaults =
+      inputDefaults !== null && hasThisProp(inputDefaults);
+    const useSuperDefaultsArray =
+      Array.isArray(superDefaultsArray) && superDefaultsArray.length > 0;
+    const defaultDefaultsVal = defaultDefaults['handlebarsHelpers'] as Record<
+      string,
+      (...args: any[]) => string
+    >;
+    if (hasInIcfgInput || hasInInputDefaults || useSuperDefaultsArray) {
+      const inputDefaultsVal = !hasInInputDefaults
+        ? {}
+        : (inputDefaults['handlebarsHelpers'] as Record<string, unknown>);
+      const superDefaultsVal = {};
+      if (useSuperDefaultsArray) {
+        for (let i = 0; i < (superDefaultsArray as any[]).length; i++) {
+          const thisSuper = (superDefaultsArray as any[])[
+            (superDefaultsArray as any[]).length - 1 - i
+          ];
+          if (hasThisProp(thisSuper)) {
+            Object.assign(superDefaultsVal, thisSuper['handlebarsHelpers']);
+          }
+        }
+      }
+      const inputVal = !hasInIcfgInput
+        ? {}
+        : (icfgInput['handlebarsHelpers'] as Record<string, unknown>);
+      return {
+        value: {
+          ...defaultDefaultsVal,
+          ...superDefaultsVal,
+          ...inputDefaultsVal,
+          ...inputVal,
+        },
+      };
+    }
+    return {
+      value: defaultDefaultsVal,
+    };
+  }
+
   details(
     input: AppExIcfgPojoConstructorInput,
     helpers: PojoConstructorHelpersHostSync<
@@ -638,6 +723,7 @@ export class ApplicationException extends Error {
       timestampFormatInJson: icfg.timestampFormatInJson,
       applySuperDefaults: icfg.applySuperDefaults,
       mergeDetails: icfg.mergeDetails,
+      handlebarsHelpers: icfg.handlebarsHelpers,
     };
     this._own = {
       idBody: icfg.idBody,
@@ -701,9 +787,10 @@ export class ApplicationException extends Error {
   static compileTemplate(
     templateString: string,
     compilationContext: Record<string, unknown>,
+    helpers: Record<string, (...args: any[]) => string>,
   ): string {
     return hbs.compile(templateString)(compilationContext, {
-      helpers: mkHbsHelpers(),
+      helpers,
     });
   }
 
@@ -797,6 +884,8 @@ export class ApplicationException extends Error {
         message: this.getRawMessage(),
         displayMessage: this.getRawDisplayMessage(),
 
+        constructor_name: this.constructor.name,
+
         _options: this._options,
         _own: this._own,
         _compiled: this._compiled,
@@ -812,7 +901,11 @@ export class ApplicationException extends Error {
       typeof (this.constructor as any).compileTemplate === 'function'
         ? (this.constructor as any).compileTemplate
         : ApplicationException.compileTemplate;
-    return compileTemplateFn(templateString, compilationContext);
+    return compileTemplateFn(
+      templateString,
+      compilationContext,
+      this._options.handlebarsHelpers,
+    );
   }
 
   /**
