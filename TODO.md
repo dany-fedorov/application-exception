@@ -2,9 +2,11 @@
 - [x] a way to make details typed [supported with extending classes]
 - [x] a way to provide a merge function to merge details
 - [ ] make more files to make code easier to understand
+- [ ] Allow to parametrize hbs helpers, add example with helpers to format date
 - [ ] docs
-    - Steve McConnell disagrees
-    - Features
+    - [ ] Make a good guide
+    - [x] Steve McConnell disagrees
+    - [x] Features
         - fields + builder pattern
         - json representation
         - configurable with good defaults
