@@ -20,6 +20,12 @@ const MyAppException = AppEx.subclass(
     },
   },
 );
+const MyAppException = AppEx.subclass('MyAppException', {}, {
+  create: // ...
+})
+const MyAppException = AppEx.subclass('MyAppException', {
+  useClassNameAsCode: true,
+})
 ```
 - [ ] Allow to parametrize hbs helpers, add example with helpers to format date
 - [ ] docs
