@@ -6,12 +6,12 @@
 ```typescript
 const MyAppException = AppEx.subclass(
   'MyAppException',
-  {
+  ({ now }) => ({
     useClassNameAsCode: true,
     details: {
       src: 'my-app-api-server',
     },
-  },
+  }), // but plain object is also supported
   { // a place for static methods
     create(this: ApplicationExceptionStatic, num: number) {
       return this.new(
