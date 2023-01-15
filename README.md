@@ -230,7 +230,8 @@ const e = AppEx.new('Bad thing happened')
     '- self.code - {{self.code}}',
     '- self.numCode - {{self.numCode}}',
     '- self.details - {{{json self.details}}}',
-    '- self.details indented - {{{json self.details 2}}}',
+    '- self.details indented -',
+    '{{{json self.details 4}}}',
   );
 ```
 
