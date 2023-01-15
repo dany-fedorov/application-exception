@@ -10,8 +10,8 @@
 
 <!-- TOC -->
 
-* [Motivation](#motivation)
 * [Features](#features)
+* [Motivation](#motivation)
 * [Guide](#guide)
     * [Defaults](#defaults)
     * [Fields](#fields)
@@ -21,6 +21,15 @@
     * [Extending: Setting a type for `details` field](#extending--setting-a-type-for-details-field)
 
 <!-- TOC -->
+
+## Features
+
+- Provides a selection of fields commonly used with exceptions
+- Builder pattern for better DX
+- Provides a JSON representation available with `toJSON` method (including nested exceptions set with `.causedBy`)
+- Error message templating with handlebars
+- Configurable with good defaults
+- Ergonomically create custom exceptions
 
 ## Motivation
 
@@ -43,15 +52,6 @@ likely that in case of working on a project like this you also win more from del
 writing exceptional (pun intended) quality code.
 
 I'll be happy if this library is useful for somebody except myself, but please make sure that you really need it.
-
-## Features
-
-- Provides a selection of fields commonly used with exceptions
-- Builder pattern for better DX
-- Provides a JSON representation available with `toJSON` method (including nested exceptions set with `.causedBy`)
-- Error message templating with handlebars
-- Configurable with good defaults
-- Ergonomically create custom exceptions
 
 ## Guide
 
