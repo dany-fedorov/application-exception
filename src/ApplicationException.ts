@@ -60,7 +60,7 @@ function mkProblemMessage(s: string): string {
 
 function mkHbsDefaultHelpers() {
   return {
-    pad: function hbsJsonHelper(...args: unknown[]): string {
+    pad: function hbs_helper_pad(...args: unknown[]): string {
       // TODO: make safer
       try {
         if (args.length === 3) {
@@ -78,7 +78,7 @@ function mkHbsDefaultHelpers() {
         return '';
       }
     },
-    json: function hbsJsonHelper(...args: unknown[]): string {
+    json: function hbs_helper_json(...args: unknown[]): string {
       try {
         const { value, indent, options } = parseJsonHelperArgs(args);
         return appEx_jsonStringifySafe(value, indent, {
