@@ -1,7 +1,7 @@
 # Application Exception
 
 ![Jest coverage](https://raw.githubusercontent.com/dany-fedorov/application-exception/main/badges/coverage-jest%20coverage.svg)
-[![Strictest TypeScript Config](https://badgen.net/badge/typescript/strictest "Strictest TypeScript Config")](https://www.npmjs.com/package/@tsconfig/strictest)
+[![Strictest TypeScript Config](https://badgen.net/badge/typescript/strictest 'Strictest TypeScript Config')](https://www.npmjs.com/package/@tsconfig/strictest)
 [![Package License MIT](https://img.shields.io/npm/l/pojo-constructor.svg)](https://www.npmjs.org/package/application-exception)
 [![Npm Version](https://img.shields.io/npm/v/application-exception.svg)](https://www.npmjs.org/package/application-exception)
 
@@ -10,17 +10,17 @@
 
 <!-- TOC -->
 
-* [Features](#features)
-* [Motivation](#motivation)
-* [Guide](#guide)
-    * [Defaults](#defaults)
-    * [Fields](#fields)
-    * [Constructor variants](#constructor-variants)
-    * [Templating](#templating)
-    * [Custom exceptions: Extending ApplicationException class](#custom-exceptions--extending-applicationexception-class)
-    * [Custom exceptions: Using `subclass` static method](#custom-exceptions--using-subclass-static-method)
-    * [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions--providing-custom-handlebars-helpers)
-    * [Custom exceptions: Setting a type for `details` field](#custom-exceptions--setting-a-type-for-details-field)
+- [Features](#features)
+- [Motivation](#motivation)
+- [Guide](#guide)
+  - [Defaults](#defaults)
+  - [Fields](#fields)
+  - [Constructor variants](#constructor-variants)
+  - [Templating](#templating)
+  - [Custom exceptions: Extending ApplicationException class](#custom-exceptions-extending-applicationexception-class)
+  - [Custom exceptions: Using `subclass` static method](#custom-exceptions-using-subclass-static-method)
+  - [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions-providing-custom-handlebars-helpers)
+  - [Custom exceptions: Setting a type for `details` field](#custom-exceptions-setting-a-type-for-details-field)
 
 <!-- TOC -->
 
@@ -35,8 +35,8 @@
 
 ## Motivation
 
-> *"Programs that use exceptions as part of their normal processing suffer from all the readability and
-> maintainability problems of classic spaghetti code."*
+> _"Programs that use exceptions as part of their normal processing suffer from all the readability and
+> maintainability problems of classic spaghetti code."_
 > — Andy Hunt, Dave Thomas - The Pragmatic Programmer
 
 It is hard to disagree with software engineering classics. Nevertheless, many times I found myself reimplementing the
@@ -119,7 +119,7 @@ example's [source code](./examples/builder-pattern-simple-example.ts))</sub>
 throw AppEx.new(`Could not fetch a resource with id ${id}`)
   .numCode(404)
   .code('RESOURCE_NOT_FOUND')
-  .details({id});
+  .details({ id });
 ```
 
 This is a more complicated example.
@@ -141,13 +141,13 @@ function addUser(email: string): void {
         .code('USER_ALREADY_EXISTS')
         .numCode(400)
         .causedBy(caught)
-        .details({email});
+        .details({ email });
     } else {
       throw AppEx.new('Could not create user')
         .displayMessage('Something went wrong, please visit help center')
         .numCode(500)
         .causedBy(caught)
-        .details({email});
+        .details({ email });
     }
   }
 }
@@ -229,6 +229,10 @@ const e = AppEx.new('Bad thing happened')
     '- self.timestamp - {{self.timestamp}}',
     '- self.code - {{self.code}}',
     '- self.numCode - {{self.numCode}}',
+    '- self.constructor_name - {{self.constructor_name}}',
+    'helpers',
+    '- self.id padded 1 - {{pad 40 self.id}}: "I am padded"',
+    '- self.id padded 2 - {{pad 40 "-" self.id}}: "I am padded"',
     '- self.details - {{{json self.details}}}',
     '- self.details indented -',
     '{{{json self.details 4}}}',
@@ -242,15 +246,167 @@ Overriding static method `defaults` allows to specify default values of exceptio
 <sub>(Run with `npm run ts-file ./examples/extending-class-example.ts` or see
 example's [source code](./examples/extending-class-example.ts))</sub>
 
-TODO
+```typescript
+class MyAppException extends ApplicationException {
+  static override defaults(): ApplicationExceptionDefaultsProps {
+    return {
+      details({ now }) {
+        return {
+          value: {
+            src: 'my-app-api-server',
+            ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
+              locale: localeUkraine,
+            }),
+          },
+        };
+      },
+      useClassNameAsCode() {
+        return { value: true };
+      },
+    };
+  }
+
+  static create(this: ApplicationExceptionStatic, num: number) {
+    return this.new(
+      'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
+    ).details({ num });
+  }
+}
+```
+
+You can still use `new` static method as a constructor like this
+
+```typescript
+const e1 = MyAppException.new(
+  'Using the default `new` constructor. "src" is set by default: {{src}}',
+);
+const e1Json = e1.toJSON();
+delete e1Json.stack;
+console.log(e1Json);
+```
+
+which prints
+
+```text
+{
+  constructor_name: 'MyAppException',
+  message: 'Using the default `new` constructor. "src" is set by default: my-app-api-server',
+  code: 'MyAppException',
+  details: {
+    src: 'my-app-api-server',
+    ts_in_ukraine: '15 січня 2023, 05:04:46'
+  },
+  id: 'AE_TDHCSXDTETRSQFTSTS3QRF3SCQ',
+  timestamp: '2023-01-15T03:04:46.173Z',
+  raw_message: 'Using the default `new` constructor. "src" is set by default: {{src}}',
+  v: 'appex/v0.1'
+}
+```
+
+But you've also defined a `create` static constructor, that should be more suitable to intended calling context
+of `MyAppException`.
+
+```typescript
+const e2 = MyAppException.create(21);
+const e2Json = e2.toJSON();
+delete e2Json.stack;
+console.log(e2Json);
+```
+
+prints
+
+```text
+{
+  constructor_name: 'MyAppException',
+  message: 'Creating from `create` static method. "num" is: 21. Also "src" is set by default: my-app-api-server.',
+  code: 'MyAppException',
+  details: {
+    src: 'my-app-api-server',
+    ts_in_ukraine: '15 січня 2023, 05:06:35',
+    num: 21
+  },
+  id: 'AE_3RKF2423NK98JCH82Z25BDWBKR',
+  timestamp: '2023-01-15T03:06:35.681Z',
+  raw_message: 'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
+  v: 'appex/v0.1'
+}
+```
+
+You can further extend `MyAppException`. `MyServiceException` inherits all instance and static methods and also inherits
+defaults. `details` field objects are merged (can be configured with `mergeDetails` option).
+
+```typescript
+class MyServiceException extends MyAppException {
+  static override defaults(): ApplicationExceptionDefaultsProps {
+    return {
+      details() {
+        return { value: { scope: 'my-service' } };
+      },
+    };
+  }
+}
+
+const e3 = MyServiceException.create(123);
+const e3Json = e3.toJSON();
+delete e3Json.stack;
+console.log(e3Json);
+```
+
+prints
+
+```text
+{
+  constructor_name: 'MyServiceException',
+  message: 'Creating from `create` static method. "num" is: 123. Also "src" is set by default: my-app-api-server.',
+  code: 'MyServiceException',
+  details: {
+    src: 'my-app-api-server',
+    ts_in_ukraine: '15 січня 2023, 05:07:41',
+    scope: 'my-service',
+    num: 123
+  },
+  id: 'AE_V535S4SK0W8RWARKR8DMVBJ5X1',
+  timestamp: '2023-01-15T03:07:41.837Z',
+  raw_message: 'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
+  v: 'appex/v0.1'
+}
+```
 
 ### Custom exceptions: Using `subclass` static method
+
+`MyAppException` is the same as in example from previous section. Using `subclass` is supposed to be an idiomatic way to
+extend `ApplicationException`, but it is less obvious and does not allow you to use new class as TypeScript type. If
+this does not prove to be useful, I intend to delete this as a breaking change.
 
 <sub>(Run
 with `npm run ts-file ./examples/subclass-example.ts` or see
 example's [source code](./examples/subclass-example.ts))</sub>
 
-TODO
+```typescript
+const MyAppException = AppEx.subclass(
+  'MyAppException',
+  {
+    details({ now }) {
+      return {
+        value: {
+          src: 'my-app-api-server',
+          ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
+            locale: localeUkraine,
+          }),
+        },
+      };
+    },
+    useClassNameAsCode() {
+      return { value: true };
+    },
+  },
+  function create(this: ApplicationExceptionStatic, num: number) {
+    return this.new(
+      'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
+    ).details({ num });
+  },
+);
+```
 
 ### Custom exceptions: Providing custom handlebars helpers
 
@@ -258,8 +414,108 @@ TODO
 with `npm run ts-file ./examples/custom-handlebars-helpers.ts` or see
 example's [source code](./examples/custom-handlebars-helpers.ts))</sub>
 
+```typescript
+const MyAppException = AppEx.subclass(
+  'MyAppException',
+  {
+    handlebarsHelpers() {
+      return {
+        value: {
+          'date-iso': function (...args: unknown[]): string {
+            return new Date(args[0] as Date).toISOString();
+          },
+          'date-fmt': function (...args: unknown[]): string {
+            return format(new Date(args[1] as Date), args[0] as string, {
+              locale: localeUkraine,
+            });
+          },
+        },
+      };
+    },
+    details({ now }) {
+      return {
+        value: {
+          src: 'my-app-api-server',
+          ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
+            locale: localeUkraine,
+          }),
+        },
+      };
+    },
+    useClassNameAsCode() {
+      return { value: true };
+    },
+  },
+  function create(this: ApplicationExceptionStatic, num: number) {
+    return this.new(
+      '{{pad 20 self.constructor_name}} // ISO Date: {{date-iso self.timestamp}}; Formatted Date: {{date-fmt "d MMMM yyyy, HH:mm:ss" self.timestamp}}; num: {{num}}',
+    ).details({ num });
+  },
+);
+
+const e = MyAppException.create(543231);
+
+console.log(e.getMessage());
+
+const MyServiceException = MyAppException.subclass('MyServiceException', {
+  details() {
+    return { value: { service: 'my-service' } };
+  },
+});
+
+const e1 = MyServiceException.create(3098);
+
+console.log(e1.getMessage());
+```
+
+prints
+
+```text
+MyAppException       // ISO Date: 2023-01-15T03:23:00.647Z; Formatted Date: 15 січня 2023, 05:23:00; num: 543231
+MyServiceException   // ISO Date: 2023-01-15T03:23:00.660Z; Formatted Date: 15 січня 2023, 05:23:00; num: 3098
+```
+
 ### Custom exceptions: Setting a type for `details` field
 
-examples/e2.ts
+To assign a type to `details` field, you need to override `setDetails` method and make a function with assertion that it
+will return a subclass.
 
-TODO
+<sub>(Run
+with `npm run ts-file ./examples/typing-details-fiels.ts` or see
+example's [source code](./examples/typing-details-fiels.ts))</sub>
+
+```typescript
+type Details = {
+  firstName: string;
+  lastName: string;
+};
+
+class MyAppException extends ApplicationException {
+  override setDetails(d: Details): this {
+    return super.setDetails(d);
+  }
+
+  static create(): MyAppException {
+    return new MyAppException(
+      this.normalizeInstanceConfig({
+        message: 'Hey, {{firstName}} {{lastName}}! You got a new exception!',
+      }),
+    );
+  }
+}
+
+const e = MyAppException.create().code('HEY').details({
+  firstName: 'Isaac',
+  lastName: 'Newton',
+});
+
+console.log(e.getMessage());
+```
+
+This allows for code completion.
+
+![Details Field Webstorm Code Completion](./details-field-webstorm-code-completion.png)
+
+And highlighting not allowed fields by TypeScript aware IDEs.
+
+![Details Field Webstorm TypeScript Error Highlighting](./details-field-webstorm-typescript-error-highlight.png)

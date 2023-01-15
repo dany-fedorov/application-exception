@@ -25,7 +25,8 @@
     "typescript",
     "exception",
     "error helper",
-    "error wrapper"
+    "error wrapper",
+    "ApplicationException"
   ],
   "author": "Dany Fedorov",
   "license": "MIT",

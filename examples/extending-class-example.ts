@@ -36,18 +36,25 @@ const e1 = MyAppException.new(
   'Using the default `new` constructor. "src" is set by default: {{src}}',
 );
 
-console.log(e1.toJSON());
+const e1Json = e1.toJSON();
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+delete e1Json.stack;
 
-const e2 = MyAppException.create(1);
+console.log(e1Json);
 
-console.log(e2.toJSON());
+const e2 = MyAppException.create(21);
+
+const e2Json = e2.toJSON();
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+delete e2Json.stack;
+
+console.log(e2Json);
 
 class MyServiceException extends MyAppException {
   static override defaults(): ApplicationExceptionDefaultsProps {
     return {
-      // applySuperDefaults() {
-      //   return { value: false };
-      // },
       details() {
         return { value: { scope: 'my-service' } };
       },
@@ -55,4 +62,11 @@ class MyServiceException extends MyAppException {
   }
 }
 
-console.log(MyServiceException.create(123).toJSON());
+const e3 = MyServiceException.create(123);
+
+const e3Json = e3.toJSON();
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+delete e3Json.stack;
+
+console.log(e3Json);

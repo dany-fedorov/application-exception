@@ -827,7 +827,7 @@ export class ApplicationException extends Error {
     ) => ApplicationException,
   >(
     className: string,
-    defaults: ApplicationExceptionDefaultsProps,
+    defaults?: ApplicationExceptionDefaultsProps | null,
     create?: CreateCtor,
   ): ApplicationExceptionStatic & {
     create: CreateCtor;
@@ -840,12 +840,11 @@ export class ApplicationException extends Error {
       enumerable: false,
       configurable: true,
     });
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const self = this;
-    Class.defaults = function () {
-      const parentDefaults = self.defaults();
-      return { ...(parentDefaults ?? {}), ...defaults };
-    };
+    if (defaults) {
+      Class.defaults = function () {
+        return defaults;
+      };
+    }
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/name
     Object.defineProperty(Class.prototype, 'name', {
       value: className,

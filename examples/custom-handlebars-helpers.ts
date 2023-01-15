@@ -50,6 +50,6 @@ const MyServiceException = MyAppException.subclass('MyServiceException', {
   },
 });
 
-const e1 = MyServiceException.create(543231);
+const e1 = MyServiceException.create(3098);
 
 console.log(e1.getMessage());
