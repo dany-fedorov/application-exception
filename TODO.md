@@ -1,7 +1,7 @@
 - [x] a way to make message defaultable - .new accept no arg?
 - [x] a way to make details typed [supported with extending classes]
 - [x] a way to provide a merge function to merge details
-- [ ] make more files to make code easier to understand
+- [x] Collect all superdefaults, not only from immediate prototype
 - [ ] Allow to parametrize hbs helpers, add example with helpers to format date
 - [ ] docs
     - [ ] Make a good guide
@@ -13,3 +13,4 @@
 - [ ] add json schema options
 - [ ] tests
 - [ ] semantic-release
+- [ ] make more files to make code easier to understand

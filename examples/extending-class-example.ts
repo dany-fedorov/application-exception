@@ -4,7 +4,7 @@ import {
   ApplicationExceptionStatic,
 } from '../src';
 import { format } from 'date-fns';
-import localeUk from 'date-fns/locale/uk';
+import localeUkraine from 'date-fns/locale/uk';
 
 class MyAppException extends ApplicationException {
   static override defaults(): ApplicationExceptionDefaultsProps {
@@ -14,7 +14,7 @@ class MyAppException extends ApplicationException {
           value: {
             src: 'my-app-api-server',
             ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
-              locale: localeUk,
+              locale: localeUkraine,
             }),
           },
         };

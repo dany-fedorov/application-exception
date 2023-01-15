@@ -41,12 +41,14 @@ import { ApplicationException } from '../src';
 // const e = AppEx.createDefaultInstance({});
 const e = new ApplicationException({
   idPrefix: 'ID_PREFIX_',
-  idBody: 'test-id',
   message: 'test message',
+  idBody: 'test-id',
   timestamp: new Date(),
   mergeDetails: (d0, d1) => ({ ...d0, ...d1 }),
   useMessageAsDisplayMessage: false,
   useClassNameAsCode: false,
+  timestampFormatInJson: 'iso',
+  applySuperDefaults: true,
 });
 
 console.log(e);

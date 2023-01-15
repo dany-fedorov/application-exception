@@ -178,7 +178,7 @@ type AppExIcfgPojoConstructorInput = {
   icfgInput: Partial<AppExIcfg>;
   now: Date;
   defaultsProps?: ApplicationExceptionDefaultsProps;
-  superDefaultsProps?: ApplicationExceptionDefaultsProps;
+  superDefaultsPropsArray?: ApplicationExceptionDefaultsProps[];
   class: { new (icfg: AppExIcfg): ApplicationException; name: string };
 };
 
@@ -239,28 +239,28 @@ class AppExIcfgDefaultsPojoConstructor
 const PRIVATE = Symbol('PRIVATE_SYM');
 
 class AppExIcfgPojoConstructorPrivateProps {
-  superDefaults: Partial<AppExIcfg> | null = null;
+  superDefaultsArray: Partial<AppExIcfg>[] | null = null;
   inputDefaults: Partial<AppExIcfg> | null = null;
   defaultDefaults: AppExIcfg | null = null;
 
-  getSuperDefaults(
+  getSuperDefaultsArray(
     resolved: PojoConstructorProxySync<
       AppExIcfg,
       AppExIcfgDefaultsPojoConstructorInput
     >,
     input: AppExIcfgPojoConstructorInput,
-  ): Partial<AppExIcfg> | null {
+  ): Partial<AppExIcfg>[] | null {
     if (
       resolved.applySuperDefaults().value === true &&
-      this.superDefaults === null &&
-      input.superDefaultsProps
+      this.superDefaultsArray === null &&
+      Array.isArray(input.superDefaultsPropsArray) &&
+      input.superDefaultsPropsArray.length > 0
     ) {
-      this.superDefaults = constructPojoFromInstanceSync(
-        input.superDefaultsProps,
-        input,
-      );
+      this.superDefaultsArray = input.superDefaultsPropsArray.map((d) => {
+        return constructPojoFromInstanceSync(d, input);
+      });
     }
-    return this.superDefaults;
+    return this.superDefaultsArray;
   }
 
   getInputDefaults(
@@ -293,17 +293,17 @@ class AppExIcfgPojoConstructorPrivateProps {
     input: AppExIcfgPojoConstructorInput,
     resolvePropInput: Omit<
       ResolveAppExIcfgPropInput<K>,
-      'inputDefaults' | 'defaultDefaults' | 'superDefaults' | 'icfgInput'
+      'inputDefaults' | 'defaultDefaults' | 'superDefaultsArray' | 'icfgInput'
     >,
   ): PojoConstructorPropMethodValue<AppExIcfg[K]> {
     return resolveAppExIcfgProp({
       ...resolvePropInput,
       icfgInput: input.icfgInput,
       inputDefaults: this.getInputDefaults(input),
-      superDefaults:
+      superDefaultsArray:
         resolvePropInput.propName === 'applySuperDefaults'
           ? null
-          : this.getSuperDefaults(resolved, input),
+          : this.getSuperDefaultsArray(resolved, input),
       defaultDefaults: this.getDefaultDefaults(input),
     });
   }
@@ -314,7 +314,7 @@ type ResolveAppExIcfgPropInput<K extends keyof AppExIcfg> = {
   isValid: (value: AppExIcfg[K]) => boolean;
   icfgInput: Partial<AppExIcfg>;
   inputDefaults: Partial<AppExIcfg> | null;
-  superDefaults: Partial<AppExIcfg> | null;
+  superDefaultsArray: Partial<AppExIcfg>[] | null;
   defaultDefaults: AppExIcfg;
 };
 
@@ -326,7 +326,7 @@ function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
     isValid,
     icfgInput,
     inputDefaults,
-    superDefaults,
+    superDefaultsArray,
     defaultDefaults,
   } = input;
   const hasThisProp = (obj: Partial<AppExIcfg>): boolean =>
@@ -337,8 +337,12 @@ function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
   if (inputDefaults !== null && hasThisProp(inputDefaults)) {
     return { value: inputDefaults[propName] as AppExIcfg[K] };
   }
-  if (superDefaults !== null && hasThisProp(superDefaults)) {
-    return { value: superDefaults[propName] as AppExIcfg[K] };
+  if (Array.isArray(superDefaultsArray) && superDefaultsArray.length > 0) {
+    for (const superDefaultsProp of superDefaultsArray) {
+      if (hasThisProp(superDefaultsProp)) {
+        return { value: superDefaultsProp[propName] as AppExIcfg[K] };
+      }
+    }
   }
   if (hasThisProp(defaultDefaults)) {
     return { value: defaultDefaults[propName] };
@@ -441,7 +445,10 @@ class AppExIcfgPojoConstructor
     const { icfgInput } = input;
     const inputDefaults = this[PRIVATE].getInputDefaults(input);
     const defaultDefaults = this[PRIVATE].getDefaultDefaults(input);
-    const superDefaults = this[PRIVATE].getSuperDefaults(helpers.cache, input);
+    const superDefaultsArray = this[PRIVATE].getSuperDefaultsArray(
+      helpers.cache,
+      input,
+    );
     const hasThisProp = (obj: Partial<AppExIcfg>): boolean =>
       hasProp(obj, 'details') &&
       typeof obj['details'] === 'object' &&
@@ -449,16 +456,16 @@ class AppExIcfgPojoConstructor
       !Array.isArray(obj);
     const hasInIcfgInput = hasThisProp(icfgInput);
     const hasInDefaultDefaults = hasThisProp(defaultDefaults);
-    const hasInSuperDefaults =
-      superDefaults !== null && hasThisProp(superDefaults);
     const hasInInputDefaults =
       inputDefaults !== null && hasThisProp(inputDefaults);
+    const useSuperDefaultsArray =
+      Array.isArray(superDefaultsArray) && superDefaultsArray.length > 0;
     const mergeDetails = helpers.cache.mergeDetails(input).value;
     if (
       hasInIcfgInput ||
       hasInInputDefaults ||
       hasInDefaultDefaults ||
-      hasInSuperDefaults
+      useSuperDefaultsArray
     ) {
       const defaultDefaultsVal = !hasInDefaultDefaults
         ? {}
@@ -466,9 +473,17 @@ class AppExIcfgPojoConstructor
       const inputDefaultsVal = !hasInInputDefaults
         ? {}
         : (inputDefaults['details'] as Record<string, unknown>);
-      const superDefaultsVal = !hasInSuperDefaults
-        ? {}
-        : (superDefaults['details'] as Record<string, unknown>);
+      const superDefaultsVal = {};
+      if (useSuperDefaultsArray) {
+        for (let i = 0; i < (superDefaultsArray as any[]).length; i++) {
+          const thisSuper = (superDefaultsArray as any[])[
+            (superDefaultsArray as any[]).length - 1 - i
+          ];
+          if (hasThisProp(thisSuper)) {
+            Object.assign(superDefaultsVal, thisSuper['details']);
+          }
+        }
+      }
       const inputVal = !hasInIcfgInput
         ? {}
         : (icfgInput['details'] as Record<string, unknown>);
@@ -655,7 +670,16 @@ export class ApplicationException extends Error {
   static normalizeInstanceConfig(icfgInput: Partial<AppExIcfg>): AppExIcfg {
     const nowDate = new Date();
     const defaultsProps = this.defaults();
-    const superDefaultsProps = Object.getPrototypeOf(this)?.defaults?.();
+    let proto = Object.getPrototypeOf(this);
+    const superDefaultsPropsArray = [];
+    while (proto !== null) {
+      const defs = proto?.defaults?.();
+      if (defs) {
+        superDefaultsPropsArray.push(defs);
+      }
+      proto = Object.getPrototypeOf(proto);
+    }
+    Object.getPrototypeOf(this)?.defaults?.();
     return constructPojoSync<AppExIcfg, AppExIcfgPojoConstructorInput>(
       AppExIcfgPojoConstructor,
       {
@@ -663,7 +687,7 @@ export class ApplicationException extends Error {
         icfgInput,
         class: this,
         ...(!defaultsProps ? {} : { defaultsProps }),
-        ...(!superDefaultsProps ? {} : { superDefaultsProps }),
+        ...(!superDefaultsPropsArray ? {} : { superDefaultsPropsArray }),
       },
     );
   }
@@ -717,7 +741,7 @@ export class ApplicationException extends Error {
   >(
     className: string,
     defaults: ApplicationExceptionDefaultsProps,
-    createConstructor?: CreateCtor,
+    create?: CreateCtor,
   ): ApplicationExceptionStatic & {
     create: CreateCtor;
   } {
@@ -742,14 +766,14 @@ export class ApplicationException extends Error {
       enumerable: false,
       configurable: true,
     });
-    if (typeof createConstructor === 'function') {
+    if (typeof create === 'function') {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-expect-error
-      Class.create = createConstructor;
+      Class.create = create;
     } else {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-expect-error
-      Class.create = ApplicationException.new;
+      Class.create = this.create ?? this.new;
     }
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-expect-error
