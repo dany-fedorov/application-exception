@@ -2,7 +2,7 @@
 - [x] a way to make details typed [supported with extending classes]
 - [x] a way to provide a merge function to merge details
 - [x] Collect all superdefaults, not only from immediate prototype
-- [ ] Simpler subclass with plain options
+- [x] Simpler subclass with plain options
 ```typescript
 const MyAppException = AppEx.subclass(
   'MyAppException',
@@ -27,7 +27,7 @@ const MyAppException = AppEx.subclass('MyAppException', {
   useClassNameAsCode: true,
 })
 ```
-- [ ] Allow to parametrize hbs helpers, add example with helpers to format date
+- [x] Allow to parametrize hbs helpers, add example with helpers to format date
 - [ ] docs
   - [ ] Make a good guide
   - [x] Steve McConnell disagrees

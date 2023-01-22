@@ -13,26 +13,32 @@ const res = {
   },
 };
 
+/**
+ * `lines` joins all string arguments with '\n'
+ */
 const e1 = AppEx.lines(
   'Could not fetch user from ThirdParty',
-  `- HTTP: GET https://example.org/api/v1`,
-  `- Request headers: ${JSON.stringify(req.headers)}`,
-  `- Response status: ${JSON.stringify(res.status)}`,
-  `- Response headers: ${JSON.stringify(res.headers)}`,
-);
+  `- HTTP             - GET https://example.org/api/v1`,
+  `- Request headers  - {{{json req.headers}}}`,
+  `- Response status  - {{{json res.status}}}`,
+  `- Response headers - {{{json res.headers}}}`,
+).details({ req, res });
 
 console.log('"ApplicationException.lines" constructor');
 console.log();
 console.log(e1.getMessage());
 
+/**
+ * Same as `lines`, but adds a prefix to all line arguments.
+ */
 const e2 = AppEx.prefixedLines(
   'UserService.getUser',
   'Could not fetch user from ThirdParty',
-  ['- HTTP'.padEnd(20), 'GET https://example.org/api/v1'].join(' - '),
-  ['- Request headers'.padEnd(20), JSON.stringify(req.headers)].join(' - '),
-  ['- Response status'.padEnd(20), JSON.stringify(res.status)].join(' - '),
-  ['- Response headers'.padEnd(20), JSON.stringify(res.headers)].join(' - '),
-);
+  `- HTTP             - GET https://example.org/api/v1`,
+  `- Request headers  - {{{json req.headers}}}`,
+  `- Response status  - {{{json res.status}}}`,
+  `- Response headers - {{{json res.headers}}}`,
+).details({ req, res });
 
 console.log();
 console.log(

@@ -255,47 +255,44 @@ describe('ApplicationException: Regular constructor', function () {
       Object {
         "causes": Array [
           Object {
-            "as_json": Object {
-              "format": "safe-stable-stringify@2.4.1",
-              "value": Object {},
-            },
-            "as_string": Object {
-              "format": "String",
-              "value": "Error: Je suis Erreur",
-            },
+            "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.4.json",
+            "_m": Array [
+              "corj/v0.4",
+              "String",
+              "safe-stable-stringify@2.4.1",
+            ],
+            "as_json": Object {},
+            "as_string": "Error: Je suis Erreur",
             "constructor_name": "Error",
             "instanceof_error": true,
             "message": "Je suis Erreur",
             "typeof": "object",
-            "v": "corj/v0.3",
           },
           Object {
-            "as_json": Object {
-              "format": "safe-stable-stringify@2.4.1",
-              "value": "And I'm just a string",
-            },
-            "as_string": Object {
-              "format": "String",
-              "value": "And I'm just a string",
-            },
+            "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.4.json",
+            "_m": Array [
+              "corj/v0.4",
+              "String",
+              "safe-stable-stringify@2.4.1",
+            ],
+            "as_json": "And I'm just a string",
+            "as_string": "And I'm just a string",
             "constructor_name": "String",
             "instanceof_error": false,
             "typeof": "string",
-            "v": "corj/v0.3",
           },
           Object {
-            "as_json": Object {
-              "format": "safe-stable-stringify@2.4.1",
-              "value": 9876,
-            },
-            "as_string": Object {
-              "format": "String",
-              "value": "9876",
-            },
+            "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.4.json",
+            "_m": Array [
+              "corj/v0.4",
+              "String",
+              "safe-stable-stringify@2.4.1",
+            ],
+            "as_json": 9876,
+            "as_string": "9876",
             "constructor_name": "Number",
             "instanceof_error": false,
             "typeof": "number",
-            "v": "corj/v0.3",
           },
         ],
         "constructor_name": "ApplicationException",

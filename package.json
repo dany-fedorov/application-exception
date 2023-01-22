@@ -1,6 +1,6 @@
 {
   "name": "application-exception",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "description": "Better exceptions for TypeScript",
   "main": "./index.js",
   "scripts": {
@@ -54,10 +54,10 @@
     "typescript": "^4.7.4"
   },
   "dependencies": {
-    "caught-object-report-json": "^3.0.2",
+    "caught-object-report-json": "^4.1.5",
     "handlebars": "^4.7.7",
     "nanoid": "^3.3.4",
-    "pojo-constructor": "^4.3.0",
+    "pojo-constructor": "^6.1.0",
     "safe-json-stringify": "^1.2.0"
   }
 }

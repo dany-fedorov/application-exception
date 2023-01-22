@@ -10,60 +10,42 @@
 
 <!-- TOC -->
 
-- [Features](#features)
 - [Motivation](#motivation)
-- [Guide](#guide)
-  - [Defaults](#defaults)
-  - [Fields](#fields)
-  - [Constructor variants](#constructor-variants)
+- [User Guide](#user-guide)
+  - [Defaults of `ApplicationException`](#defaults-of-applicationexception)
+  - [Using builder pattern](#using-builder-pattern)
+  - [Using default static method constructors](#using-default-static-method-constructors)
   - [Templating](#templating)
-  - [Custom exceptions: Extending ApplicationException class](#custom-exceptions-extending-applicationexception-class)
-  - [Custom exceptions: Using `subclass` static method](#custom-exceptions-using-subclass-static-method)
-  - [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions-providing-custom-handlebars-helpers)
-  - [Custom exceptions: Setting a type for `details` field](#custom-exceptions-setting-a-type-for-details-field)
+  - [Custom exceptions: Extending ApplicationException class](#custom-exceptions--extending-applicationexception-class)
+  - [Custom exceptions: Using `subclass` static method](#custom-exceptions--using-subclass-static-method)
+  - [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions--providing-custom-handlebars-helpers)
+  - [Custom exceptions: Setting a type for `details` field](#custom-exceptions--setting-a-type-for-details-field)
+  - [Consider not using `throw`](#consider-not-using-throw)
+- [API](#api)
+  - [Fields](#fields)
+  - [Options](#options)
+  - [Helper methods (lifecycle methods)](#helper-methods--lifecycle-methods-)
+  - [Handlebars Helpers](#handlebars-helpers)
 
 <!-- TOC -->
 
-## Features
-
-- Provides a selection of fields commonly used with exceptions
-- Builder pattern for better DX
-- Provides a JSON representation available with `toJSON` method (including nested exceptions set with `.causedBy`)
-- Error message templating with handlebars
-- Configurable with good defaults
-- Ergonomically create custom exceptions
-
 ## Motivation
 
-> _"Programs that use exceptions as part of their normal processing suffer from all the readability and
-> maintainability problems of classic spaghetti code."_
-> — Andy Hunt, Dave Thomas - The Pragmatic Programmer
+- Error object must have more default props than just `message` and `stack`.
+- Extending Error object with custom props must be convenient.
+- Error object must allow to specify a list of nested root causes.
+- Error object must have a consistent JSON representation.
+- Informative error messages must be easy to create. 
 
-It is hard to disagree with software engineering classics. Nevertheless, many times I found myself reimplementing the
-same pattern where
-thrown exceptions signify diversion from happy path and carry more information than `message` and `stack` found on
-the `Error` class.
+## User Guide
 
-I think there is nothing wrong with implementing this each time for every new project, because
-different projects are going to have different exceptions. And the citation above hints that I find it preferable to
-handle as many exceptions as possible with normal control flow.
-
-The use case for this library that I have in mind is an application back-end which is a thin layer over one or more data
-sources (e.g. databases or third-party APIs) and when you throw exceptions expecting a front-end to handle them. It is
-likely that in case of working on a project like this you also win more from delivering quickly then you win from
-writing exceptional (pun intended) quality code.
-
-I'll be happy if this library is useful for somebody except myself, but please make sure that you really need it.
-
-## Guide
-
-### Defaults
+### Defaults of `ApplicationException`
 
 By default `ApplicationException` sets `id`, `timestamp` and `message` fields.
 
 <sub>(Run
 with `npm run ts-file ./examples/default-fields-example.ts` or see
-example's [source code](./examples/default-fields-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/default-fields-example.ts))</sub>
 
 ```typescript
 const e = AppEx.new();
@@ -81,52 +63,48 @@ Timestamp: 2023-01-08T02:45:12.309Z
 Message:   Something went wrong
 ```
 
-You can provide a custom message to `ApplicationException.new`.
+You can provide a message string to `ApplicationException.new`.
 
 <sub>(Run
 with `npm run ts-file ./examples/default-fields-with-custom-message-example.ts` or see
-example's [source code](./examples/default-fields-with-custom-message-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/default-fields-with-custom-message-example.ts))</sub>
 
 ```typescript
 const e = AppEx.new(`I'm an error message`);
 
-console.log('id:'.padEnd(10), e.getId());
-console.log('timestamp:'.padEnd(10), e.getTimestamp());
 console.log('message:'.padEnd(10), e.getMessage());
 ```
 
 prints
 
 ```text
-id:        AE_BT006J8JET62NVQM16Z890ENPR
-timestamp: 2023-01-08T02:51:02.597Z
 message:   I'm an error message
 ```
 
-### Fields
+### Using builder pattern
 
-All fields are listed in `AppExOwnProps` type.<br>
+All fields available with builder pattern are listed in `AppExOwnProps` type.<br>
 
 You can use builder methods to set all of these fields except for `message` field because once message is set on `Error`
-instance it is impossible to change it.
+instance it is impossible to change it. One time when setting `message` is available is during object creation.
 
 Here is a simple example.
 
 <sub>(Run with `npm run ts-file ./examples/builder-pattern-simple-example.ts` or see
-example's [source code](./examples/builder-pattern-simple-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/builder-pattern-simple-example.ts))</sub>
 
 ```typescript
-throw AppEx.new(`Could not fetch a resource with id ${id}`)
+throw AppEx.new(`Could not fetch a resource with id {{id}}`)
   .numCode(404)
   .code('RESOURCE_NOT_FOUND')
   .details({ id });
 ```
 
-This is a more complicated example.
+This is a more complicated example demonstrating more fields.
 
 <sub>(Run
 with `npm run ts-file ./examples/builder-pattern-example.ts` or see
-example's [source code](./examples/builder-pattern-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/builder-pattern-example.ts))</sub>
 
 ```typescript
 function addUser(email: string): void {
@@ -134,7 +112,7 @@ function addUser(email: string): void {
     storeUser(email);
   } catch (caught) {
     if (caught instanceof Error && caught.message === 'User already exists') {
-      throw AppEx.new(`User with this email already exists - ${email}`)
+      throw AppEx.new(`User with this email already exists - {{email}}`)
         .displayMessage(
           'We already have a user with this email in the system, maybe you signed up earlier?',
         )
@@ -153,7 +131,7 @@ function addUser(email: string): void {
 }
 ```
 
-### Constructor variants
+### Using default static method constructors
 
 `ApplicationException.new` is the simplest constructor variant.
 
@@ -161,25 +139,31 @@ Other constructors available by default are `lines` and `prefixedLines` (or `pli
 
 <sub>(Run
 with `npm run ts-file ./examples/constructor-variants-example.ts` or see
-example's [source code](./examples/constructor-variants-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/constructor-variants-example.ts))</sub>
 
 ```typescript
+/**
+ * `lines` joins all string arguments with '\n'
+ */
 const e1 = AppEx.lines(
   'Could not fetch user from ThirdParty',
-  `- HTTP: GET https://example.org/api/v1`,
-  `- Request headers: ${JSON.stringify(req.headers)}`,
-  `- Response status: ${JSON.stringify(res.status)}`,
-  `- Response headers: ${JSON.stringify(res.headers)}`,
-);
+  `- HTTP             - GET https://example.org/api/v1`,
+  `- Request headers  - {{{json req.headers}}}`,
+  `- Response status  - {{{json res.status}}}`,
+  `- Response headers - {{{json res.headers}}}`,
+).details({ req, res });
 
+/**
+ * Same as `lines`, but adds a prefix to all line arguments.
+ */
 const e2 = AppEx.prefixedLines(
   'UserService.getUser',
   'Could not fetch user from ThirdParty',
-  ['- HTTP'.padEnd(20), 'GET https://example.org/api/v1'].join(' - '),
-  ['- Request headers'.padEnd(20), JSON.stringify(req.headers)].join(' - '),
-  ['- Response status'.padEnd(20), JSON.stringify(res.status)].join(' - '),
-  ['- Response headers'.padEnd(20), JSON.stringify(res.headers)].join(' - '),
-);
+  `- HTTP             - GET https://example.org/api/v1`,
+  `- Request headers  - {{{json req.headers}}}`,
+  `- Response status  - {{{json res.status}}}`,
+  `- Response headers - {{{json res.headers}}}`,
+).details({ req, res });
 ```
 
 ### Templating
@@ -188,7 +172,7 @@ Fields `message` and `displayMessage` are actually [Handlebars](https://handleba
 
 <sub>(Run
 with `npm run ts-file ./examples/simple-templating-example.ts` or see
-example's [source code](./examples/simple-templating-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/simple-templating-example.ts))</sub>
 
 ```typescript
 const e = AppEx.new('Bad thing happened').displayMessage(
@@ -206,13 +190,17 @@ Something went wrong, please contact tech support and provide this id - AE_0DFG6
 
 You can use fields specified in `details` on the top level. Use `self` to access exception object in handlebars
 template. `self` contains all fields available through builder methods on it's top level, like `id` or `code`.
-Also, there is a `json` helper function present in compilation context.
+Also, there are several handlebars helper functions available
+
+- `json`
+- `pad-end`
+- `pad-start`
 
 All compilation context available is presented in the following example.
 
 <sub>(Run
 with `npm run ts-file ./examples/all-templating-helpers-example.ts` or see
-example's [source code](./examples/all-templating-helpers-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/all-templating-helpers-example.ts))</sub>
 
 ```typescript
 const e = AppEx.new('Bad thing happened')
@@ -231,8 +219,10 @@ const e = AppEx.new('Bad thing happened')
     '- self.numCode - {{self.numCode}}',
     '- self.constructor_name - {{self.constructor_name}}',
     'helpers',
-    '- self.id padded 1 - {{pad 40 self.id}}: "I am padded"',
-    '- self.id padded 2 - {{pad 40 "-" self.id}}: "I am padded"',
+    '- self.id end padded 1   - padding start ->{{pad-end 40 self.id}}<- padding end',
+    '- self.id end padded 2   - padding start ->{{pad-end 40 "-" self.id}}<- padding end',
+    '- self.id start padded 1 - padding start ->{{pad-start 40 self.id}}<- padding end',
+    '- self.id start padded 2 - padding start ->{{pad-start 40 "-" self.id}}<- padding end',
     '- self.details - {{{json self.details}}}',
     '- self.details indented -',
     '{{{json self.details 4}}}',
@@ -244,7 +234,7 @@ const e = AppEx.new('Bad thing happened')
 Overriding static method `defaults` allows to specify default values of exception fields.
 
 <sub>(Run with `npm run ts-file ./examples/extending-class-example.ts` or see
-example's [source code](./examples/extending-class-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/extending-class-example.ts))</sub>
 
 ```typescript
 class MyAppException extends ApplicationException {
@@ -374,36 +364,49 @@ prints
 
 ### Custom exceptions: Using `subclass` static method
 
-`MyAppException` is the same as in example from previous section. Using `subclass` is supposed to be an idiomatic way to
-extend `ApplicationException`, but it is less obvious and does not allow you to use new class as TypeScript type. If
-this does not prove to be useful, I intend to delete this as a breaking change.
+`MyAppException` is the same as in example from previous section except for `ts_in_ukraine` field, because details are
+not constructed dynamically.
 
 <sub>(Run
 with `npm run ts-file ./examples/subclass-example.ts` or see
-example's [source code](./examples/subclass-example.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/subclass-example.ts))</sub>
 
 ```typescript
 const MyAppException = AppEx.subclass(
   'MyAppException',
   {
-    details({ now }) {
-      return {
-        value: {
-          src: 'my-app-api-server',
-          ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
-            locale: localeUkraine,
-          }),
-        },
-      };
-    },
-    useClassNameAsCode() {
-      return { value: true };
+    useClassNameAsCode: true,
+    details: {
+      src: 'my-app-api-server',
     },
   },
-  function create(this: ApplicationExceptionStatic, num: number) {
-    return this.new(
-      'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
-    ).details({ num });
+  {
+    create(this: ApplicationExceptionStatic, num: number) {
+      return this.new(
+        'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
+      ).details({ num });
+    },
+  },
+);
+```
+
+`subclass` is good for quickly extending base versions because it is simple, but you will not be able to use it as a
+TypeScript type. The next piece of code shows how subclass of `MyAppException` created with `subclass` does not allow
+TypeScript to understand that it has a `create` static method available without extra code.
+
+```typescript
+const MyServiceException = MyAppException.subclass(
+  'MyServiceException',
+  {
+    details: {
+      scope: 'my-service',
+    },
+  },
+  /**
+   * This is required for TypeScript to understand that `create` is available on `MyServiceException`
+   */
+  {
+    create: MyAppException.create,
   },
 );
 ```
@@ -412,7 +415,7 @@ const MyAppException = AppEx.subclass(
 
 <sub>(Run
 with `npm run ts-file ./examples/custom-handlebars-helpers.ts` or see
-example's [source code](./examples/custom-handlebars-helpers.ts))</sub>
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/custom-handlebars-helpers.ts))</sub>
 
 ```typescript
 const MyAppException = AppEx.subclass(
@@ -481,8 +484,8 @@ To assign a type to `details` field, you need to override `setDetails` method an
 will return a subclass.
 
 <sub>(Run
-with `npm run ts-file ./examples/typing-details-fiels.ts` or see
-example's [source code](./examples/typing-details-fiels.ts))</sub>
+with `npm run ts-file ./examples/typing-details-field.ts` or see
+example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/typing-details-field.ts))</sub>
 
 ```typescript
 type Details = {
@@ -514,29 +517,40 @@ console.log(e.getMessage());
 
 This allows for code completion.
 
-![Details Field Webstorm Code Completion](./details-field-webstorm-code-completion.png)
+![Details Field Webstorm Code Completion](https://github.com/dany-fedorov/application-exception/blob/main/details-field-webstorm-code-completion.png)
 
 And highlighting not allowed fields by TypeScript aware IDEs.
 
-![Details Field Webstorm TypeScript Error Highlighting](./details-field-webstorm-typescript-error-highlight.png)
+![Details Field Webstorm TypeScript Error Highlighting](https://github.com/dany-fedorov/application-exception/blob/main/details-field-webstorm-typescript-error-highlight.png)
 
-# API
+### Consider not using `throw`
 
-## Fields
+> _"Programs that use exceptions as part of their normal processing suffer from all the readability and
+> maintainability problems of classic spaghetti code."_
+> — Andy Hunt, Dave Thomas - The Pragmatic Programmer
+
+Consider using conventional control flow for exceptions handling. This means returning exception object from a function
+instead of throwing an exception object.
+
+TODO: example (?)
+
+## API
+
+### Fields
 
 TODO
 
-## Options
+### Options
 
 TODO
 
-## Helper methods (lifecycle methods)
+### Helper methods (lifecycle methods)
 
 TODO
 
-## Handlebars Helpers
+### Handlebars Helpers
 
 - pad
 - json
- 
+
 TODO

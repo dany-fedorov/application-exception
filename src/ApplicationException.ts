@@ -1,13 +1,14 @@
 import * as hbs from 'handlebars';
 import type {
   PojoConstructorPropMethodValue,
-  PojoConstructorPropsSync,
-  PojoConstructorProxySync,
-  PojoConstructorHelpersHostSync,
+  PojoConstructorSyncProps,
+  PojoConstructorSyncProxy,
 } from 'pojo-constructor';
 import {
   constructPojoFromInstanceSync,
   constructPojoSync,
+  PojoConstructorAdapters,
+  PojoConstructorSyncHelpersHost,
 } from 'pojo-constructor';
 import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 import { customAlphabet } from 'nanoid';
@@ -60,13 +61,31 @@ function mkProblemMessage(s: string): string {
 
 function mkHbsDefaultHelpers() {
   return {
-    pad: function hbs_helper_pad(...args: unknown[]): string {
+    'pad-end': function hbs_helper_pad(...args: unknown[]): string {
       // TODO: make safer
       try {
         if (args.length === 3) {
           return (args[1] as string).padEnd(args[0] as number);
         } else if (args.length === 4) {
           return (args[2] as string).padEnd(
+            args[0] as number,
+            args[1] as string,
+          );
+        } else {
+          return '';
+        }
+      } catch (caught: unknown) {
+        console.warn((caught as any)?.stack || caught);
+        return '';
+      }
+    },
+    'pad-start': function hbs_helper_pad(...args: unknown[]): string {
+      // TODO: make safer
+      try {
+        if (args.length === 3) {
+          return (args[1] as string).padStart(args[0] as number);
+        } else if (args.length === 4) {
+          return (args[2] as string).padStart(
             args[0] as number,
             args[1] as string,
           );
@@ -188,7 +207,7 @@ type AppExIcfgDefaultsPojoConstructorInput = Omit<
   'defaultsProps'
 >;
 
-export type ApplicationExceptionDefaultsProps = PojoConstructorPropsSync<
+export type ApplicationExceptionDefaultsProps = PojoConstructorSyncProps<
   Partial<AppExIcfg>,
   AppExIcfgDefaultsPojoConstructorInput
 >;
@@ -202,7 +221,7 @@ type AppExIcfgPojoConstructorInput = {
 };
 
 class AppExIcfgDefaultsPojoConstructor
-  implements PojoConstructorPropsSync<AppExIcfg, AppExIcfgPojoConstructorInput>
+  implements PojoConstructorSyncProps<AppExIcfg, AppExIcfgPojoConstructorInput>
 {
   message() {
     return { value: 'Something went wrong' };
@@ -269,7 +288,7 @@ class AppExIcfgPojoConstructorPrivateProps {
   defaultDefaults: AppExIcfg | null = null;
 
   getSuperDefaultsArray(
-    resolved: PojoConstructorProxySync<
+    resolved: PojoConstructorSyncProxy<
       AppExIcfg,
       AppExIcfgDefaultsPojoConstructorInput
     >,
@@ -311,7 +330,7 @@ class AppExIcfgPojoConstructorPrivateProps {
   }
 
   resolveAppExIcfgProp<K extends keyof AppExIcfg>(
-    resolved: PojoConstructorProxySync<
+    resolved: PojoConstructorSyncProxy<
       AppExIcfg,
       AppExIcfgDefaultsPojoConstructorInput
     >,
@@ -378,13 +397,13 @@ function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
 }
 
 class AppExIcfgPojoConstructor
-  implements PojoConstructorPropsSync<AppExIcfg, AppExIcfgPojoConstructorInput>
+  implements PojoConstructorSyncProps<AppExIcfg, AppExIcfgPojoConstructorInput>
 {
   [PRIVATE] = new AppExIcfgPojoConstructorPrivateProps();
 
   idBody(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -397,7 +416,7 @@ class AppExIcfgPojoConstructor
 
   timestamp(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -410,7 +429,7 @@ class AppExIcfgPojoConstructor
 
   displayMessage(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -423,7 +442,7 @@ class AppExIcfgPojoConstructor
 
   code(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -436,7 +455,7 @@ class AppExIcfgPojoConstructor
 
   numCode(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -449,7 +468,7 @@ class AppExIcfgPojoConstructor
 
   mergeDetails(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -462,7 +481,7 @@ class AppExIcfgPojoConstructor
 
   handlebarsHelpers(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -522,7 +541,7 @@ class AppExIcfgPojoConstructor
 
   details(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -587,7 +606,7 @@ class AppExIcfgPojoConstructor
 
   useClassNameAsCode(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -600,7 +619,7 @@ class AppExIcfgPojoConstructor
 
   useMessageAsDisplayMessage(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -613,7 +632,7 @@ class AppExIcfgPojoConstructor
 
   timestampFormatInJson(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -626,7 +645,7 @@ class AppExIcfgPojoConstructor
 
   applySuperDefaults(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -639,7 +658,7 @@ class AppExIcfgPojoConstructor
 
   idPrefix(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -652,7 +671,7 @@ class AppExIcfgPojoConstructor
 
   message(
     input: AppExIcfgPojoConstructorInput,
-    helpers: PojoConstructorHelpersHostSync<
+    helpers: PojoConstructorSyncHelpersHost<
       AppExIcfg,
       AppExIcfgPojoConstructorInput
     >,
@@ -694,13 +713,20 @@ export type ApplicationExceptionJson = {
   v: typeof APP_EX_JSON_VERSION_0_1;
 };
 
-export type ApplicationExceptionStatic = {
-  new (icfg: AppExIcfg): ApplicationException;
+export type ApplicationExceptionStatic<
+  Instance extends ApplicationException = ApplicationException,
+> = {
+  new (icfg: AppExIcfg): Instance;
 
-  new: typeof ApplicationException.new;
-  lines: typeof ApplicationException.lines;
-  prefixedLines: typeof ApplicationException.prefixedLines;
-  plines: typeof ApplicationException.plines;
+  new: (...args: Parameters<typeof ApplicationException.new>) => Instance;
+  lines: (...args: Parameters<typeof ApplicationException.lines>) => Instance;
+  prefixedLines: (
+    ...args: Parameters<typeof ApplicationException.prefixedLines>
+  ) => Instance;
+  plines: (
+    ...args: Parameters<typeof ApplicationException.prefixedLines>
+  ) => Instance;
+
   subclass: typeof ApplicationException.subclass;
 
   compileTemplate: typeof ApplicationException.compileTemplate;
@@ -850,19 +876,37 @@ export class ApplicationException extends Error {
   /**
    * Subclass helper
    */
-
+  // <
+  //   CreateCtor extends (...args: any[]) => ApplicationException = (
+  //     ...args: any[]
+  //   ) => ApplicationException,
+  // >
   static subclass<
-    CreateCtor extends (...args: any[]) => ApplicationException = (
-      ...args: any[]
-    ) => ApplicationException,
+    StaticMethods extends Record<
+      string,
+      (this: ApplicationExceptionStatic, ...rest: any[]) => any
+    > = {},
+    InstanceMethods extends Record<
+      string,
+      (this: ApplicationException, ...rest: any[]) => any
+    > = {},
   >(
     className: string,
-    defaults?: ApplicationExceptionDefaultsProps | null,
-    create?: CreateCtor,
-  ): ApplicationExceptionStatic & {
-    create: CreateCtor;
-  } {
-    const Class = class extends this {};
+    defaults?: Partial<AppExIcfg>,
+    staticMethods?: StaticMethods,
+    instanceMethods?: InstanceMethods,
+  ): ApplicationExceptionStatic<ApplicationException & InstanceMethods> &
+    StaticMethods {
+    const Class = class extends this {
+      constructor(...args: any[]) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        super(...args);
+        if (instanceMethods && typeof instanceMethods === 'object') {
+          Object.assign(this, instanceMethods);
+        }
+      }
+    };
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/name#telling_the_constructor_name_of_an_object
     Object.defineProperty(Class, 'name', {
       value: className,
@@ -870,9 +914,26 @@ export class ApplicationException extends Error {
       enumerable: false,
       configurable: true,
     });
+    if (staticMethods && typeof staticMethods === 'object') {
+      Object.assign(Class, staticMethods);
+    }
     if (defaults) {
+      const defaultsStaticMethod = Class.defaults;
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
       Class.defaults = function () {
-        return defaults;
+        const staticMethodDefaultsRes =
+          typeof defaultsStaticMethod !== 'function'
+            ? null
+            : defaultsStaticMethod();
+        const plainObjectDefaultsProps = PojoConstructorAdapters.props({
+          src: 'plain-object',
+          dst: 'sync',
+        })<Partial<AppExIcfg>>(defaults);
+        return {
+          ...plainObjectDefaultsProps,
+          ...(staticMethodDefaultsRes ?? {}),
+        };
       };
     }
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/name
@@ -882,18 +943,10 @@ export class ApplicationException extends Error {
       enumerable: false,
       configurable: true,
     });
-    if (typeof create === 'function') {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
-      Class.create = create;
-    } else {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
-      Class.create = this.create ?? this.new;
-    }
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-expect-error
-    return Class;
+    return Class as unknown as ApplicationExceptionStatic<
+      ApplicationException & InstanceMethods
+    > &
+      StaticMethods;
   }
 
   /**
@@ -1129,6 +1182,8 @@ export class ApplicationException extends Error {
     }
     return causes.map((c) =>
       makeCaughtObjectReportJson(c, {
+        addJsonSchemaLink: true,
+        addMetadata: true,
         onCaughtMaking(caught) {
           console.warn(`${this.constructor.name}#getCausesJson: ${caught}`);
         },

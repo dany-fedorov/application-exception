@@ -17,7 +17,7 @@ function addUser(email: string): void {
     storeUser(email);
   } catch (caught) {
     if (caught instanceof Error && caught.message === 'User already exists') {
-      throw AppEx.new(`User with this email already exists - ${email}`)
+      throw AppEx.new(`User with this email already exists - {{email}}`)
         .displayMessage(
           'We already have a user with this email in the system, maybe you signed up earlier?',
         )

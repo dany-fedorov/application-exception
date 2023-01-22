@@ -21,7 +21,7 @@ class MyAppException extends ApplicationException {
 
 const e = MyAppException.create().code('HEY').details({
   firstName: 'Isaac',
-
+  lastName: 'Newton',
 });
 
 console.log(e.getMessage());
