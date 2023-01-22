@@ -52,6 +52,7 @@ const MyAppException = AppEx.subclass(
 const e = MyAppException.create(543231);
 
 console.log(e.getMessage());
+console.log(e.toJSON());
 
 const MyServiceException = MyAppException.subclass(
   'MyServiceException',
@@ -67,3 +68,4 @@ const MyServiceException = MyAppException.subclass(
 const e1 = MyServiceException.create(3098);
 
 console.log(e1.getMessage());
+console.log(e1.toJSON());

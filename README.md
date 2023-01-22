@@ -421,38 +421,43 @@ example's [source code](https://github.com/dany-fedorov/application-exception/bl
 const MyAppException = AppEx.subclass(
   'MyAppException',
   {
-    handlebarsHelpers() {
-      return {
-        value: {
-          'date-iso': function (...args: unknown[]): string {
-            return new Date(args[0] as Date).toISOString();
-          },
-          'date-fmt': function (...args: unknown[]): string {
-            return format(new Date(args[1] as Date), args[0] as string, {
-              locale: localeUkraine,
-            });
-          },
-        },
-      };
+    useClassNameAsCode: true,
+    details: {
+      src: 'my-app-api-server',
     },
-    details({ now }) {
-      return {
-        value: {
-          src: 'my-app-api-server',
-          ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
-            locale: localeUkraine,
-          }),
-        },
-      };
-    },
-    useClassNameAsCode() {
-      return { value: true };
+    handlebarsHelpers: {
+      'date-iso': function (...args: unknown[]): string {
+        return new Date(args[0] as Date).toISOString();
+      },
+      'date-fmt': function (...args: unknown[]): string {
+        return format(new Date(args[1] as Date), args[0] as string, {
+          locale: localeUkraine,
+        });
+      },
     },
   },
-  function create(this: ApplicationExceptionStatic, num: number) {
-    return this.new(
-      '{{pad 20 self.constructor_name}} // ISO Date: {{date-iso self.timestamp}}; Formatted Date: {{date-fmt "d MMMM yyyy, HH:mm:ss" self.timestamp}}; num: {{num}}',
-    ).details({ num });
+  {
+    defaults(
+      this: ApplicationExceptionStatic,
+    ): ApplicationExceptionDefaultsProps {
+      return {
+        details({ now }) {
+          return {
+            value: {
+              ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
+                locale: localeUkraine,
+              }),
+            },
+          };
+        },
+      };
+    },
+
+    create(this: ApplicationExceptionStatic, num: number) {
+      return this.new(
+        '{{pad-end 20 self.constructor_name}} // ISO Date: {{date-iso self.timestamp}}; Formatted Date: {{date-fmt "d MMMM yyyy, HH:mm:ss" self.timestamp}}; num: {{num}}',
+      ).details({ num });
+    },
   },
 );
 

@@ -795,23 +795,39 @@ export class ApplicationException extends Error {
    * Static helpers
    */
 
-  static defaults(): ApplicationExceptionDefaultsProps | null {
+  static defaults():
+    | ApplicationExceptionDefaultsProps
+    | ApplicationExceptionDefaultsProps[]
+    | null {
     return null;
   }
 
   static normalizeInstanceConfig(icfgInput: Partial<AppExIcfg>): AppExIcfg {
     const nowDate = new Date();
-    const defaultsProps = this.defaults();
+    const defaultsPropsRes = this.defaults();
+    const defaultsPropsArray = (
+      Array.isArray(defaultsPropsRes) ? defaultsPropsRes : [defaultsPropsRes]
+    ).filter(Boolean) as ApplicationExceptionDefaultsProps[];
+    const prefixSuperDefaults =
+      defaultsPropsArray.length <= 1
+        ? []
+        : defaultsPropsArray.slice(0, defaultsPropsArray.length - 1);
+    const defaultsProps =
+      defaultsPropsArray.length === 0
+        ? null
+        : defaultsPropsArray[defaultsPropsArray.length - 1];
     let proto = Object.getPrototypeOf(this);
-    const superDefaultsPropsArray = [];
+    const superDefaultsPropsArray = [...prefixSuperDefaults];
     while (proto !== null) {
-      const defs = proto?.defaults?.();
-      if (defs) {
-        superDefaultsPropsArray.push(defs);
+      const defsRes = proto?.defaults?.();
+      const defsArray = (Array.isArray(defsRes) ? defsRes : [defsRes]).filter(
+        Boolean,
+      );
+      if (defsArray.length > 0) {
+        superDefaultsPropsArray.push(...defsArray);
       }
       proto = Object.getPrototypeOf(proto);
     }
-    Object.getPrototypeOf(this)?.defaults?.();
     return constructPojoSync<AppExIcfg, AppExIcfgPojoConstructorInput>(
       AppExIcfgPojoConstructor,
       {
@@ -819,7 +835,9 @@ export class ApplicationException extends Error {
         icfgInput,
         class: this,
         ...(!defaultsProps ? {} : { defaultsProps }),
-        ...(!superDefaultsPropsArray ? {} : { superDefaultsPropsArray }),
+        ...(superDefaultsPropsArray.length === 0
+          ? {}
+          : { superDefaultsPropsArray }),
       },
     );
   }
@@ -885,10 +903,12 @@ export class ApplicationException extends Error {
     StaticMethods extends Record<
       string,
       (this: ApplicationExceptionStatic, ...rest: any[]) => any
+      // eslint-disable-next-line @typescript-eslint/ban-types
     > = {},
     InstanceMethods extends Record<
       string,
       (this: ApplicationException, ...rest: any[]) => any
+      // eslint-disable-next-line @typescript-eslint/ban-types
     > = {},
   >(
     className: string,
@@ -918,22 +938,30 @@ export class ApplicationException extends Error {
       Object.assign(Class, staticMethods);
     }
     if (defaults) {
+      const hasOwnDefaults = Object.prototype.hasOwnProperty.call(
+        Class,
+        'defaults',
+      );
       const defaultsStaticMethod = Class.defaults;
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       Class.defaults = function () {
-        const staticMethodDefaultsRes =
-          typeof defaultsStaticMethod !== 'function'
-            ? null
-            : defaultsStaticMethod();
+        const staticMethodDefaultsRes = !hasOwnDefaults
+          ? null
+          : defaultsStaticMethod();
+        const staticMethodDefaultsResArray = (
+          !Array.isArray(staticMethodDefaultsRes)
+            ? [staticMethodDefaultsRes]
+            : staticMethodDefaultsRes
+        ).filter(Boolean) as ApplicationExceptionDefaultsProps[];
         const plainObjectDefaultsProps = PojoConstructorAdapters.props({
           src: 'plain-object',
           dst: 'sync',
         })<Partial<AppExIcfg>>(defaults);
-        return {
-          ...plainObjectDefaultsProps,
-          ...(staticMethodDefaultsRes ?? {}),
-        };
+        return [
+          plainObjectDefaultsProps,
+          ...staticMethodDefaultsResArray,
+        ].filter(Boolean) as ApplicationExceptionDefaultsProps[];
       };
     }
     // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/name
