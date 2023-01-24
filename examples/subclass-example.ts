@@ -1,4 +1,8 @@
-import { AppEx, ApplicationExceptionStatic } from '../src';
+import {
+  AppEx,
+  ApplicationExceptionStatic,
+  ApplicationException,
+} from '../src';
 
 const MyAppException = AppEx.subclass(
   'MyAppException',
@@ -9,10 +13,17 @@ const MyAppException = AppEx.subclass(
     },
   },
   {
-    create(this: ApplicationExceptionStatic, num: number) {
-      return this.new(
-        'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
-      ).details({ num });
+    instance: {
+      hhh(this: ApplicationException) {
+        return 'hhh';
+      },
+    },
+    static: {
+      create(this: ApplicationExceptionStatic, num: number) {
+        return this.new(
+          'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
+        ).details({ num });
+      },
     },
   },
 );
@@ -46,13 +57,60 @@ const MyServiceException = MyAppException.subclass(
   },
   /**
    * This is required for TypeScript to understand that `create` is available on `MyServiceException`
-    */
+   */
   {
-    create: MyAppException.create,
+    static: MyAppException._subclassStaticMethods,
+    instance: {
+      ...MyAppException._subclassInstanceMethods,
+      MyServiceException_hey(this: InstanceType<typeof MyAppException>) {
+        return this.getCode();
+      },
+    },
   },
 );
 
+const c = MyServiceException['create'];
+
+const EE = MyServiceException.subclass(
+  'HeyException',
+  {},
+  {
+    // static: {},
+    instance: {
+      met() {
+        return 'met';
+      },
+    },
+  },
+);
+
+const EE2 = EE.staticMethods({
+  hop(this: typeof EE): InstanceType<typeof EE> {
+    return this.new('hey');
+  },
+});
+
+EE2.hop().met();
+
+class E extends MyServiceException {
+  constructor(...props: any) {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    super(...props);
+  }
+}
+
+console.log(E.create(987).toJSON());
+
 const e3 = MyServiceException.create(123);
+
+type MyServiceException = InstanceType<typeof MyServiceException>;
+
+const e4: MyServiceException = MyServiceException.new();
+
+console.log(e4 instanceof MyServiceException);
+
+e4.MyServiceException_hey();
 
 const e3Json = e3.toJSON();
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment

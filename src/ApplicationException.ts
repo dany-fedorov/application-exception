@@ -396,6 +396,20 @@ function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
   return {};
 }
 
+type AppExSubclassMethodsConfiguration<StaticMethods, InstanceMethods> =
+  | {
+      static: StaticMethods;
+      instance: InstanceMethods;
+    }
+  | {
+      static: StaticMethods;
+      instance?: never;
+    }
+  | {
+      static?: never;
+      instance: InstanceMethods;
+    };
+
 class AppExIcfgPojoConstructor
   implements PojoConstructorSyncProps<AppExIcfg, AppExIcfgPojoConstructorInput>
 {
@@ -733,6 +747,7 @@ export type ApplicationExceptionStatic<
   defaults: typeof ApplicationException.defaults;
   normalizeInstanceConfig: typeof ApplicationException.normalizeInstanceConfig;
   createDefaultInstance: typeof ApplicationException.createDefaultInstance;
+  staticMethods: typeof ApplicationException.staticMethods;
 };
 
 type AppExTemplateCompilationContext<Details = Record<string, unknown>> = {
@@ -894,50 +909,67 @@ export class ApplicationException extends Error {
   /**
    * Subclass helper
    */
-  // <
-  //   CreateCtor extends (...args: any[]) => ApplicationException = (
-  //     ...args: any[]
-  //   ) => ApplicationException,
-  // >
   static subclass<
-    StaticMethods extends Record<
+    SuperclassStaticThis extends ApplicationExceptionStatic = ApplicationExceptionStatic,
+    SubclassStaticThis = any,
+    SubclassInstanceThis = any,
+    SubclassStaticMethods extends Record<
       string,
-      (this: ApplicationExceptionStatic, ...rest: any[]) => any
-      // eslint-disable-next-line @typescript-eslint/ban-types
-    > = {},
-    InstanceMethods extends Record<
+      (this: SubclassStaticThis, ...rest: any[]) => any
+    > = Record<string, any>,
+    SubclassInstanceMethods extends Record<
       string,
-      (this: ApplicationException, ...rest: any[]) => any
+      (this: SubclassInstanceThis, ...rest: any[]) => any
       // eslint-disable-next-line @typescript-eslint/ban-types
-    > = {},
+    > = Record<string, any>,
   >(
+    this: SuperclassStaticThis,
     className: string,
     defaults?: Partial<AppExIcfg>,
-    staticMethods?: StaticMethods,
-    instanceMethods?: InstanceMethods,
-  ): ApplicationExceptionStatic<ApplicationException & InstanceMethods> &
-    StaticMethods {
+    methods?: AppExSubclassMethodsConfiguration<
+      SubclassStaticMethods,
+      SubclassInstanceMethods
+    >,
+  ): ApplicationExceptionStatic<
+    ApplicationException & SubclassInstanceMethods
+  > & {
+    _subclassStaticMethods: SubclassStaticMethods;
+    _subclassInstanceMethods: SubclassInstanceMethods;
+  } & SubclassStaticMethods {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
     const Class = class extends this {
       constructor(...args: any[]) {
         // eslint-disable-next-line @typescript-eslint/ban-ts-comment
         // @ts-ignore
         super(...args);
-        if (instanceMethods && typeof instanceMethods === 'object') {
-          Object.assign(this, instanceMethods);
+        if (methods?.instance && typeof methods?.instance === 'object') {
+          Object.assign(this, methods.instance);
         }
       }
     };
-    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/name#telling_the_constructor_name_of_an_object
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    Class._subclassStaticMethods = methods?.static;
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    Class._subclassInstanceMethods = methods?.instance;
+    /**
+     * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/name#telling_the_constructor_name_of_an_object
+     */
     Object.defineProperty(Class, 'name', {
       value: className,
       writable: false,
       enumerable: false,
       configurable: true,
     });
-    if (staticMethods && typeof staticMethods === 'object') {
-      Object.assign(Class, staticMethods);
+    if (methods?.static && typeof methods?.static === 'object') {
+      Object.assign(Class, methods.static);
     }
     if (defaults) {
+      /**
+       * Assigned from staticMethods
+       */
       const hasOwnDefaults = Object.prototype.hasOwnProperty.call(
         Class,
         'defaults',
@@ -958,13 +990,19 @@ export class ApplicationException extends Error {
           src: 'plain-object',
           dst: 'sync',
         })<Partial<AppExIcfg>>(defaults);
+        /**
+         * If you specify same options when doing .subclass both as plain-object in second arg,
+         * and as a result of `defaults` static method, then static method result takes precedence
+         */
         return [
           plainObjectDefaultsProps,
           ...staticMethodDefaultsResArray,
         ].filter(Boolean) as ApplicationExceptionDefaultsProps[];
       };
     }
-    // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/name
+    /**
+     * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Error/name
+     */
     Object.defineProperty(Class.prototype, 'name', {
       value: className,
       writable: true,
@@ -972,9 +1010,11 @@ export class ApplicationException extends Error {
       configurable: true,
     });
     return Class as unknown as ApplicationExceptionStatic<
-      ApplicationException & InstanceMethods
-    > &
-      StaticMethods;
+      ApplicationException & SubclassInstanceMethods
+    > & {
+      _subclassStaticMethods: SubclassStaticMethods;
+      _subclassInstanceMethods: SubclassInstanceMethods;
+    } & SubclassStaticMethods;
   }
 
   /**
@@ -1305,6 +1345,24 @@ export class ApplicationException extends Error {
       ].filter(([, v]) => v !== undefined),
     );
   }
+
+  static staticMethods<
+    This extends ApplicationExceptionStatic,
+    StaticMethods extends Record<
+      string,
+      (this: This, ...rest: any[]) => any
+      // eslint-disable-next-line @typescript-eslint/ban-types
+    > = {},
+  >(this: This, methods: StaticMethods): This & StaticMethods {
+    return Object.assign(this, methods);
+  }
 }
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+ApplicationException._subclassStaticMethods = {};
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore
+ApplicationException._subclassInstanceMethods = {};
 
 export const AppEx = ApplicationException;
