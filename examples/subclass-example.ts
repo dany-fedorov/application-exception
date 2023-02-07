@@ -40,6 +40,7 @@ delete e1Json.stack;
 console.log(e1Json);
 
 const e2 = MyAppException.create(1);
+const e3 = MyAppException.create(1);
 
 const e2Json = e2.toJSON();
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -48,6 +49,13 @@ delete e2Json.stack;
 
 console.log(e2Json);
 
+// const r_r = MyAppException.yo();
+// const r_r_r = r_r.yo();
+// r_r_r.create();
+
+type L = typeof MyAppException._subclassStaticMethods;
+const f: L = 1;
+
 const MyServiceException = MyAppException.subclass(
   'MyServiceException',
   {
@@ -55,13 +63,8 @@ const MyServiceException = MyAppException.subclass(
       scope: 'my-service',
     },
   },
-  /**
-   * This is required for TypeScript to understand that `create` is available on `MyServiceException`
-   */
   {
-    static: MyAppException._subclassStaticMethods,
     instance: {
-      ...MyAppException._subclassInstanceMethods,
       MyServiceException_hey(this: InstanceType<typeof MyAppException>) {
         return this.getCode();
       },
@@ -69,13 +72,19 @@ const MyServiceException = MyAppException.subclass(
   },
 );
 
-const c = MyServiceException['create'];
+const iwork = MyServiceException.create(123) as InstanceType<
+  typeof MyServiceException
+>;
+
+iwork.MyServiceException_hey();
+
+// const c = MyServiceException['create'];
 
 const EE = MyServiceException.subclass(
   'HeyException',
   {},
   {
-    // static: {},
+    static: MyServiceException._subclassStaticMethods,
     instance: {
       met() {
         return 'met';
@@ -84,13 +93,17 @@ const EE = MyServiceException.subclass(
   },
 );
 
-const EE2 = EE.staticMethods({
+EE.create(34);
+
+const EE2 = EE.addStaticMethods({
   hop(this: typeof EE): InstanceType<typeof EE> {
     return this.new('hey');
   },
 });
 
 EE2.hop().met();
+
+EE2.create();
 
 class E extends MyServiceException {
   constructor(...props: any) {

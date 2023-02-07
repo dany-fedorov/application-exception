@@ -1,6 +1,6 @@
 import * as hbs from 'handlebars';
 import type {
-  PojoConstructorPropMethodValue,
+  PojoConstructorPropMethodResult,
   PojoConstructorSyncProps,
   PojoConstructorSyncProxy,
 } from 'pojo-constructor';
@@ -12,6 +12,11 @@ import {
 } from 'pojo-constructor';
 import { makeCaughtObjectReportJson } from 'caught-object-report-json';
 import { customAlphabet } from 'nanoid';
+
+// type Prettify<T> = {
+//   [K in keyof T]: T[K];
+//   // eslint-disable-next-line @typescript-eslint/ban-types
+// } & {};
 
 const replacerFunc = (config?: JsonStringifySafeConfig) => {
   const visited = new WeakSet();
@@ -301,7 +306,8 @@ class AppExIcfgPojoConstructorPrivateProps {
       input.superDefaultsPropsArray.length > 0
     ) {
       this.superDefaultsArray = input.superDefaultsPropsArray.map((d) => {
-        return constructPojoFromInstanceSync(d, input);
+        const r = constructPojoFromInstanceSync(d, input);
+        return r.value;
       });
     }
     return this.superDefaultsArray;
@@ -311,20 +317,16 @@ class AppExIcfgPojoConstructorPrivateProps {
     input: AppExIcfgPojoConstructorInput,
   ): Partial<AppExIcfg> | null {
     if (this.inputDefaults === null && input.defaultsProps) {
-      this.inputDefaults = constructPojoFromInstanceSync(
-        input.defaultsProps,
-        input,
-      );
+      const r = constructPojoFromInstanceSync(input.defaultsProps, input);
+      this.inputDefaults = r.value;
     }
     return this.inputDefaults;
   }
 
   getDefaultDefaults(input: AppExIcfgPojoConstructorInput): AppExIcfg {
     if (this.defaultDefaults === null) {
-      this.defaultDefaults = constructPojoSync(
-        AppExIcfgDefaultsPojoConstructor,
-        input,
-      );
+      const r = constructPojoSync(AppExIcfgDefaultsPojoConstructor, input);
+      this.defaultDefaults = r.value;
     }
     return this.defaultDefaults;
   }
@@ -339,7 +341,7 @@ class AppExIcfgPojoConstructorPrivateProps {
       ResolveAppExIcfgPropInput<K>,
       'inputDefaults' | 'defaultDefaults' | 'superDefaultsArray' | 'icfgInput'
     >,
-  ): PojoConstructorPropMethodValue<AppExIcfg[K]> {
+  ): PojoConstructorPropMethodResult<AppExIcfg[K]> {
     return resolveAppExIcfgProp({
       ...resolvePropInput,
       icfgInput: input.icfgInput,
@@ -364,7 +366,7 @@ type ResolveAppExIcfgPropInput<K extends keyof AppExIcfg> = {
 
 function resolveAppExIcfgProp<K extends keyof AppExIcfg>(
   input: ResolveAppExIcfgPropInput<K>,
-): PojoConstructorPropMethodValue<AppExIcfg[K]> {
+): PojoConstructorPropMethodResult<AppExIcfg[K]> {
   const {
     propName,
     isValid,
@@ -747,7 +749,10 @@ export type ApplicationExceptionStatic<
   defaults: typeof ApplicationException.defaults;
   normalizeInstanceConfig: typeof ApplicationException.normalizeInstanceConfig;
   createDefaultInstance: typeof ApplicationException.createDefaultInstance;
-  staticMethods: typeof ApplicationException.staticMethods;
+  addStaticMethods: typeof ApplicationException.addStaticMethods;
+
+  _subclassStaticMethods: typeof ApplicationException._subclassStaticMethods;
+  _subclassInstanceMethods: typeof ApplicationException._subclassInstanceMethods;
 };
 
 type AppExTemplateCompilationContext<Details = Record<string, unknown>> = {
@@ -843,7 +848,7 @@ export class ApplicationException extends Error {
       }
       proto = Object.getPrototypeOf(proto);
     }
-    return constructPojoSync<AppExIcfg, AppExIcfgPojoConstructorInput>(
+    const r = constructPojoSync<AppExIcfg, AppExIcfgPojoConstructorInput>(
       AppExIcfgPojoConstructor,
       {
         now: nowDate,
@@ -855,6 +860,7 @@ export class ApplicationException extends Error {
           : { superDefaultsPropsArray }),
       },
     );
+    return r.value;
   }
 
   static createDefaultInstance<Class extends ApplicationException>(
@@ -916,12 +922,13 @@ export class ApplicationException extends Error {
     SubclassStaticMethods extends Record<
       string,
       (this: SubclassStaticThis, ...rest: any[]) => any
-    > = Record<string, any>,
+      // eslint-disable-next-line @typescript-eslint/ban-types
+    > = {},
     SubclassInstanceMethods extends Record<
       string,
       (this: SubclassInstanceThis, ...rest: any[]) => any
       // eslint-disable-next-line @typescript-eslint/ban-types
-    > = Record<string, any>,
+    > = {},
   >(
     this: SuperclassStaticThis,
     className: string,
@@ -930,12 +937,17 @@ export class ApplicationException extends Error {
       SubclassStaticMethods,
       SubclassInstanceMethods
     >,
-  ): ApplicationExceptionStatic<
-    ApplicationException & SubclassInstanceMethods
-  > & {
-    _subclassStaticMethods: SubclassStaticMethods;
-    _subclassInstanceMethods: SubclassInstanceMethods;
-  } & SubclassStaticMethods {
+  ): SuperclassStaticThis['_subclassStaticMethods'] &
+    ApplicationExceptionStatic<
+      ApplicationException &
+        SubclassInstanceMethods &
+        SuperclassStaticThis['_subclassInstanceMethods']
+    > & {
+      _subclassStaticMethods: SuperclassStaticThis['_subclassStaticMethods'] &
+        SubclassStaticMethods;
+      _subclassInstanceMethods: SuperclassStaticThis['_subclassInstanceMethods'] &
+        SubclassInstanceMethods;
+    } & SubclassStaticMethods {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     const Class = class extends this {
@@ -1010,11 +1022,16 @@ export class ApplicationException extends Error {
       configurable: true,
     });
     return Class as unknown as ApplicationExceptionStatic<
-      ApplicationException & SubclassInstanceMethods
-    > & {
-      _subclassStaticMethods: SubclassStaticMethods;
-      _subclassInstanceMethods: SubclassInstanceMethods;
-    } & SubclassStaticMethods;
+      ApplicationException &
+        SubclassInstanceMethods &
+        SuperclassStaticThis['_subclassInstanceMethods']
+    > &
+      SuperclassStaticThis['_subclassStaticMethods'] & {
+        _subclassStaticMethods: SuperclassStaticThis['_subclassStaticMethods'] &
+          SubclassStaticMethods;
+        _subclassInstanceMethods: SuperclassStaticThis['_subclassInstanceMethods'] &
+          SubclassInstanceMethods;
+      } & SubclassStaticMethods;
   }
 
   /**
@@ -1250,8 +1267,7 @@ export class ApplicationException extends Error {
     }
     return causes.map((c) =>
       makeCaughtObjectReportJson(c, {
-        addJsonSchemaLink: true,
-        addMetadata: true,
+        metadataFields: true,
         onCaughtMaking(caught) {
           console.warn(`${this.constructor.name}#getCausesJson: ${caught}`);
         },
@@ -1346,7 +1362,7 @@ export class ApplicationException extends Error {
     );
   }
 
-  static staticMethods<
+  static addStaticMethods<
     This extends ApplicationExceptionStatic,
     StaticMethods extends Record<
       string,
@@ -1356,13 +1372,11 @@ export class ApplicationException extends Error {
   >(this: This, methods: StaticMethods): This & StaticMethods {
     return Object.assign(this, methods);
   }
-}
 
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-ApplicationException._subclassStaticMethods = {};
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
-ApplicationException._subclassInstanceMethods = {};
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  static _subclassStaticMethods: {} = {};
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  static _subclassInstanceMethods: {} = {};
+}
 
 export const AppEx = ApplicationException;
