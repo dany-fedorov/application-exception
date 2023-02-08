@@ -999,7 +999,7 @@ export class ApplicationException extends Error {
             : staticMethodDefaultsRes
         ).filter(Boolean) as ApplicationExceptionDefaultsProps[];
         const plainObjectDefaultsProps = PojoConstructorAdapters.props({
-          src: 'plain-object',
+          src: 'plain',
           dst: 'sync',
         })<Partial<AppExIcfg>>(defaults);
         /**
