@@ -944,9 +944,9 @@ export class ApplicationException extends Error {
     if (caught instanceof ApplicationException) {
       return caught as Class;
     }
-    return AppEx.new(
-      `AppEx Wrapper${
-        typeof caught === 'object' ? `: ${(caught as any)?.message}` : ''
+    return this.new(
+      `[${this.name} Wrapper]${
+        typeof caught === 'object' ? ` ${(caught as any)?.message}` : ''
       }`,
     )
       .causedBy(caught)
