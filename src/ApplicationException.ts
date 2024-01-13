@@ -924,8 +924,12 @@ export class ApplicationException extends Error {
       return caught as Class;
     }
     return AppEx.new(
-      typeof caught === 'object' ? (caught as any)?.message : undefined,
-    ).setIsWrapper(true) as Class;
+      `AppEx Wrapper${
+        typeof caught === 'object' ? `: ${(caught as any)?.message}` : ''
+      }`,
+    )
+      .causedBy(caught)
+      .setIsWrapper(true) as Class;
   }
 
   /**
