@@ -161,6 +161,10 @@ export type AppExOwnProps = {
    * A list of errors that caused this one.
    */
   causes?: unknown[];
+  /**
+   * Indicate that this instance is a mere wrapper.
+   */
+  isWrapper?: boolean;
 };
 
 const TIMESTAMP_FORMAT_IN_JSON_VALUES = ['iso', 'milliseconds'] as const;
@@ -742,6 +746,7 @@ export type ApplicationExceptionStatic<
   plines: (
     ...args: Parameters<typeof ApplicationException.prefixedLines>
   ) => Instance;
+  wrap: (caught: unknown) => Instance;
 
   subclass: typeof ApplicationException.subclass;
 
@@ -910,6 +915,17 @@ export class ApplicationException extends Error {
     ...lines: string[]
   ): Class {
     return this.prefixedLines<Class>(prefix, ...lines);
+  }
+
+  static wrap<Class extends ApplicationException = ApplicationException>(
+    caught: unknown,
+  ): Class {
+    if (caught instanceof ApplicationException) {
+      return caught as Class;
+    }
+    return AppEx.new(
+      typeof caught === 'object' ? (caught as any)?.message : undefined,
+    ).setIsWrapper(true) as Class;
   }
 
   /**
@@ -1291,6 +1307,15 @@ export class ApplicationException extends Error {
     });
   }
 
+  setIsWrapper(isIt: boolean): this {
+    this._own.isWrapper = isIt;
+    return this;
+  }
+
+  getIsWrapper(): boolean | undefined {
+    return this._own.isWrapper;
+  }
+
   /**
    * Builder methods
    */
@@ -1357,6 +1382,7 @@ export class ApplicationException extends Error {
         ['timestamp', this.getTimestampForJson()],
         ['raw_message', this.getRawMessage()],
         ['raw_display_message', this.getRawDisplayMessage()],
+        ['is_wrapper', this.getIsWrapper()],
         ['v', APP_EX_JSON_VERSION_0_1],
       ].filter(([, v]) => v !== undefined),
     );
