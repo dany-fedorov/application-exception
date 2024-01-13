@@ -182,6 +182,7 @@ export type AppExOptions = {
   ) => Record<string, unknown>;
   handlebarsHelpers: Record<string, (...args: any[]) => string>;
   idPrefix: string;
+  addWrapperInstanceStackToJson: boolean;
 };
 
 export type AppExIcfg = AppExOwnProps &
@@ -285,6 +286,12 @@ class AppExIcfgDefaultsPojoConstructor
   idPrefix() {
     return {
       value: 'AE_',
+    };
+  }
+
+  addWrapperInstanceStackToJson() {
+    return {
+      value: false,
     };
   }
 }
@@ -701,6 +708,19 @@ class AppExIcfgPojoConstructor
       isValid: (v) => typeof v === 'string',
     });
   }
+
+  addWrapperInstanceStackToJson(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorSyncHelpersHost<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
+      propName: 'addWrapperInstanceStackToJson',
+      isValid: (v) => typeof v === 'boolean',
+    });
+  }
 }
 
 export type AppExJsonObject<P extends AppExJsonPrimitive> = {
@@ -795,6 +815,7 @@ export class ApplicationException extends Error {
       applySuperDefaults: icfg.applySuperDefaults,
       mergeDetails: icfg.mergeDetails,
       handlebarsHelpers: icfg.handlebarsHelpers,
+      addWrapperInstanceStackToJson: icfg.addWrapperInstanceStackToJson,
     };
     this._own = {
       idBody: icfg.idBody,
@@ -1372,6 +1393,12 @@ export class ApplicationException extends Error {
    * Other instance methods
    */
   toJSON(): ApplicationExceptionJson {
+    const shouldAddInstanceStackToJson =
+      this.getIsWrapper() === true &&
+      !this._options.addWrapperInstanceStackToJson;
+    const instanceStackValue = shouldAddInstanceStackToJson
+      ? undefined
+      : this.stack;
     return Object.fromEntries(
       [
         ['constructor_name', this.constructor.name],
@@ -1380,13 +1407,13 @@ export class ApplicationException extends Error {
         ['code', this.getCode()],
         ['num_code', this.getNumCode()],
         ['details', this.getDetails()],
-        ['stack', this.stack],
+        ['is_wrapper', this.getIsWrapper()],
+        ['stack', instanceStackValue],
         ['id', this.getId()],
         ['causes', this.getCausesJson()],
         ['timestamp', this.getTimestampForJson()],
         ['raw_message', this.getRawMessage()],
         ['raw_display_message', this.getRawDisplayMessage()],
-        ['is_wrapper', this.getIsWrapper()],
         ['v', APP_EX_JSON_VERSION_0_1],
       ].filter(([, v]) => v !== undefined),
     );
