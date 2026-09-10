@@ -188,26 +188,33 @@ describe('defineException', () => {
     );
     expect(
       () => new UserAlreadyExists({ details: new Date() } as never),
-    ).toThrow('Exception details must be a plain object');
-  });
-
-  test('copies enumerable data from a custom class without its prototype', () => {
-    class CustomDetails {
-      readonly operation = 'search';
-
+    ).toThrow('Exception details must have a data-only object prototype');
+    expect(
+      () => new UserAlreadyExists({ details: new ArrayBuffer(8) } as never),
+    ).toThrow('Exception details must have a data-only object prototype');
+    class DetailsWithMethod {
       describe(): string {
-        return this.operation;
+        return 'not copied';
       }
     }
-    const CustomFailure = defineException<CustomDetails>()({
+    expect(
+      () =>
+        new UserAlreadyExists({ details: new DetailsWithMethod() } as never),
+    ).toThrow('Exception details must have a data-only object prototype');
+  });
+
+  test('copies enumerable data from a data-only class without its prototype', () => {
+    class DataOnlyDetails {
+      readonly operation = 'search';
+    }
+    const CustomFailure = defineException<DataOnlyDetails>()({
       tag: 'CustomFailure',
       message: ({ operation }) => operation,
     });
 
-    const error = new CustomFailure({ details: new CustomDetails() });
+    const error = new CustomFailure({ details: new DataOnlyDetails() });
 
     expect(error.details).toEqual({ operation: 'search' });
-    expect(error.details).not.toBeInstanceOf(CustomDetails);
-    expect('describe' in error.details).toBe(false);
+    expect(error.details).not.toBeInstanceOf(DataOnlyDetails);
   });
 });

@@ -67,9 +67,9 @@ error.id; // unique occurrence reference
 error.cause; // original value, by identity
 ```
 
-Details must be record-like. The factory rejects arrays, functions, and built-in
-non-record instances. Custom objects contribute only their enumerable data;
-prototype methods are absent from the copied value and its type.
+Details must be data-only and record-like. The factory rejects arrays,
+functions, method-bearing types, and objects whose prototype adds methods or
+accessors. A data-only class instance is copied into a plain frozen object.
 
 Create a diagnostic report for logs, then independently choose a public
 presentation:

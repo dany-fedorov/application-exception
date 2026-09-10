@@ -23,29 +23,37 @@ type MultipleCauses = {
   readonly causes: readonly unknown[];
 };
 
-type NonRecordDetails =
-  | readonly unknown[]
-  | ((...args: never[]) => unknown)
-  | Date
-  | RegExp
-  | Error
-  | Promise<unknown>
-  | ReadonlyMap<unknown, unknown>
-  | ReadonlySet<unknown>
-  | WeakMap<object, unknown>
-  | WeakSet<object>;
-
-type DataPropertyKeys<Details extends object> = {
-  [Key in keyof Details]-?: NonNullable<Details[Key]> extends (
-    ...args: never[]
-  ) => unknown
+type FunctionPropertyKeys<Details extends object> = {
+  [Key in keyof Details]-?: [Details[Key]] extends [never]
     ? never
-    : Key;
+    : NonNullable<Details[Key]> extends (...args: never[]) => unknown
+    ? Key
+    : never;
 }[keyof Details];
 
-type RecordDetails<Details extends object> = Details extends NonRecordDetails
+type RecordDetails<Details extends object> = Details extends
+  | readonly unknown[]
+  | ((...args: never[]) => unknown)
   ? never
-  : Pick<Details, DataPropertyKeys<Details>>;
+  : [FunctionPropertyKeys<Details>] extends [never]
+  ? Details
+  : never;
+
+function hasRecordLikePrototype(value: object): boolean {
+  try {
+    let prototype = Object.getPrototypeOf(value) as object | null;
+    while (prototype !== null && prototype !== Object.prototype) {
+      const descriptors = Object.getOwnPropertyDescriptors(prototype);
+      if (Reflect.ownKeys(descriptors).some((key) => key !== 'constructor')) {
+        return false;
+      }
+      prototype = Object.getPrototypeOf(prototype) as object | null;
+    }
+    return true;
+  } catch (_error: unknown) {
+    return false;
+  }
+}
 
 export type ExceptionInput<Details extends object> = {
   readonly details: RecordDetails<Details>;
@@ -95,7 +103,7 @@ function renderMessage<Details extends object>(
 }
 
 export function defineException<Details extends object>(
-  ..._invalidDetails: Details extends NonRecordDetails
+  ..._invalidDetails: [RecordDetails<Details>] extends [never]
     ? [reason: 'Details must be a record-like object']
     : []
 ): <Tag extends string>(
@@ -137,22 +145,10 @@ export function defineException<Details extends object>(
         ) {
           throw new TypeError('Exception details must be a non-array object');
         }
-        let isBuiltInDetails = false;
-        try {
-          isBuiltInDetails =
-            suppliedDetails instanceof Date ||
-            suppliedDetails instanceof RegExp ||
-            suppliedDetails instanceof Error ||
-            suppliedDetails instanceof Promise ||
-            suppliedDetails instanceof Map ||
-            suppliedDetails instanceof Set ||
-            suppliedDetails instanceof WeakMap ||
-            suppliedDetails instanceof WeakSet;
-        } catch (_error: unknown) {
-          throw new TypeError('Exception details must be a plain object');
-        }
-        if (isBuiltInDetails) {
-          throw new TypeError('Exception details must be a plain object');
+        if (!hasRecordLikePrototype(suppliedDetails)) {
+          throw new TypeError(
+            'Exception details must have a data-only object prototype',
+          );
         }
         if (
           Object.prototype.hasOwnProperty.call(input, 'cause') &&

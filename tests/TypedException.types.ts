@@ -19,21 +19,29 @@ defineException<() => void>();
 // @ts-expect-error built-in class instances are not copied as detail records.
 defineException<Date>();
 
-class CustomDetails {
+// @ts-expect-error all built-in prototypes are rejected without an allowlist.
+defineException<ArrayBuffer>();
+
+class DataOnlyDetails {
+  readonly operation = 'search';
+}
+
+class DetailsWithMethod {
   readonly operation = 'search';
   describe(): string {
     return this.operation;
   }
 }
 
-const CustomFailure = defineException<CustomDetails>()({
+// @ts-expect-error method-bearing shapes do not satisfy data-only details.
+defineException<DetailsWithMethod>();
+
+const CustomFailure = defineException<DataOnlyDetails>()({
   tag: 'CustomFailure',
   message: ({ operation }) => operation,
 });
-const customFailure = new CustomFailure({ details: new CustomDetails() });
+const customFailure = new CustomFailure({ details: new DataOnlyDetails() });
 const customOperation: string = customFailure.details.operation;
-// @ts-expect-error prototype methods are not part of copied details.
-customFailure.details.describe();
 void customOperation;
 
 const UserAlreadyExists = defineException<{ email: string }>()({
