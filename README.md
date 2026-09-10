@@ -12,6 +12,7 @@
 
 - [Motivation](#motivation)
 - [Development direction](#development-direction)
+- [Typed errors and reports](#typed-errors-and-reports)
 - [User Guide](#user-guide)
   - [Defaults of `ApplicationException`](#defaults-of-applicationexception)
   - [Using builder pattern](#using-builder-pattern)
@@ -41,15 +42,60 @@
 ## Development direction
 
 The [design proposal](docs/superpowers/specs/2026-09-10-error-model-design.md)
-develops these ideas into typed native errors, standard causes, and separate
-diagnostic and public reports. It includes concrete problems verified against
-the current implementation, API sketches, compatibility decisions, and a staged
-roadmap. The proposed APIs are not yet implemented.
+developed these ideas into typed native errors, standard causes, and separate
+diagnostic and public reports. The existing builder remains available for
+compatibility.
 
 The accompanying [Effect comparison](docs/research/effect-error-model.md)
 examines tagged errors, typed failures, causes, and schema boundaries using
 official documentation and source. The [glossary](CONTEXT.md) distinguishes an
 error's kind, its occurrence, and its presentation.
+
+## Typed errors and reports
+
+Define an error kind with complete details and a native cause:
+
+```typescript
+import { defineException } from 'application-exception/typed';
+
+const UserAlreadyExists = defineException<{ email: string }>()({
+  tag: 'accounts/UserAlreadyExists',
+  message: ({ email }) => `An account already exists for ${email}`,
+});
+
+const error = new UserAlreadyExists({
+  details: { email: 'ada@example.test' },
+  cause: databaseError,
+});
+
+error._tag; // 'accounts/UserAlreadyExists'
+error.message; // rendered native Error message
+error.details.email; // string
+error.id; // unique occurrence reference
+error.cause; // original value, by identity
+```
+
+Create a diagnostic report for logs, then independently choose a public
+presentation:
+
+```typescript
+import { toDiagnosticReport, toPublicReport } from 'application-exception';
+
+const diagnostic = toDiagnosticReport(error, {
+  context: { requestId: 'req-123', operation: 'registerUser' },
+});
+
+const body = toPublicReport(diagnostic, {
+  code: 'ACCOUNT_ALREADY_EXISTS',
+  message: 'An account with this email already exists.',
+});
+```
+
+Diagnostic normalization is bounded, redacts common secret fields, handles
+cycles and unusual JavaScript values, and never invokes getters or custom
+`toJSON`. Public reports do not inherit diagnostic details. See the
+[migration and agent integration guide](docs/migration-to-typed-errors.md) and
+the runnable [application boundary example](examples/account-registration-boundary.ts).
 
 ## User Guide
 

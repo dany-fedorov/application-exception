@@ -56,13 +56,13 @@ and `AggregateError`, Effect v3 only in a pinned development example.
   recomputed template output, native cause interoperability, and truthful wrap
   return types.
 
-- [ ] **Step 1: Make the existing test suite executable**
+- [x] **Step 1: Make the existing test suite executable**
 
 Add `addWrapperInstanceStackToJson: false` to the complete constructor fixture.
 Run `npm test -- --runInBand`; confirm the old suite executes before adding
 regressions. This is a test-harness repair, not production behavior.
 
-- [ ] **Step 2: Add failing legacy regressions**
+- [x] **Step 2: Add failing legacy regressions**
 
 Add focused tests proving:
 
@@ -88,7 +88,7 @@ from a subclass's `wrap` is not typed as the subclass. Run the focused Jest file
 and `npm run test:types` after that script exists; observe failures caused by
 the reproduced implementation defects.
 
-- [ ] **Step 3: Implement the minimal repairs**
+- [x] **Step 3: Implement the minimal repairs**
 
 Add missing normalization resolvers for `causes` and `isWrapper`; recompute
 legacy templates on reads so external detail mutation cannot stale the cache;
@@ -96,7 +96,7 @@ install a non-enumerable native `cause` from the cause list; change wrap typing
 to `Instance | ApplicationException`; and make `ApplicationExceptionJson`
 match the existing `toJSON()` output, including optional fields and stack.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run `npm test -- --runInBand`, `npm run build`, and `npm run test:types`.
 Commit as `fix: restore application exception contracts`.
@@ -120,7 +120,7 @@ Commit as `fix: restore application exception contracts`.
   `TypedException<Tag, Details>`, `ExceptionInput<Details>`,
   `isTypedException`, and shared occurrence/cause helpers.
 
-- [ ] **Step 1: Specify the runtime constructor API with failing tests**
+- [x] **Step 1: Specify the runtime constructor API with failing tests**
 
 Test literal tags, `instanceof`, copied and shallow-frozen details, readable
 native `.message`, unique prefixed IDs, ISO timestamps, exact single-cause
@@ -129,7 +129,7 @@ mutual-exclusion behavior, and renderer failure fallback without console output.
 Run `npm test -- tests/TypedException.test.ts --runInBand` and confirm missing
 exports are the failure.
 
-- [ ] **Step 2: Specify type behavior before implementation**
+- [x] **Step 2: Specify type behavior before implementation**
 
 In `tests/TypedException.types.ts`, compile valid construction and narrowing,
 then use `@ts-expect-error` for missing required details, wrong detail fields,
@@ -141,7 +141,7 @@ and simultaneous `cause`/`causes`. Add:
 
 Run it and confirm failure because the typed API is missing.
 
-- [ ] **Step 3: Implement occurrence and typed modules**
+- [x] **Step 3: Implement occurrence and typed modules**
 
 Create a shared occurrence generator and a cause adapter that maps zero causes
 to absence, one to identity, and many to `AggregateError`. Implement a direct
@@ -149,7 +149,7 @@ native `Error` subclass returned by the curried factory. Keep details nested;
 copy and shallow-freeze them; define metadata as readonly; record renderer
 failure separately for reporting. Avoid importing the legacy module.
 
-- [ ] **Step 4: Export, verify, and commit**
+- [x] **Step 4: Export, verify, and commit**
 
 Export typed APIs from root and retain the standalone subpath. Run the focused
 runtime and compile-time tests plus the build. Commit as
@@ -172,7 +172,7 @@ runtime and compile-time tests plus the build. Commit as
   `DiagnosticReport`, `PublicReport`, `DiagnosticValue`, and explicit decode
   success/failure unions.
 
-- [ ] **Step 1: Specify diagnostic normalization with failing tests**
+- [x] **Step 1: Specify diagnostic normalization with failing tests**
 
 Use hand-written expected values for normal details and markers. Cover cycles,
 shared values, bigint, `NaN`, infinities, undefined, functions, symbols, valid
@@ -181,7 +181,7 @@ string/depth/entry/value truncation, default and custom redaction, native cause,
 aggregate causes, and renderer failures. Assert no input mutation and no console
 output. Run the focused file and confirm missing exports.
 
-- [ ] **Step 2: Implement the bounded normalizer and diagnostic envelope**
+- [x] **Step 2: Implement the bounded normalizer and diagnostic envelope**
 
 Use ancestor tracking for cycles and a shared counter for the complete report.
 Inspect own property descriptors so getters are never invoked. Mark every lossy,
@@ -189,7 +189,7 @@ redacted, failed, or truncated value with a stable `{ "$appex": kind }` object.
 Read error metadata defensively. Reuse occurrence IDs for library errors and
 create one for other caught values.
 
-- [ ] **Step 3: Specify and implement public projection and decoding**
+- [x] **Step 3: Specify and implement public projection and decoding**
 
 Test that the default public report contains only version, reference, generic
 code, and generic message; explicit presentations may add JSON-safe details;
@@ -197,7 +197,7 @@ typed and diagnostic inputs preserve reference correlation. Add a structural
 decoder that accepts only the supported diagnostic version and validated field
 shapes, returns a discriminated result, and never constructs an exception.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run all runtime tests, type tests, and build. Commit as
 `feat: add safe error reporting`.
@@ -221,7 +221,7 @@ Run all runtime tests, type tests, and build. Commit as
 - Produces: root and `/typed` package exports, `test:package`, runnable native
   and Effect examples, and migration/adoption documentation.
 
-- [ ] **Step 1: Add a failing packed-package smoke test**
+- [x] **Step 1: Add a failing packed-package smoke test**
 
 The Node script packs the repository, installs the tarball into a temporary
 consumer, requires both `application-exception` and
@@ -229,13 +229,13 @@ consumer, requires both `application-exception` and
 standalone typed import does not load Handlebars or `pojo-constructor`. Run it
 before adding package exports and confirm the subpath import fails.
 
-- [ ] **Step 2: Add package metadata and scripts**
+- [x] **Step 2: Add package metadata and scripts**
 
 Declare root and typed CommonJS/type exports, Node `>=18`, `types`, and
 side-effect-free metadata. Add `test:all` to run Jest, type tests, build, and
 the packed-package smoke test. Pin Effect v3 as a development dependency only.
 
-- [ ] **Step 3: Add runnable boundary examples**
+- [x] **Step 3: Add runnable boundary examples**
 
 The account example translates only a recognized storage uniqueness failure,
 retains its cause, reports request context internally, and independently chooses
@@ -244,7 +244,7 @@ recovery, and unexpected failure paths. The Effect v3 example introduces the
 same native typed error with `Effect.fail` and recovers it with `catchTag`.
 Run both with `npm run ts-file -- <path>`.
 
-- [ ] **Step 4: Document migration and agentic use**
+- [x] **Step 4: Document migration and agentic use**
 
 Document legacy-to-typed mappings, failure boundaries, report schemas and
 limits, privacy behavior, decoder handling, Effect interop, and a compact agent
@@ -252,7 +252,7 @@ consumer example that switches on `_tag`/`code`, treats descriptions as display
 text, honors `$appex` markers, and escalates unsupported report versions instead
 of guessing.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run `npm run test:all` and both examples. Commit as
 `docs: prove typed error adoption`.

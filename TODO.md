@@ -3,7 +3,8 @@
 See the [design proposal](docs/superpowers/specs/2026-09-10-error-model-design.md)
 for rationale, proposed contracts, compatibility, and acceptance criteria, and
 the [Effect research](docs/research/effect-error-model.md) for primary sources.
-This roadmap is a proposal, not a list of shipped capabilities.
+Stages 1–4 below are implemented by the typed-errors-and-reports work. The final
+release and integration state is tracked by the implementation plan.
 
 1. **Restore the baseline.** Repair the test fixture, message rendering after
    mutation, normalized causes, wrapping types, and the declared JSON shape.
@@ -16,7 +17,7 @@ This roadmap is a proposal, not a list of shipped capabilities.
    aggregates, unusual values, and redaction.
 4. **Prove usefulness.** Runnable service, HTTP/CLI, and pinned Effect examples;
    compile-time checks; a migration guide; and tests of the packed package.
-5. **Add integrations when justified.** Validated report decoding, domain-error
+5. **Add integrations when justified.** Domain-error
    schema adapters, optional templating, and tracing support based on real use.
 
 ## Historical checklist

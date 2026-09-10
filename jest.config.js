@@ -1,19 +1,17 @@
-import type { Config } from '@jest/types';
-
-// Sync object
-const config: Config.InitialOptions = {
+/** @type {import('@jest/types').Config.InitialOptions} */
+const config = {
   verbose: true,
   transform: {
     '^.+\\.ts?$': [
       'ts-jest',
       {
-        'tsconfig': 'tsconfig.json',
+        tsconfig: 'tsconfig.json',
       },
     ],
   },
   testRegex: '/(tests|src)/.*.test(\\..+)?\\.ts$',
-  'collectCoverageFrom': ['src/**/*.ts'],
+  collectCoverageFrom: ['src/**/*.ts'],
   coverageReporters: ['json-summary', 'text', 'lcov'],
 };
 
-export default config;
+module.exports = config;

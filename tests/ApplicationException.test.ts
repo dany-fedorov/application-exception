@@ -30,7 +30,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
         "message": "test message",
@@ -53,7 +53,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "code": "ApplicationException",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
@@ -78,7 +78,7 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-        Object {
+        {
           "constructor_name": "ApplicationException",
           "display_message": "test message",
           "id": "ID_PREFIX_test-id",
@@ -104,7 +104,7 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-        Object {
+        {
           "constructor_name": "ApplicationException",
           "display_message": "test display message",
           "id": "ID_PREFIX_test-id",
@@ -146,15 +146,15 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-        Object {
+        {
           "constructor_name": "ApplicationException",
-          "details": Object {
+          "details": {
             "a": 111,
             "b": 2,
-            "c": Object {
+            "c": {
               "d": 333,
             },
-            "deep": Object {
+            "deep": {
               "da": 111,
               "db": 2,
               "dc": 333,
@@ -181,7 +181,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "code": "the-new-code",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
@@ -204,7 +204,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
         "message": "test message",
@@ -227,7 +227,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
         "message": "test message",
@@ -255,15 +255,15 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.causes[0].stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
-        "causes": Array [
-          Object {
+      {
+        "causes": [
+          {
             "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.8/report-object.json",
-            "as_json": Object {},
+            "as_json": {},
             "as_json_format": "safe-stable-stringify@2.4.1",
             "as_string": "Error: Je suis Erreur",
             "as_string_format": "String",
-            "children_sources": Array [
+            "children_sources": [
               "cause",
               "errors",
             ],
@@ -273,13 +273,13 @@ describe('ApplicationException: Regular constructor', function () {
             "typeof": "object",
             "v": "corj/v0.8",
           },
-          Object {
+          {
             "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.8/report-object.json",
             "as_json": "And I'm just a string",
             "as_json_format": "safe-stable-stringify@2.4.1",
             "as_string": "And I'm just a string",
             "as_string_format": "String",
-            "children_sources": Array [
+            "children_sources": [
               "cause",
               "errors",
             ],
@@ -288,13 +288,13 @@ describe('ApplicationException: Regular constructor', function () {
             "typeof": "string",
             "v": "corj/v0.8",
           },
-          Object {
+          {
             "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.8/report-object.json",
             "as_json": 9876,
             "as_json_format": "safe-stable-stringify@2.4.1",
             "as_string": "9876",
             "as_string_format": "String",
-            "children_sources": Array [
+            "children_sources": [
               "cause",
               "errors",
             ],
@@ -429,9 +429,8 @@ describe('ApplicationException: Template compilation', function () {
   });
 
   test('display message reflects a replacement after an earlier read', () => {
-    const error = ApplicationException.new('internal').displayMessage(
-      'First message',
-    );
+    const error =
+      ApplicationException.new('internal').displayMessage('First message');
     expect(error.getDisplayMessage()).toBe('First message');
 
     error.displayMessage('Second message');
