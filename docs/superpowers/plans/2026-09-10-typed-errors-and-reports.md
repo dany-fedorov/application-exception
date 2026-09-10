@@ -281,7 +281,7 @@ Give the reviewer the base SHA, head SHA, this plan, and the design. Address all
 critical and important findings with fresh failing tests before code changes,
 then rerun `npm run test:all`.
 
-- [ ] **Step 3: Prepare the release commit**
+- [x] **Step 3: Prepare the release commit**
 
 Choose the next semver from the actual published version and update both package
 manifest and lockfile. Verify `npm pack --dry-run`, the complete test suite,
