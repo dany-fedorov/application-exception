@@ -1,5 +1,9 @@
 # Application Exception: useful errors at application boundaries
 
+> **Historical 0.1 design.** The builder compatibility decisions in this
+> document were superseded by the [0.2 design](2026-09-10-review-fixes-design.md),
+> which defines the current root-only typed API.
+
 Date: 2026-09-10. Status: implemented for package `0.1.0`. Baseline examined:
 commit `6d8aa7309fa356636e8a344b9304805b8cf8f719`, package `0.0.25`.
 

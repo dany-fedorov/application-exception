@@ -1,35 +1,44 @@
-// Reproductions of observed defects, not assertions of desired behavior.
-// Run from the repository root after `npm run build`:
-//   node docs/reviews/2026-09-10-review-probes.cjs
+// Current invariants replacing the historical defect reproductions at 34d5532.
+// Run from the repository root after `npm run build`.
 const assert = require('node:assert/strict');
-const { performance } = require('node:perf_hooks');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const api = require('../../dist');
-const {
-  defineException,
-  toDiagnosticReport,
-  toPublicReport,
-  decodeDiagnosticReport,
-  isTypedException,
-} = api;
-const log = (probe, evidence) =>
-  console.log(JSON.stringify({ probe, ...evidence }));
-const Failure = defineException()({
-  tag: 'review/Failure',
-  message: () => 'failed',
-});
 
-let constructionFailure;
-try {
-  api.AppEx.new('failed');
-} catch (error) {
-  constructionFailure = error.message;
-}
-assert.match(constructionFailure, /syncNativeCause is not a function/);
-log('built-legacy-constructor', { constructionFailure });
+const log = (probe, evidence) =>
+  process.stdout.write(`${JSON.stringify({ probe, ...evidence })}\n`);
+
+assert.deepEqual(Object.keys(api).sort(), [
+  'DIAGNOSTIC_REPORT_VERSION',
+  'PUBLIC_REPORT_VERSION',
+  'decodeDiagnosticReport',
+  'defineException',
+  'isTypedException',
+  'toDiagnosticReport',
+  'toPublicReport',
+]);
+log('root-surface', { exports: Object.keys(api).sort() });
+
+const definition = {
+  tag: 'review/Original',
+  message: ({ operation }) => `${operation} failed`,
+};
+const Failure = api.defineException(definition);
+definition.tag = 'review/Changed';
+definition.message = () => 'changed';
+const failure = new Failure({ details: { operation: 'search' } });
+assert.equal(failure instanceof Error, true);
+assert.equal(failure._tag, 'review/Original');
+assert.equal(failure.message, 'search failed');
+log('construction-and-snapshot', {
+  tag: failure._tag,
+  message: failure.message,
+});
 
 let inspected = 0;
 const wide = new Proxy(
-  Object.fromEntries(Array.from({ length: 100000 }, (_, i) => ['k' + i, i])),
+  Object.fromEntries(Array.from({ length: 100000 }, (_, i) => [`k${i}`, i])),
   {
     getOwnPropertyDescriptor(target, key) {
       inspected++;
@@ -37,44 +46,15 @@ const wide = new Proxy(
     },
   },
 );
-const start = performance.now();
-const wideReport = toDiagnosticReport(new Failure({ details: { wide } }), {
-  limits: { maxEntries: 1, maxValues: 5 },
+const wideReport = api.toDiagnosticReport(wide, {
+  limits: { maxEntries: 1, maxValues: 5, maxBytes: 4096 },
 });
-assert.equal(inspected, 100000);
-log('wide-object', {
+assert.equal(inspected <= 2, true);
+assert.equal(Buffer.byteLength(JSON.stringify(wideReport)) <= 4096, true);
+assert.equal(api.decodeDiagnosticReport(wideReport).success, true);
+log('bounded-wide-object', {
   inspected,
-  ms: performance.now() - start,
   bytes: Buffer.byteLength(JSON.stringify(wideReport)),
-});
-
-const accessorObject = Object.defineProperties(
-  {},
-  Object.fromEntries(
-    Array.from({ length: 50 }, (_, i) => [
-      'k' + i,
-      {
-        enumerable: true,
-        get() {
-          throw new Error('This getter must not execute');
-        },
-      },
-    ]),
-  ),
-);
-const rows = Array.from({ length: 5 }, () =>
-  Array.from({ length: 50 }, () => accessorObject),
-);
-const report = toDiagnosticReport(new Failure({ details: { rows } }));
-const decoded = decodeDiagnosticReport(report);
-const publicReport = toPublicReport(report);
-assert.equal(decoded.success, false);
-assert.notEqual(publicReport.reference, report.reference);
-log('default-budget-roundtrip', {
-  bytes: Buffer.byteLength(JSON.stringify(report)),
-  markers: (JSON.stringify(report).match(/unreadable/g) || []).length,
-  decodeError: decoded.error,
-  sameReference: publicReport.reference === report.reference,
 });
 
 let dateGetterCalls = 0;
@@ -93,43 +73,16 @@ Object.defineProperty(fn, 'name', {
     return 'side effect';
   },
 });
-toDiagnosticReport({ date, fn });
-assert.equal(dateGetterCalls, 1);
-assert.equal(functionGetterCalls, 1);
-const customDate = new Date(0);
-Object.defineProperty(customDate, 'toISOString', {
-  value: () => ({
-    toJSON() {
-      throw new Error('not JSON safe');
-    },
-  }),
-});
-assert.throws(
-  () => JSON.stringify(toDiagnosticReport({ customDate })),
-  /not JSON safe/,
-);
-log('special-value-getters', {
-  dateGetterCalls,
-  functionGetterCalls,
-  customDateBreaksJson: true,
-});
-
-const definition = { tag: 'review/Original', message: () => 'original' };
-const Kind = defineException()(definition);
-definition.tag = 'review/Changed';
-definition.message = () => 'changed';
-const changed = new Kind({ details: {} });
-assert.notEqual(Kind.tag, changed._tag);
-log('mutable-definition', {
-  classTag: Kind.tag,
-  instanceTag: changed._tag,
-  message: changed.message,
-});
+const safeSpecials = api.toDiagnosticReport({ date, fn });
+assert.doesNotThrow(() => JSON.stringify(safeSpecials));
+assert.equal(dateGetterCalls, 0);
+assert.equal(functionGetterCalls, 0);
+log('special-values', { dateGetterCalls, functionGetterCalls });
 
 let referenceReads = 0;
 const unstable = new Proxy(
   {
-    v: 'appex/diagnostic/v1',
+    v: 'appex/diagnostic/v2',
     reference: 'AE_original',
     name: 'Error',
     message: 'failed',
@@ -148,37 +101,42 @@ const unstable = new Proxy(
     },
   },
 );
-const unstableDecoded = decodeDiagnosticReport(unstable);
-assert.equal(unstableDecoded.success, true);
-assert.equal(unstableDecoded.value.reference, 42);
-log('decode-before-clone', { decoded: unstableDecoded });
+const unstableDecoded = api.decodeDiagnosticReport(unstable);
+assert.equal(
+  !unstableDecoded.success ||
+    typeof unstableDecoded.value.reference === 'string',
+  true,
+);
+log('single-decoder-snapshot', { result: unstableDecoded });
 
-// Re-evaluate the module to model independent installed copies. Restore cache.
-const typedPath = require.resolve('../../dist/typed');
-const cached = require.cache[typedPath];
-let foreign;
+const foreignRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'appex-copy-'));
 try {
-  delete require.cache[typedPath];
-  const other = require('../../dist/typed');
-  const Foreign = other.defineException()({
-    tag: 'foreign/Failure',
-    message: () => 'failed',
+  fs.cpSync(path.resolve(__dirname, '../../dist'), foreignRoot, {
+    recursive: true,
   });
-  foreign = new Foreign({ details: { key: 'value' } });
+  fs.symlinkSync(
+    path.resolve(__dirname, '../../node_modules'),
+    path.join(foreignRoot, 'node_modules'),
+    'dir',
+  );
+  const other = require(path.join(foreignRoot, 'typed.js'));
+  const Foreign = other.defineException({
+    tag: 'foreign/Failure',
+    message: ({ key }) => `failed ${key}`,
+  });
+  const foreign = new Foreign({ details: { key: 'value' } });
+  const foreignReport = api.toDiagnosticReport(foreign);
+  assert.equal(api.isTypedException(foreign), false);
+  assert.equal(foreignReport.reference, foreign.id);
+  assert.equal(foreignReport.kind, 'foreign/Failure');
+  assert.deepEqual(foreignReport.details, { key: 'value' });
+  log('foreign-copy-diagnostics', {
+    locallyTrusted: api.isTypedException(foreign),
+    sameReference: foreignReport.reference === foreign.id,
+  });
 } finally {
-  require.cache[typedPath] = cached;
+  fs.rmSync(foreignRoot, { recursive: true, force: true });
 }
-const foreignReport = toDiagnosticReport(foreign);
-assert.equal(isTypedException(foreign), false);
-assert.notEqual(foreignReport.reference, foreign.id);
-assert.equal(foreignReport.kind, undefined);
-assert.equal(foreignReport.details, undefined);
-log('duplicate-module', {
-  isTyped: isTypedException(foreign),
-  sameReference: foreignReport.reference === foreign.id,
-  kind: foreignReport.kind ?? null,
-  details: foreignReport.details ?? null,
-});
 
 let preparations = 0;
 const originalPrepare = Error.prepareStackTrace;
@@ -187,28 +145,57 @@ try {
     preparations++;
     return 'prepared';
   };
-  new Failure({ details: {} });
-  assert.equal(preparations, 1);
-  new Error('native');
+  const lazy = new Failure({ details: { operation: 'index' } });
+  const withoutStack = api.toDiagnosticReport(lazy);
+  assert.equal(withoutStack.stack, undefined);
+  assert.equal(preparations, 0);
+  const withStack = api.toDiagnosticReport(lazy, { includeStack: true });
+  assert.equal(withStack.stack, 'prepared');
   assert.equal(preparations, 1);
 } finally {
   Error.prepareStackTrace = originalPrepare;
 }
-log('eager-stack', { typedPreparations: 1, nativePreparations: 0 });
+log('stack-policy', { defaultPreparations: 0, optInPreparations: 1 });
 
 const provider = Object.assign(new Error('provider'), {
   code: 'ETIMEDOUT',
   status: 503,
 });
-const providerReport = toDiagnosticReport(
+const providerReport = api.toDiagnosticReport(
   new Error('failed', { cause: provider }),
 );
-assert.equal(providerReport.cause.code, undefined);
-assert.equal(providerReport.cause.status, undefined);
-assert.deepEqual(toDiagnosticReport(new Map([['key', 'value']])).thrown, {});
+assert.equal(providerReport.cause.code, 'ETIMEDOUT');
+assert.equal(providerReport.cause.status, 503);
+assert.deepEqual(api.toDiagnosticReport(new Map()).thrown, {
+  $appex: 'unsupported',
+  reason: 'Map',
+});
 log('diagnostic-fidelity', {
-  causeKeys: Object.keys(providerReport.cause),
-  map: toDiagnosticReport(new Map([['key', 'value']])).thrown,
+  providerCode: providerReport.cause.code,
+  providerStatus: providerReport.cause.status,
 });
 
-console.log('All review reproductions matched the observed behavior.');
+const publicReport = api.toPublicReport(failure.id, {
+  code: 'SEARCH_FAILED',
+});
+assert.equal(publicReport.reference, failure.id);
+assert.throws(() => api.toPublicReport(failure), TypeError);
+log('reference-only-public-report', { reference: publicReport.reference });
+
+const UndefinedRenderingFailure = api.defineException({
+  tag: 'review/UndefinedRenderingFailure',
+  message: () => {
+    throw undefined;
+  },
+});
+const renderingReport = api.toDiagnosticReport(
+  new UndefinedRenderingFailure({ details: {} }),
+);
+assert.deepEqual(renderingReport.messageRenderingError, {
+  $appex: 'undefined',
+});
+log('undefined-rendering-failure', {
+  marker: renderingReport.messageRenderingError,
+});
+
+process.stdout.write('All current review invariants passed.\n');

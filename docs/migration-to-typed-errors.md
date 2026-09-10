@@ -1,216 +1,120 @@
-# Migrating to typed errors and reports
+# Migrating to Application Exception 0.2
 
-Application Exception now has two compatible surfaces:
+Version 0.2 replaces the legacy mutable builder with one typed native-error API.
+It is a breaking release and requires Node.js 18 or newer.
 
-- `ApplicationException` / `AppEx` preserves the existing mutable builder,
-  subclass defaults, Handlebars templates, and `appex/v0.1` JSON.
-- `defineException` constructs complete native errors with a stable kind,
-  typed details, occurrence identity, and standard causes.
+## Breaking changes
 
-The new API requires Node.js 18 or newer. It does not add a Result type,
-runtime schema system, retry policy, or Effect dependency to production.
+- `ApplicationException`, `AppEx`, builder aliases, subclass defaults,
+  Handlebars templates/helpers, legacy wrapper types, and `appex/v0.1` JSON were
+  removed. There is no compatibility facade or automatic converter.
+- Import all runtime values and public types from `application-exception`.
+  The `application-exception/typed` subpath and wildcard `typesVersions` mapping
+  were removed.
+- Replace the curried `defineException<Details>()({...})` call with
+  `defineException({...})`. Annotate the renderer parameter to infer details.
+- A constant string message creates a no-details kind constructible with no
+  argument. Detail-bearing kinds still require one complete `details` record.
+- `toPublicReport` accepts an occurrence reference string. It no longer accepts,
+  inspects, or decodes an error/diagnostic object.
+- Wire versions changed to `appex/diagnostic/v2` and `appex/public/v2`.
+  `decodeDiagnosticReport` explicitly rejects v1 and unknown versions.
+- Diagnostic stacks are omitted unless `includeStack: true` is selected.
+- Context accepts ordinary interface-shaped objects. Configurable diagnostic
+  limits now include a serialized UTF-8 byte budget.
+- Report normalization emits explicit `unsupported` and additional truncation
+  markers. Provider `code` and `status` are bounded allowlisted observations;
+  arbitrary error fields are not copied.
+- Only local constructed instances pass `isTypedException`. Foreign package-copy
+  metadata may be retained for diagnostics without trusting its details type.
+- Production dependencies now contain only `nanoid`. Effect remains dev-only.
 
-## Define a kind once
+## Replace construction
+
+Before:
 
 ```ts
-import { defineException } from 'application-exception/typed';
+import { AppEx } from 'application-exception';
 
-const UserAlreadyExists = defineException<{ email: string }>()({
+throw AppEx.new('Account already exists: {{email}}')
+  .code('ACCOUNT_ALREADY_EXISTS')
+  .details({ email });
+```
+
+After:
+
+```ts
+import { defineException } from 'application-exception';
+
+const UserAlreadyExists = defineException({
   tag: 'accounts/UserAlreadyExists',
-  message: ({ email }) => `An account already exists for ${email}`,
+  message: ({ email }: { email: string }) =>
+    `An account already exists for ${email}`,
 });
 
-type UserAlreadyExists = InstanceType<typeof UserAlreadyExists>;
-
-const error = new UserAlreadyExists({
-  details: { email: 'ada@example.test' },
-  cause: databaseError,
-});
+throw new UserAlreadyExists({ details: { email }, cause });
 ```
 
-The full detail object is required at construction and must be a data-only,
-record-like shape. Arrays, functions, method-bearing types, and objects whose
-prototype adds methods or accessors are rejected. This rule rejects built-ins
-such as `Date`, `Map`, and `ArrayBuffer` without relying on an allowlist. A
-data-only class instance is accepted because its own fields copy exactly into a
-plain, shallow-frozen object. Nested values keep their identity. The message is
-rendered once and supplied to native `Error`, so `.message`, stacks, loggers,
-and generic error consumers agree. `_tag`, `id`, and `timestamp` describe the
-kind and this particular occurrence.
+The definition is snapshotted. Tags are nonempty and at most 128 UTF-16 units;
+optional ID prefixes are nonempty and at most 32. Details are copied completely
+into a plain shallow-frozen record. Construction rejects more than 1,000 own keys
+or more than 32 prototype levels instead of silently dropping data. Arrays,
+functions, method-bearing shapes, and accessor-bearing prototypes are rejected.
 
-Use a tag that remains meaningful when message wording and transports change.
-Namespace tags when independent catalogs may meet, such as
-`accounts/UserAlreadyExists`. Treat renaming a tag as a contract change.
+Use either `cause` or `causes`; an explicit `cause: undefined` installs the native
+property, while an empty causes list does not. Multiple causes become an ordered
+`AggregateError`.
 
-## Translate legacy concepts
+## Separate diagnosis from disclosure
 
-| Mutable builder concept                | Typed/reporting equivalent                             |
-| -------------------------------------- | ------------------------------------------------------ |
-| `AppEx.new(template).details(partial)` | `new Kind({ details: completeDetails })`               |
-| `getCode()` / class-name code          | Readonly literal `_tag`                                |
-| `numCode()`                            | HTTP status or CLI exit policy at the boundary         |
-| `causedBy(one)`                        | Native `.cause`, preserving identity                   |
-| `causedBy(many)`                       | Native `.cause` containing an ordered `AggregateError` |
-| `displayMessage()`                     | An explicit `toPublicReport` presentation              |
-| Legacy `toJSON()`                      | Retained `appex/v0.1` compatibility output             |
-| Raw template plus compiled message     | Constructor-time message function                      |
-
-There is no automatic conversion for custom legacy defaults, helpers, or
-instance methods. Migrate one domain error at a time. Existing callers can keep
-using the builder while new boundaries use typed errors and reports.
-
-`wrap<Subclass>()` no longer claims that an existing unrelated
-`ApplicationException` has the requested subtype. Code that supplied this
-explicit generic may stop compiling. Remove the generic and narrow the returned
-value from its actual constructor or error code; the runtime object is preserved
-without a type cast that invents a subtype.
-
-## Preserve causes deliberately
-
-`cause` and `causes` are mutually exclusive inputs. A single cause is retained
-by identity. Several causes become an `AggregateError`; their order is retained
-without claiming they occurred sequentially. An empty `causes` list installs no
-cause, while an explicit `cause: undefined` installs the native property.
-
-Normalize a caught value when you need to report it. Translate a failure only
-when the current layer understands it and has a more meaningful error kind.
-Adding request or operation context does not require a new wrapper: pass context
-to `toDiagnosticReport` so concurrent observers do not mutate the same error.
-
-## Produce diagnostic and public reports separately
+Before 0.2, public projection accepted an error or diagnostic graph. Pass the
+stable occurrence reference instead:
 
 ```ts
-import { toDiagnosticReport, toPublicReport } from 'application-exception';
-
-const diagnostic = toDiagnosticReport(error, {
-  context: { requestId: 'req-123', operation: 'registerUser' },
+const diagnostic = toDiagnosticReport(caught, {
+  context: { requestId, operation: 'registerUser' },
+  limits: { maxBytes: 16_384 },
 });
 
-const publicBody = toPublicReport(diagnostic, {
-  code: 'ACCOUNT_ALREADY_EXISTS',
-  message: 'An account with this email already exists.',
+recordTrustedDiagnostic(diagnostic);
+
+const response = toPublicReport(diagnostic.reference, {
+  code: 'REGISTRATION_FAILED',
+  message: 'Registration could not be completed.',
 });
 ```
 
-The diagnostic report uses `appex/diagnostic/v1` and may contain internal
-messages, details, causes, stacks, and observation context. Treat it as
-sensitive operational data. The public report uses `appex/public/v1` and, by
-default, contains only the same occurrence reference plus
-`INTERNAL_ERROR` / `Something went wrong`. Internal tags, messages, details,
-causes, and stacks are never copied automatically.
+References and explicitly supplied public codes must be nonempty strings of at
+most 128 UTF-16 units. Invalid identifiers throw; they are never truncated.
+Message/details truncation is explicit in the envelope.
 
-An application's endpoint owns disclosure policy. The same
-`accounts/UserAlreadyExists` occurrence can produce a conflict message during
-authorized registration and a generic accepted response during account
-recovery. HTTP and CLI statuses stay outside the report body.
+Diagnostic defaults are depth 8, 1,000 values, 50 entries per container, 4,096
+UTF-16 units per string, and 65,536 serialized UTF-8 bytes. Supported maximums
+are 32, 10,000, 1,000, 65,536, and 1,048,576 respectively; non-byte limits may
+be zero and bytes must be at least 4,096. A 4,096-digit magnitude ceiling protects
+bigint conversion independently of the configured string limit.
 
-### Diagnostic normalization
+The decoder additionally caps detached input at depth 64, 100,000 values,
+100,000 descriptor inspections, 1 MiB, and 4,096-unit keys. It validates the one
+snapshot it returns. Decode remote diagnostic JSON before use, then validate
+catalog-specific details with application code.
 
-Default limits apply across details, context, causes, rendering failures, and
-stacks. Structured details and context consume the budget before stack text.
+## Operational limits
 
-| Limit                       | Default |
-| --------------------------- | ------: |
-| Nesting depth               |       8 |
-| Visited values              |   1,000 |
-| Entries per object or array |      50 |
-| Characters per string       |   4,096 |
+Normalization uses own data descriptors and safe built-in intrinsics. It does
+not invoke getters, custom coercion, instance Date methods, or `toJSON`.
+Stack-free reporting does not inspect `.stack`; explicit stack capture may run
+the engine's `Error.prepareStackTrace` hook. Unsupported Map/Set, weak collections,
+binary views/buffers, Promise, RegExp, and collection iterators receive an
+`unsupported` marker.
 
-Configure them through `limits`. Field names matching `apiKey`, `api_key`,
-`authorization`, `cookie`, `password`, `secret`, or `token` are redacted
-case-insensitively; `redactKeys` adds application-specific names. Redaction is a
-useful safeguard, not proof that free-form messages contain no secrets.
+Entry and value budgets bound selected descriptor reads, but enumerating all keys
+can remain proportional to input width. Proxy traps cannot be given a hard time
+limit. Redaction covers selected keys, not secrets embedded in free-form prose.
 
-Object keys longer than 4,096 characters are omitted with a `key-length`
-truncation marker so hostile property names cannot dominate the output size.
-
-Normalization does not invoke getters or custom `toJSON`. It distinguishes
-cycles from ordinary shared values and emits JSON markers:
-
-| `$appex` marker                                                                  | Meaning                                                          |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `redacted`                                                                       | Policy removed the value before traversal                        |
-| `truncated`                                                                      | A string, depth, entry, or total-value limit was reached         |
-| `cycle`                                                                          | The value refers to an ancestor in its current path              |
-| `unreadable`                                                                     | A getter, proxy, or special object could not be inspected safely |
-| `undefined`, `bigint`, `non-finite-number`, `function`, `symbol`, `invalid-date` | JSON cannot faithfully represent the original value              |
-
-Objects that exceed the entry limit receive a property whose value is a
-`truncated` marker. Its key starts with `$appex:truncated`; if user data already
-has that key, the reporter chooses a collision-free `$appex:`-prefixed key.
-Markers are display data and must never be evaluated as revival instructions.
-
-## Decode untrusted reports
-
-```ts
-const decoded = decodeDiagnosticReport(JSON.parse(input));
-if (!decoded.success) {
-  if (decoded.error.code === 'UNSUPPORTED_VERSION') {
-    // Escalate or retain the raw payload; do not guess a newer schema.
-  }
-  return;
-}
-consumePlainReport(decoded.value);
-```
-
-The decoder validates the version and required envelope, recursively verifies
-plain JSON data, rejects accessors, cycles, and class instances, and returns a
-detached report. It never reconstructs exception prototypes or trusts a tag as
-validation of its details. Decoding stops beyond 64 levels, 10,000 values, or a
-4,096-character property name. Domain-error reconstruction needs an
-application-owned decoder or schema adapter.
-
-## Agent and tool consumers
-
-Agents should branch on stable machine fields and treat messages as explanatory
-text:
-
-```ts
-const decoded = decodeDiagnosticReport(toolOutput);
-if (!decoded.success) {
-  return escalateReportProtocol(decoded.error);
-}
-
-switch (decoded.value.kind) {
-  case 'agent/ToolUnavailable':
-    return askForAnotherTool(decoded.value.reference);
-  case 'agent/InvalidInput':
-    return repairInput(decoded.value.details);
-  default:
-    return escalateUnknownFailure(decoded.value.reference);
-}
-```
-
-Agent integrations should:
-
-- correlate actions with `reference`, never by comparing message prose;
-- treat unknown kinds and versions as unknown rather than choosing a similar
-  branch heuristically;
-- preserve `$appex` markers and truncation metadata when summarizing reports;
-- avoid retrying from an error kind alone—operation idempotency owns retry policy;
-- keep diagnostic reports out of model prompts unless the task and data policy
-  authorize their contents;
-- use public reports for user-visible output, with an explicit presentation.
-
-The `/typed` entry point does not load Handlebars or the legacy defaults engine,
-which keeps tool workers that only construct errors lightweight. Reporting is
-available from the root entry point.
-
-## Effect v3
-
-Typed exceptions are native errors with a structural literal `_tag`. Introduce
-one into Effect's typed failure channel explicitly:
-
-```ts
-const program = Effect.catchTag(
-  Effect.fail(error),
-  'accounts/UserAlreadyExists',
-  (failure) => Effect.succeed(failure.details.email),
-);
-```
-
-They are not directly yieldable Effect errors and do not reproduce Effect's
-failure/defect/interruption model. The pinned runnable example is
-[effect-integration.ts](../examples/effect-integration.ts). Applications already
-using schema-backed Effect errors should keep those as their domain model and
-use this package only where its native reporting contract adds value.
+The shipped schemas describe structural JSON constraints. JavaScript runtime
+lengths use UTF-16 units while JSON Schema `maxLength` counts Unicode code points;
+total byte/depth/work and live-object descriptor rules are procedural. See the
+[README](../README.md), [agent guide](agent-recovery.md), and shipped
+[diagnostic](../schemas/diagnostic-report-v2.json) and
+[public](../schemas/public-report-v2.json) schemas.

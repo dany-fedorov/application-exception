@@ -1,5 +1,8 @@
 # Typed Errors and Reports Implementation Plan
 
+> **Historical 0.1 plan.** Its compatibility surface and `/typed` entry were
+> superseded by the [0.2 review-fixes plan](2026-09-10-review-fixes.md).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use

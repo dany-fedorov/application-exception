@@ -1,634 +1,173 @@
 # Application Exception
 
-![Jest coverage](https://raw.githubusercontent.com/dany-fedorov/application-exception/main/badges/coverage-jest%20coverage.svg)
-[![Strictest TypeScript Config](https://badgen.net/badge/typescript/strictest 'Strictest TypeScript Config')](https://www.npmjs.com/package/@tsconfig/strictest)
-[![Package License MIT](https://img.shields.io/npm/l/pojo-constructor.svg)](https://www.npmjs.org/package/application-exception)
-[![Npm Version](https://img.shields.io/npm/v/application-exception.svg)](https://www.npmjs.org/package/application-exception)
+Typed native errors and disclosure-safe diagnostic/public reports for TypeScript.
+Version 0.2 requires Node.js 18 or newer and exposes one API from the package root.
 
-<!-- TOC -->
+```sh
+npm install application-exception
+```
 
-- [Motivation](#motivation)
-- [Development direction](#development-direction)
-- [Typed errors and reports](#typed-errors-and-reports)
-- [User Guide](#user-guide)
-  - [Defaults of `ApplicationException`](#defaults-of-applicationexception)
-  - [Using builder pattern](#using-builder-pattern)
-  - [Using default static method constructors](#using-default-static-method-constructors)
-  - [Templating](#templating)
-  - [Custom exceptions: Extending ApplicationException class](#custom-exceptions--extending-applicationexception-class)
-  - [Custom exceptions: Using `subclass` static method](#custom-exceptions--using-subclass-static-method)
-  - [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions--providing-custom-handlebars-helpers)
-  - [Custom exceptions: Setting a type for `details` field](#custom-exceptions--setting-a-type-for-details-field)
-  - [Handling expected failures](#handling-expected-failures)
+## Define, construct, narrow, report, present
 
-<!-- TOC -->
+Define an error kind once. An annotated message renderer infers the complete
+details type and preserves the tag as a string literal.
 
-## Motivation
+```ts
+import {
+  defineException,
+  toDiagnosticReport,
+  toPublicReport,
+} from 'application-exception';
 
-- Error object must have more default props than just `message` and `stack`.
-- Extending Error object with custom props must be convenient.
-- Error object must allow to specify a list of nested root causes.
-- Error object must have a consistent JSON representation.
-- Informative error messages must be easy to create.
-
-## Development direction
-
-The [implemented design](docs/superpowers/specs/2026-09-10-error-model-design.md)
-developed these ideas into typed native errors, standard causes, and separate
-diagnostic and public reports. The existing builder remains available for
-compatibility.
-
-The accompanying [Effect comparison](docs/research/effect-error-model.md)
-examines tagged errors, typed failures, causes, and schema boundaries using
-official documentation and source. The [glossary](CONTEXT.md) distinguishes an
-error's kind, its occurrence, and its presentation.
-
-## Typed errors and reports
-
-Define an error kind with complete details and a native cause:
-
-```typescript
-import { defineException } from 'application-exception/typed';
-
-const UserAlreadyExists = defineException<{ email: string }>()({
+const UserAlreadyExists = defineException({
   tag: 'accounts/UserAlreadyExists',
-  message: ({ email }) => `An account already exists for ${email}`,
+  message: ({ email }: { email: string }) =>
+    `An account already exists for ${email}`,
 });
 
-const error = new UserAlreadyExists({
+const failure = new UserAlreadyExists({
   details: { email: 'ada@example.test' },
   cause: databaseError,
 });
-
-error._tag; // 'accounts/UserAlreadyExists'
-error.message; // rendered native Error message
-error.details.email; // string
-error.id; // unique occurrence reference
-error.cause; // original value, by identity
 ```
 
-Details must be data-only and record-like. The factory rejects arrays,
-functions, method-bearing types, and objects whose prototype adds methods or
-accessors. A data-only class instance is copied into a plain frozen object.
+`failure` is a native `Error`. Its `_tag` remains the literal
+`'accounts/UserAlreadyExists'`; its `id` identifies this occurrence; and its
+complete, shallow-frozen `details` record drives the message. Use either
+`cause` or `causes`. Multiple causes become an ordered `AggregateError`.
 
-Create a diagnostic report for logs, then independently choose a public
-presentation:
+A constant message defines a no-details error:
 
-```typescript
-import { toDiagnosticReport, toPublicReport } from 'application-exception';
-
-const diagnostic = toDiagnosticReport(error, {
-  context: { requestId: 'req-123', operation: 'registerUser' },
+```ts
+const Unavailable = defineException({
+  tag: 'service/Unavailable',
+  message: 'Service unavailable',
 });
 
-const body = toPublicReport(diagnostic, {
-  code: 'ACCOUNT_ALREADY_EXISTS',
-  message: 'An account with this email already exists.',
-});
+throw new Unavailable();
 ```
 
-Diagnostic normalization is bounded, redacts common secret fields, handles
-cycles and unusual JavaScript values, and never invokes getters or custom
-`toJSON`. Public reports do not inherit diagnostic details. See the
-[migration and agent integration guide](docs/migration-to-typed-errors.md) and
-the runnable [application boundary example](examples/account-registration-boundary.ts).
-The [agent observation example](examples/agent-tool-observations.ts) shows
-aggregate provider failures, repeated observations of one occurrence, cyclic
-request context, and secret redaction.
+Narrow local catches with the actual constructor when you need its details:
 
-## User Guide
-
-### Defaults of `ApplicationException`
-
-By default `ApplicationException` sets `id`, `timestamp` and `message` fields.
-
-<sub>(Run
-with `npm run ts-file ./examples/default-fields-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/default-fields-example.ts))</sub>
-
-```typescript
-const e = AppEx.new();
-
-console.log('id:'.padEnd(10), e.getId());
-console.log('timestamp:'.padEnd(10), e.getTimestamp());
-console.log('message:'.padEnd(10), e.getMessage());
+```ts
+try {
+  await registerUser();
+} catch (caught: unknown) {
+  if (caught instanceof UserAlreadyExists) {
+    console.log(caught.details.email);
+  }
+  throw caught;
+}
 ```
 
-prints
+For a known catalog union, branch exhaustively on `_tag`:
 
-```text
-Id:        AE_00Q6F4K3K7FPYQNEFJA1GV465Z
-Timestamp: 2023-01-08T02:45:12.309Z
-Message:   Something went wrong
-```
+```ts
+type AccountFailure =
+  | InstanceType<typeof UserAlreadyExists>
+  | InstanceType<typeof Unavailable>;
 
-You can provide a message string to `ApplicationException.new`.
-
-<sub>(Run
-with `npm run ts-file ./examples/default-fields-with-custom-message-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/default-fields-with-custom-message-example.ts))</sub>
-
-```typescript
-const e = AppEx.new(`I'm an error message`);
-
-console.log('message:'.padEnd(10), e.getMessage());
-```
-
-prints
-
-```text
-message:   I'm an error message
-```
-
-### Using builder pattern
-
-All fields available with builder pattern are listed in `AppExOwnProps` type.<br>
-
-This library accepts the message template during construction and provides no
-fluent message setter. Native JavaScript `Error.message` is writable; that is
-separate from this library's rendering behavior and from how a runtime formats
-the stack trace.
-
-Here is a simple example.
-
-<sub>(Run with `npm run ts-file ./examples/builder-pattern-simple-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/builder-pattern-simple-example.ts))</sub>
-
-```typescript
-throw AppEx.new(`Could not fetch a resource with id {{id}}`)
-  .numCode(404)
-  .code('RESOURCE_NOT_FOUND')
-  .details({ id });
-```
-
-This is a more complicated example demonstrating more fields.
-
-<sub>(Run
-with `npm run ts-file ./examples/builder-pattern-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/builder-pattern-example.ts))</sub>
-
-```typescript
-function addUser(email: string): void {
-  try {
-    storeUser(email);
-  } catch (caught) {
-    if (caught instanceof Error && caught.message === 'User already exists') {
-      throw AppEx.new(`User with this email already exists - {{email}}`)
-        .displayMessage(
-          'We already have a user with this email in the system, maybe you signed up earlier?',
-        )
-        .code('USER_ALREADY_EXISTS')
-        .numCode(400)
-        .causedBy(caught)
-        .details({ email });
-    } else {
-      throw AppEx.new('Could not create user')
-        .displayMessage('Something went wrong, please visit help center')
-        .numCode(500)
-        .causedBy(caught)
-        .details({ email });
+function handleFailure(error: AccountFailure): string {
+  switch (error._tag) {
+    case 'accounts/UserAlreadyExists':
+      return error.details.email;
+    case 'service/Unavailable':
+      return 'try later';
+    default: {
+      const exhaustive: never = error;
+      return exhaustive;
     }
   }
 }
 ```
 
-### Using default static method constructors
+Create a diagnostic report for trusted operational handling, then select a
+separate public presentation using the same reference:
 
-`ApplicationException.new` is the simplest constructor variant.
-
-Other constructors available by default are `lines` and `prefixedLines` (or `plines`).
-
-<sub>(Run
-with `npm run ts-file ./examples/constructor-variants-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/constructor-variants-example.ts))</sub>
-
-```typescript
-/**
- * `lines` joins all string arguments with '\n'
- */
-const e1 = AppEx.lines(
-  'Could not fetch user from ThirdParty',
-  `- HTTP             - GET https://example.org/api/v1`,
-  `- Request headers  - {{{json req.headers}}}`,
-  `- Response status  - {{{json res.status}}}`,
-  `- Response headers - {{{json res.headers}}}`,
-).details({ req, res });
-
-/**
- * Same as `lines`, but adds a prefix to all line arguments.
- */
-const e2 = AppEx.prefixedLines(
-  'UserService.getUser',
-  'Could not fetch user from ThirdParty',
-  `- HTTP             - GET https://example.org/api/v1`,
-  `- Request headers  - {{{json req.headers}}}`,
-  `- Response status  - {{{json res.status}}}`,
-  `- Response headers - {{{json res.headers}}}`,
-).details({ req, res });
-```
-
-### Templating
-
-Fields `message` and `displayMessage` are actually [Handlebars](https://handlebarsjs.com/) templates.
-
-<sub>(Run
-with `npm run ts-file ./examples/simple-templating-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/simple-templating-example.ts))</sub>
-
-```typescript
-const e = AppEx.new('Bad thing happened').displayMessage(
-  'Something went wrong, please contact tech support and provide this id - {{self.id}}',
-);
-
-console.log(e.getDisplayMessage());
-```
-
-prints
-
-```text
-Something went wrong, please contact tech support and provide this id - AE_0DFG6FGFRCY2THPMMCNXAZF4KF
-```
-
-You can use fields specified in `details` on the top level. Use `self` to access exception object in handlebars
-template. `self` contains all fields available through builder methods on it's top level, like `id` or `code`.
-Also, there are several handlebars helper functions available
-
-- `json`
-- `pad-end`
-- `pad-start`
-
-All compilation context available is presented in the following example.
-
-<sub>(Run
-with `npm run ts-file ./examples/all-templating-helpers-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/all-templating-helpers-example.ts))</sub>
-
-```typescript
-const e = AppEx.new('Bad thing happened')
-  .details({
-    a: 12345,
-    b: 'b-field',
-  })
-  .displayMessageLines(
-    'top level fields',
-    '- a - {{a}}',
-    '- b - {{b}}',
-    'self',
-    '- self.id - {{self.id}}',
-    '- self.timestamp - {{self.timestamp}}',
-    '- self.code - {{self.code}}',
-    '- self.numCode - {{self.numCode}}',
-    '- self.constructor_name - {{self.constructor_name}}',
-    'helpers',
-    '- self.id end padded 1   - padding start ->{{pad-end 40 self.id}}<- padding end',
-    '- self.id end padded 2   - padding start ->{{pad-end 40 "-" self.id}}<- padding end',
-    '- self.id start padded 1 - padding start ->{{pad-start 40 self.id}}<- padding end',
-    '- self.id start padded 2 - padding start ->{{pad-start 40 "-" self.id}}<- padding end',
-    '- self.details - {{{json self.details}}}',
-    '- self.details indented -',
-    '{{{json self.details 4}}}',
-  );
-```
-
-### Custom exceptions: Extending ApplicationException class
-
-Overriding static method `defaults` allows to specify default values of exception fields.
-
-<sub>(Run with `npm run ts-file ./examples/extending-class-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/extending-class-example.ts))</sub>
-
-```typescript
-class MyAppException extends ApplicationException {
-  static override defaults(): ApplicationExceptionDefaultsProps {
-    return {
-      details({ now }) {
-        return {
-          value: {
-            src: 'my-app-api-server',
-            ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
-              locale: localeUkraine,
-            }),
-          },
-        };
-      },
-      useClassNameAsCode() {
-        return { value: true };
-      },
-    };
-  }
-
-  static create(this: ApplicationExceptionStatic, num: number) {
-    return this.new(
-      'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
-    ).details({ num });
-  }
-}
-```
-
-You can still use `new` static method as a constructor like this
-
-```typescript
-const e1 = MyAppException.new(
-  'Using the default `new` constructor. "src" is set by default: {{src}}',
-);
-const e1Json = e1.toJSON();
-delete e1Json.stack;
-console.log(e1Json);
-```
-
-which prints
-
-```text
-{
-  constructor_name: 'MyAppException',
-  message: 'Using the default `new` constructor. "src" is set by default: my-app-api-server',
-  code: 'MyAppException',
-  details: {
-    src: 'my-app-api-server',
-    ts_in_ukraine: '15 січня 2023, 05:04:46'
-  },
-  id: 'AE_TDHCSXDTETRSQFTSTS3QRF3SCQ',
-  timestamp: '2023-01-15T03:04:46.173Z',
-  raw_message: 'Using the default `new` constructor. "src" is set by default: {{src}}',
-  v: 'appex/v0.1'
-}
-```
-
-But you've also defined a `create` static constructor, that should be more suitable to intended calling context
-of `MyAppException`.
-
-```typescript
-const e2 = MyAppException.create(21);
-const e2Json = e2.toJSON();
-delete e2Json.stack;
-console.log(e2Json);
-```
-
-prints
-
-```text
-{
-  constructor_name: 'MyAppException',
-  message: 'Creating from `create` static method. "num" is: 21. Also "src" is set by default: my-app-api-server.',
-  code: 'MyAppException',
-  details: {
-    src: 'my-app-api-server',
-    ts_in_ukraine: '15 січня 2023, 05:06:35',
-    num: 21
-  },
-  id: 'AE_3RKF2423NK98JCH82Z25BDWBKR',
-  timestamp: '2023-01-15T03:06:35.681Z',
-  raw_message: 'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
-  v: 'appex/v0.1'
-}
-```
-
-You can further extend `MyAppException`. `MyServiceException` inherits all instance and static methods and also inherits
-defaults. `details` field objects are merged (can be configured with `mergeDetails` option).
-
-```typescript
-class MyServiceException extends MyAppException {
-  static override defaults(): ApplicationExceptionDefaultsProps {
-    return {
-      details() {
-        return { value: { scope: 'my-service' } };
-      },
-    };
-  }
-}
-
-const e3 = MyServiceException.create(123);
-const e3Json = e3.toJSON();
-delete e3Json.stack;
-console.log(e3Json);
-```
-
-prints
-
-```text
-{
-  constructor_name: 'MyServiceException',
-  message: 'Creating from `create` static method. "num" is: 123. Also "src" is set by default: my-app-api-server.',
-  code: 'MyServiceException',
-  details: {
-    src: 'my-app-api-server',
-    ts_in_ukraine: '15 січня 2023, 05:07:41',
-    scope: 'my-service',
-    num: 123
-  },
-  id: 'AE_V535S4SK0W8RWARKR8DMVBJ5X1',
-  timestamp: '2023-01-15T03:07:41.837Z',
-  raw_message: 'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
-  v: 'appex/v0.1'
-}
-```
-
-### Custom exceptions: Using `subclass` static method
-
-`MyAppException` is the same as in example from previous section except for `ts_in_ukraine` field, because details are
-not constructed dynamically.
-
-<sub>(Run
-with `npm run ts-file ./examples/subclass-example.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/subclass-example.ts))</sub>
-
-```typescript
-const MyAppException = AppEx.subclass(
-  'MyAppException',
-  {
-    useClassNameAsCode: true,
-    details: {
-      src: 'my-app-api-server',
-    },
-  },
-  {
-    create(this: ApplicationExceptionStatic, num: number) {
-      return this.new(
-        'Creating from `create` static method. "num" is: {{num}}. Also "src" is set by default: {{src}}.',
-      ).details({ num });
-    },
-  },
-);
-```
-
-`subclass` is good for quickly extending base versions because it is simple, but you will not be able to use it as a
-TypeScript type. The next piece of code shows how subclass of `MyAppException` created with `subclass` does not allow
-TypeScript to understand that it has a `create` static method available without extra code.
-
-```typescript
-const MyServiceException = MyAppException.subclass(
-  'MyServiceException',
-  {
-    details: {
-      scope: 'my-service',
-    },
-  },
-  /**
-   * This is required for TypeScript to understand that `create` is available on `MyServiceException`
-   */
-  {
-    create: MyAppException.create,
-  },
-);
-```
-
-### Custom exceptions: Providing custom handlebars helpers
-
-<sub>(Run
-with `npm run ts-file ./examples/custom-handlebars-helpers.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/custom-handlebars-helpers.ts))</sub>
-
-```typescript
-const MyAppException = AppEx.subclass(
-  'MyAppException',
-  {
-    useClassNameAsCode: true,
-    details: {
-      src: 'my-app-api-server',
-    },
-    handlebarsHelpers: {
-      'date-iso': function (...args: unknown[]): string {
-        return new Date(args[0] as Date).toISOString();
-      },
-      'date-fmt': function (...args: unknown[]): string {
-        return format(new Date(args[1] as Date), args[0] as string, {
-          locale: localeUkraine,
-        });
-      },
-    },
-  },
-  {
-    defaults(
-      this: ApplicationExceptionStatic,
-    ): ApplicationExceptionDefaultsProps {
-      return {
-        details({ now }) {
-          return {
-            value: {
-              ts_in_ukraine: format(now, 'd MMMM yyyy, HH:mm:ss', {
-                locale: localeUkraine,
-              }),
-            },
-          };
-        },
-      };
-    },
-
-    create(this: ApplicationExceptionStatic, num: number) {
-      return this.new(
-        '{{pad-end 20 self.constructor_name}} // ISO Date: {{date-iso self.timestamp}}; Formatted Date: {{date-fmt "d MMMM yyyy, HH:mm:ss" self.timestamp}}; num: {{num}}',
-      ).details({ num });
-    },
-  },
-);
-
-const e = MyAppException.create(543231);
-
-console.log(e.getMessage());
-
-const MyServiceException = MyAppException.subclass('MyServiceException', {
-  details() {
-    return { value: { service: 'my-service' } };
-  },
+```ts
+const diagnostic = toDiagnosticReport(failure, {
+  context: { requestId: 'req-123', operation: 'registerUser' },
 });
 
-const e1 = MyServiceException.create(3098);
-
-console.log(e1.getMessage());
-```
-
-prints
-
-```text
-MyAppException       // ISO Date: 2023-01-15T03:23:00.647Z; Formatted Date: 15 січня 2023, 05:23:00; num: 543231
-MyServiceException   // ISO Date: 2023-01-15T03:23:00.660Z; Formatted Date: 15 січня 2023, 05:23:00; num: 3098
-```
-
-### Custom exceptions: Setting a type for `details` field
-
-To assign a type to `details` field, you need to override `setDetails` method and make a function with assertion that it
-will return a subclass.
-
-<sub>(Run
-with `npm run ts-file ./examples/typing-details-field.ts` or see
-example's [source code](https://github.com/dany-fedorov/application-exception/blob/main/examples/typing-details-field.ts))</sub>
-
-```typescript
-type Details = {
-  firstName: string;
-  lastName: string;
-};
-
-class MyAppException extends ApplicationException {
-  override setDetails(d: Details): this {
-    return super.setDetails(d);
-  }
-
-  static create(): MyAppException {
-    return new MyAppException(
-      this.normalizeInstanceConfig({
-        message: 'Hey, {{firstName}} {{lastName}}! You got a new exception!',
-      }),
-    );
-  }
-}
-
-const e = MyAppException.create().code('HEY').details({
-  firstName: 'Isaac',
-  lastName: 'Newton',
+const body = toPublicReport(diagnostic.reference, {
+  code: 'ACCOUNT_ALREADY_EXISTS',
+  message: 'An account with this email already exists.',
 });
-
-console.log(e.getMessage());
 ```
 
-This allows for code completion.
+Public presentation never reads an error or diagnostic graph. It accepts a
+nonempty occurrence reference and application-selected code/message/details.
+The defaults are `INTERNAL_ERROR` and `Something went wrong`.
 
-![Details Field Webstorm Code Completion](https://github.com/dany-fedorov/application-exception/blob/main/details-field-webstorm-code-completion.png)
+## Reporting contract
 
-And highlighting not allowed fields by TypeScript aware IDEs.
+Diagnostic reports use `appex/diagnostic/v2`; public reports use
+`appex/public/v2`. `decodeDiagnosticReport` detaches and validates an untrusted
+diagnostic value, returns plain JSON, and rejects older or unknown versions. It
+does not revive errors or validate a domain-specific details type.
 
-![Details Field Webstorm TypeScript Error Highlighting](https://github.com/dany-fedorov/application-exception/blob/main/details-field-webstorm-typescript-error-highlight.png)
+Diagnostic stacks are omitted by default. Set `includeStack: true` only when a
+trusted diagnostic destination needs one. The reporter skips user-defined stack
+accessors. Explicit native stack formatting may run the runtime's
+`Error.prepareStackTrace` hook; constructing an error and stack-free reporting
+do not read `.stack`.
 
-### Handling expected failures
+Normalization avoids getters, custom `toJSON`, Date overrides, and function-name
+accessors. It redacts common credential keys and represents cycles, redactions,
+unreadable values, non-JSON primitives, truncation, and unsupported collections
+or binary objects with explicit `$appex` markers. Marker-shaped application
+objects remain ordinary JSON data and are never revived or executed.
 
-Typed errors work with native control flow and with typed effect systems. In
-ordinary TypeScript, use a discriminated result when the caller is expected to
-recover, and reserve `throw` for a boundary that already handles exceptions:
+The default diagnostic limits are:
 
-```typescript
-type Result<Value, Failure> =
-  | { readonly ok: true; readonly value: Value }
-  | { readonly ok: false; readonly error: Failure };
+| Limit                        | Default | Supported range |
+| ---------------------------- | ------: | --------------: |
+| nesting depth                |       8 |            0–32 |
+| normalized values            |   1,000 |        0–10,000 |
+| entries per container        |      50 |         0–1,000 |
+| string length (UTF-16 units) |   4,096 |        0–65,536 |
+| serialized UTF-8 bytes       |  65,536 | 4,096–1,048,576 |
 
-function register(
-  email: string,
-): Result<string, InstanceType<typeof UserAlreadyExists>> {
-  if (email === 'ada@example.test') {
-    return {
-      ok: false,
-      error: new UserAlreadyExists({ details: { email } }),
-    };
-  }
-  return { ok: true, value: 'created' };
-}
+Keys longer than 4,096 UTF-16 units are omitted. Bigint decimal conversion has
+a separate 4,096-digit magnitude ceiling. Decoder work is capped at depth 64,
+100,000 JSON values, 100,000 descriptor inspections, 1 MiB, and 4,096-unit keys.
+The reporter selects only bounded entries, but `Reflect.ownKeys` can still cost
+time proportional to object width. Arbitrary proxy traps cannot have a hard
+execution-time guarantee; project large live inputs into small owned summaries.
+
+Only local instances created by the loaded module satisfy `isTypedException`.
+Diagnostics can preserve bounded data metadata from another installed copy, but
+that does not certify the foreign details shape. Use an application-owned decoder
+or constructor check before treating details as a catalog type.
+
+## Schemas and integrations
+
+The package ships plain JSON Schemas for
+[`appex/diagnostic/v2`](schemas/diagnostic-report-v2.json) and
+[`appex/public/v2`](schemas/public-report-v2.json). They validate wire structure,
+versions, allowed envelope fields, and truncation fields. Live-object traversal,
+total work/byte limits, and JavaScript UTF-16 length rules are procedural checks;
+JSON Schema `maxLength` counts Unicode code points. Schema validation therefore
+does not replace `decodeDiagnosticReport` or establish a domain details type.
+
+The [migration guide](docs/migration-to-typed-errors.md) lists every 0.2 break.
+The [agent recovery guide](docs/agent-recovery.md) shows schema validation,
+stable-code branching, selected public details, unknown-code escalation, and an
+operation-owned retry budget. The repository has runnable examples for an
+[application boundary](https://github.com/dany-fedorov/application-exception/blob/main/examples/account-registration-boundary.ts),
+[agent recovery](https://github.com/dany-fedorov/application-exception/blob/main/examples/agent-recovery.ts),
+and [Effect v3](https://github.com/dany-fedorov/application-exception/blob/main/examples/effect-integration.ts).
+Effect remains optional and is not a production dependency.
+
+## Development
+
+```sh
+npm ci
+npm run test:all
+npm run review:probe
+npm run benchmark # optional, illustrative local measurements
 ```
 
-With Effect, put the same tagged value in the typed failure channel explicitly
-and recover by its literal `_tag`:
-
-```typescript
-import { Effect } from 'effect';
-
-const failure = Effect.fail(
-  new UserAlreadyExists({ details: { email: 'ada@example.test' } }),
-);
-
-const recovered = Effect.catchTag(
-  failure,
-  'accounts/UserAlreadyExists',
-  (error) => Effect.succeed(error.details.email),
-);
-```
-
-The package does not patch Effect or make errors yieldable. See the runnable
-[Effect example](examples/effect-integration.ts) for the tested integration.
+See [CHANGELOG.md](CHANGELOG.md) for release notes and
+[the resolved API/performance review](docs/reviews/2026-09-10-review-resolution.md)
+for the evidence and known limits behind this release.

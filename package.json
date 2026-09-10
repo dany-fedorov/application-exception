@@ -1,6 +1,6 @@
 {
   "name": "application-exception",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Typed application errors and disclosure-safe reports for TypeScript",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -10,22 +10,9 @@
       "require": "./index.js",
       "default": "./index.js"
     },
-    "./typed": {
-      "types": "./typed.d.ts",
-      "require": "./typed.js",
-      "default": "./typed.js"
-    },
-    "./package.json": "./package.json"
-  },
-  "typesVersions": {
-    "*": {
-      "typed": [
-        "typed.d.ts"
-      ],
-      "*": [
-        "index.d.ts"
-      ]
-    }
+    "./package.json": "./package.json",
+    "./schemas/diagnostic-report-v2.json": "./schemas/diagnostic-report-v2.json",
+    "./schemas/public-report-v2.json": "./schemas/public-report-v2.json"
   },
   "sideEffects": false,
   "engines": {
@@ -38,12 +25,14 @@
     "test:all": "npm test -- --runInBand && npm run test:types && npm run build && npm run test:package",
     "build": "tsc -p ./tsconfig.build.json",
     "prepare-me": "rm -rf ./dist && npm run build",
-    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mv dist ./npm-module-build && cp package.json ./npm-module-build && cp README.md ./npm-module-build && cp LICENSE ./npm-module-build",
+    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mkdir -p ./npm-module-build/docs/reviews ./npm-module-build/schemas && cp -R ./dist/. ./npm-module-build && cp package.json README.md CHANGELOG.md LICENSE ./npm-module-build && cp docs/migration-to-typed-errors.md docs/agent-recovery.md ./npm-module-build/docs && cp docs/reviews/* ./npm-module-build/docs/reviews && cp schemas/*.json ./npm-module-build/schemas",
     "publish-me": "npm run prepublish-me && cd npm-module-build && npm publish --access public --registry https://registry.npmjs.org/",
     "postpublish-me": "rm -fr npm-module-build",
     "build-watch": "chokidar './src/**/*.ts' -c 'npm run build' -i './node_modules/**/*' --initial",
     "ts-file": "tsx",
-    "test-ci": "npm test -- --runInBand --ci --coverage && npm run test:types && npm run build && npm run test:package"
+    "test-ci": "npm test -- --runInBand --ci --coverage && npm run test:types && npm run build && npm run test:package",
+    "review:probe": "npm run build && node docs/reviews/2026-09-10-review-probes.cjs",
+    "benchmark": "npm run build && node docs/reviews/2026-09-10-benchmark.cjs"
   },
   "repository": {
     "type": "git",
@@ -89,9 +78,6 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
-    "caught-object-report-json": "^7.1.1",
-    "handlebars": "^4.7.7",
-    "nanoid": "^3.3.19",
-    "pojo-constructor": "^7.0.0"
+    "nanoid": "^3.3.19"
   }
 }

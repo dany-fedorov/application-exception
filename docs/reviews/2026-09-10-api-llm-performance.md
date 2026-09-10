@@ -6,6 +6,10 @@ CommonJS output. “LLM friendly” covers both generating correct application c
 and consuming error reports as tool output. This review records findings; it
 does not change the implementation.
 
+This is a historical observation of `2cc5e7e`. See the
+[0.2 resolution](2026-09-10-review-resolution.md) for the implemented outcome and
+current verification. Source links below are pinned to the reviewed revision.
+
 ## Recommendation
 
 Make typed errors the default API and remove the legacy builder from the core.
@@ -44,10 +48,10 @@ was implemented incorrectly.
 
 ### F1. The compiled legacy constructor fails before repairing its prototype
 
-**Evidence:** [ApplicationException.ts:835–870](../../src/ApplicationException.ts#L835),
-[tsconfig.build.json](../../tsconfig.build.json),
-[tsconfig.json](../../tsconfig.json),
-[package smoke test](../../tests/package-smoke.js).
+**Evidence:** [ApplicationException.ts:835–870](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L835),
+[tsconfig.build.json](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/tsconfig.build.json),
+[tsconfig.json](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/tsconfig.json),
+[package smoke test](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/tests/package-smoke.js).
 
 After `npm run build`, this fails:
 
@@ -69,9 +73,9 @@ If legacy is removed, make that an explicit breaking removal.
 
 ### F2. Traversal limits bound selected output, not input inspection
 
-**Evidence:** [reporting.ts:330–380](../../src/reporting.ts#L330),
-[decoder:745–784](../../src/reporting.ts#L745),
-[typed detail copying:42–80](../../src/typed.ts#L42).
+**Evidence:** [reporting.ts:330–380](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L330),
+[decoder:745–784](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L745),
+[typed detail copying:42–80](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/typed.ts#L42).
 
 `Object.getOwnPropertyDescriptors(value)` eagerly allocates descriptors for the
 whole object or array before `maxEntries` is applied. Object handling then
@@ -98,10 +102,10 @@ values into small application-owned summaries before reporting.
 
 ### F3. Markers bypass the budget, and generated reports can fail decoding
 
-**Evidence:** [reporting.ts:353–393](../../src/reporting.ts#L353),
-[value counter:421–428](../../src/reporting.ts#L421),
-[decoder limits:683–704](../../src/reporting.ts#L683),
-[public fallback:650–657](../../src/reporting.ts#L650).
+**Evidence:** [reporting.ts:353–393](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L353),
+[value counter:421–428](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L421),
+[decoder limits:683–704](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L683),
+[public fallback:650–657](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L650).
 
 Unreadable and redacted markers are added without going through the value
 counter. Containers also continue emitting truncation markers after the budget
@@ -126,9 +130,9 @@ an invalid report with a new occurrence.
 
 ### F4. Special values bypass the getter-free normalization contract
 
-**Evidence:** [date handling:320–326](../../src/reporting.ts#L320),
-[function handling:449–457](../../src/reporting.ts#L449),
-[documented guarantee](../../docs/migration-to-typed-errors.md#diagnostic-normalization).
+**Evidence:** [date handling:320–326](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L320),
+[function handling:449–457](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L449),
+[documented guarantee](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/docs/migration-to-typed-errors.md#diagnostic-normalization).
 
 Date normalization calls `date.getTime()` and `date.toISOString()` through the
 instance. Function normalization reads `value.name` directly. Both properties
@@ -147,7 +151,7 @@ rendering, which is also outside a descriptor-only traversal guarantee.
 
 ### F5. An error definition is live mutable configuration
 
-**Evidence:** [typed.ts:155–218](../../src/typed.ts#L155).
+**Evidence:** [typed.ts:155–218](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/typed.ts#L155).
 
 The class's static tag/name are captured at definition, while construction reads
 the original definition object's `tag`, `message`, and `idPrefix` again.
@@ -160,7 +164,7 @@ TypeScript's readonly parameter view does not freeze the original object.
 
 ### F6. The decoder validates before cloning, rather than validating its result
 
-**Evidence:** [reporting.ts:851–930](../../src/reporting.ts#L851).
+**Evidence:** [reporting.ts:851–930](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L851).
 
 The decoder first validates envelope descriptors, then re-reads the input while
 cloning it. A proxy can return different descriptors on those reads.
@@ -177,9 +181,9 @@ immutable JSON parsed from the wire does not have this behavior.
 
 ### F7. Typed identity only works within one evaluated module instance
 
-**Evidence:** [typed.ts:3–9](../../src/typed.ts#L3),
-[typed guard:225–234](../../src/typed.ts#L225),
-[report dispatch:591–629](../../src/reporting.ts#L591).
+**Evidence:** [typed.ts:3–9](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/typed.ts#L3),
+[typed guard:225–234](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/typed.ts#L225),
+[report dispatch:591–629](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L591).
 
 The guard uses a module-local `WeakSet`, despite also installing a global-symbol
 brand. A second evaluated copy of the module has a different registry.
@@ -196,7 +200,7 @@ Do not fix this by making a forgeable tag/symbol alone a trusted type guard.
 
 ### F10. Public projection processes the full diagnostic graph
 
-**Evidence:** [reporting.ts:650–666](../../src/reporting.ts#L650).
+**Evidence:** [reporting.ts:650–666](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L650).
 
 `toPublicReport(error)` constructs a full diagnostic report, then keeps only its
 reference. `toPublicReport(report)` decodes and clones the full report, then
@@ -216,7 +220,7 @@ API also removes the error-versus-report guessing responsible for F3.
 
 ### F11. Typed construction formats the stack even if nobody reads it
 
-**Evidence:** [typed.ts:191–201](../../src/typed.ts#L191).
+**Evidence:** [typed.ts:191–201](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/typed.ts#L191).
 
 The constructor reads `this.stack` and installs the resulting string. In this
 Node runtime, an `Error.prepareStackTrace` probe ran once merely from constructing
@@ -233,10 +237,10 @@ agreement and getter-free reporting behavior when doing so. Measure realistic
 stack depth and failure rate before changing ID generation or small allocations.
 
 The legacy path additionally recompiles Handlebars on every message read
-([compileTemplate](../../src/ApplicationException.ts#L931),
-[getCompiledMessage](../../src/ApplicationException.ts#L1259)). Repeated
+([compileTemplate](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L931),
+[getCompiledMessage](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L1259)). Repeated
 `addCauses` copies the accumulated list and rebuilds its aggregate
-([source](../../src/ApplicationException.ts#L1301)), making one-at-a-time growth
+([source](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L1301)), making one-at-a-time growth
 quadratic. These are secondary if legacy is removed. If retained, cache compiled
 template functions while re-evaluating data, and batch causes; do not restore a
 stale rendered-message cache.
@@ -245,9 +249,9 @@ stale rendered-message cache.
 
 ### F8. Choose one default API and one primary teaching path
 
-**Evidence:** [root exports](../../src/index.ts),
-[legacy aliases](../../src/ApplicationException.ts#L1375),
-[README](../../README.md#user-guide), [package exports](../../package.json).
+**Evidence:** [root exports](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/index.ts),
+[legacy aliases](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L1375),
+[README](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/README.md#user-guide), [package exports](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/package.json).
 
 The 1,466-line legacy implementation exposes fluent aliases, getters/setters,
 subclass defaults, template helpers, and configuration types alongside the
@@ -280,9 +284,9 @@ handling for a known union, and explicit decoding for remote reports. A broad
 
 ### F9. Reduce type ceremony without weakening constructor guarantees
 
-**Evidence:** [factory signature](../../src/typed.ts#L134),
-[empty-detail example](../../tests/TypedException.test.ts#L54),
-[context type](../../src/reporting.ts#L44).
+**Evidence:** [factory signature](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/typed.ts#L134),
+[empty-detail example](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/tests/TypedException.test.ts#L54),
+[context type](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L44).
 
 The curried `defineException<Details>()({...})` preserves tag inference when
 details are explicitly supplied. It is a TypeScript workaround, not an error
@@ -323,18 +327,18 @@ with a constant message and `new Unavailable()`.
 
 If legacy survives, its types also need repair: `ApplicationException.new<Special>`
 can claim a subclass with methods the returned instance does not have
-([source](../../src/ApplicationException.ts#L925)). The documented typed-details
+([source](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L925)). The documented typed-details
 override accepts partial `.details(...)` but subsequently claims complete details
-([source](../../src/ApplicationException.ts#L1281),
-[builder](../../src/ApplicationException.ts#L1407)). Both permit code that compiles
+([source](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L1281),
+[builder](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/ApplicationException.ts#L1407)). Both permit code that compiles
 and then reads nonexistent data or calls nonexistent methods.
 
 ### F12. Give agents a small, explicit report contract
 
-**Evidence:** [agent example](../../examples/agent-tool-observations.ts),
-[agent guide](../../docs/migration-to-typed-errors.md#agent-and-tool-consumers),
-[error normalization](../../src/reporting.ts#L210),
-[published-file staging](../../package.json).
+**Evidence:** [agent example](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/examples/agent-tool-observations.ts),
+[agent guide](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/docs/migration-to-typed-errors.md#agent-and-tool-consumers),
+[error normalization](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L210),
+[published-file staging](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/package.json).
 
 The existing guide correctly recommends stable fields, unknown-kind handling,
 and application-owned retry/disclosure policy. The reporting contract still has
@@ -390,7 +394,7 @@ the package and show one complete agent recovery example.
 
 A smaller reporting edge also remains: a renderer that throws `undefined` loses
 its `messageRenderingError` because presence is tested with `!== undefined`
-([reporting.ts:514](../../src/reporting.ts#L514)); preserve presence separately.
+([reporting.ts:514](https://github.com/dany-fedorov/application-exception/blob/2cc5e7e/src/reporting.ts#L514)); preserve presence separately.
 
 ## Suggested order
 
