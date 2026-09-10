@@ -11,6 +11,7 @@
 <!-- TOC -->
 
 - [Motivation](#motivation)
+- [Development direction](#development-direction)
 - [User Guide](#user-guide)
   - [Defaults of `ApplicationException`](#defaults-of-applicationexception)
   - [Using builder pattern](#using-builder-pattern)
@@ -36,6 +37,19 @@
 - Error object must allow to specify a list of nested root causes.
 - Error object must have a consistent JSON representation.
 - Informative error messages must be easy to create. 
+
+## Development direction
+
+The [design proposal](docs/superpowers/specs/2026-09-10-error-model-design.md)
+develops these ideas into typed native errors, standard causes, and separate
+diagnostic and public reports. It includes concrete problems verified against
+the current implementation, API sketches, compatibility decisions, and a staged
+roadmap. The proposed APIs are not yet implemented.
+
+The accompanying [Effect comparison](docs/research/effect-error-model.md)
+examines tagged errors, typed failures, causes, and schema boundaries using
+official documentation and source. The [glossary](CONTEXT.md) distinguishes an
+error's kind, its occurrence, and its presentation.
 
 ## User Guide
 
@@ -85,8 +99,10 @@ message:   I'm an error message
 
 All fields available with builder pattern are listed in `AppExOwnProps` type.<br>
 
-You can use builder methods to set all of these fields except for `message` field because once message is set on `Error`
-instance it is impossible to change it. One time when setting `message` is available is during object creation.
+This library accepts the message template during construction and provides no
+fluent message setter. Native JavaScript `Error.message` is writable; that is
+separate from this library's rendering behavior and from how a runtime formats
+the stack trace.
 
 Here is a simple example.
 
