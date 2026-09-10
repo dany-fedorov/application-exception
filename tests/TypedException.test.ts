@@ -201,6 +201,16 @@ describe('defineException', () => {
       () =>
         new UserAlreadyExists({ details: new DetailsWithMethod() } as never),
     ).toThrow('Exception details must have a data-only object prototype');
+    class DetailsWithFunctionField {
+      readonly operation = 'search';
+      readonly describe = () => this.operation;
+    }
+    expect(
+      () =>
+        new UserAlreadyExists({
+          details: new DetailsWithFunctionField(),
+        } as never),
+    ).toThrow('Exception details must contain enumerable data properties');
   });
 
   test('copies enumerable data from a data-only class without its prototype', () => {

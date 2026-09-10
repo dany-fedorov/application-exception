@@ -39,19 +39,48 @@ type RecordDetails<Details extends object> = Details extends
   ? Details
   : never;
 
-function hasRecordLikePrototype(value: object): boolean {
+function copyRecordDetails(
+  value: object,
+): Readonly<Record<PropertyKey, unknown>> {
   try {
     let prototype = Object.getPrototypeOf(value) as object | null;
     while (prototype !== null && prototype !== Object.prototype) {
       const descriptors = Object.getOwnPropertyDescriptors(prototype);
       if (Reflect.ownKeys(descriptors).some((key) => key !== 'constructor')) {
-        return false;
+        throw new TypeError(
+          'Exception details must have a data-only object prototype',
+        );
       }
       prototype = Object.getPrototypeOf(prototype) as object | null;
     }
-    return true;
+
+    const output: Record<PropertyKey, unknown> = {};
+    const descriptors = Object.getOwnPropertyDescriptors(value);
+    for (const key of Reflect.ownKeys(descriptors)) {
+      const descriptor = Reflect.get(descriptors, key) as
+        | PropertyDescriptor
+        | undefined;
+      if (
+        !descriptor ||
+        !descriptor.enumerable ||
+        !('value' in descriptor) ||
+        typeof descriptor.value === 'function'
+      ) {
+        throw new TypeError(
+          'Exception details must contain enumerable data properties',
+        );
+      }
+      Object.defineProperty(output, key, {
+        value: descriptor.value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return Object.freeze(output);
   } catch (_error: unknown) {
-    return false;
+    if (_error instanceof TypeError) throw _error;
+    throw new TypeError('Exception details could not be inspected');
   }
 }
 
@@ -145,20 +174,15 @@ export function defineException<Details extends object>(
         ) {
           throw new TypeError('Exception details must be a non-array object');
         }
-        if (!hasRecordLikePrototype(suppliedDetails)) {
-          throw new TypeError(
-            'Exception details must have a data-only object prototype',
-          );
-        }
         if (
           Object.prototype.hasOwnProperty.call(input, 'cause') &&
           Object.prototype.hasOwnProperty.call(input, 'causes')
         ) {
           throw new TypeError('Provide either cause or causes, not both');
         }
-        const details = Object.freeze({
-          ...suppliedDetails,
-        }) as Readonly<RecordDetails<Details>>;
+        const details = copyRecordDetails(suppliedDetails) as Readonly<
+          RecordDetails<Details>
+        >;
         const rendered = renderMessage(
           definition.tag,
           definition.message,

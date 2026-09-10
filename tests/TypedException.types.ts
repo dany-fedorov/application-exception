@@ -33,8 +33,16 @@ class DetailsWithMethod {
   }
 }
 
+class DetailsWithFunctionField {
+  readonly operation = 'search';
+  readonly describe = () => this.operation;
+}
+
 // @ts-expect-error method-bearing shapes do not satisfy data-only details.
 defineException<DetailsWithMethod>();
+
+// @ts-expect-error own function fields do not satisfy data-only details.
+defineException<DetailsWithFunctionField>();
 
 const CustomFailure = defineException<DataOnlyDetails>()({
   tag: 'CustomFailure',
