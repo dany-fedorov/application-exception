@@ -102,7 +102,8 @@ function detach(
       if (key.length > 4096)
         throw new InvalidJson('Report key exceeds decode length limit', path);
       const childPath = `${path}.${key.slice(0, 64)}`;
-      state.inspected++;
+      if (++state.inspected > 100_000)
+        throw new InvalidJson('Report exceeds decode inspection limit', path);
       const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor)
         throw new InvalidJson('Could not inspect value', childPath);

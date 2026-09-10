@@ -618,3 +618,155 @@ test('decoder caps repeated non-enumerable descriptor inspection across branches
   expect(reads).toBeLessThanOrEqual(100_000);
   expect(decoded.success).toBe(false);
 });
+
+test('oversized positive and negative bigints skip decimal conversion in all report paths', () => {
+  const huge = BigInt(`1${'0'.repeat(100_000)}`);
+  const negative = -huge;
+  const nativeString = String;
+  let conversions = 0;
+  const stringSpy = jest
+    .spyOn(globalThis, 'String')
+    .mockImplementation((value) => {
+      if (value === huge || value === negative) conversions++;
+      return nativeString(value);
+    });
+  try {
+    for (const value of [huge, negative]) {
+      for (const limits of [
+        undefined,
+        { maxValues: 0, maxStringLength: 0, maxBytes: 4096 },
+        {
+          maxDepth: 32,
+          maxValues: 10_000,
+          maxEntries: 1000,
+          maxStringLength: 65_536,
+          maxBytes: 1_048_576,
+        },
+      ]) {
+        const options = limits ? { limits } : {};
+        const top = roundTrip(value, options);
+        const nested = roundTrip({ value }, options);
+        if (limits?.maxValues !== 0) {
+          expect(top.thrown).toEqual({
+            $appex: 'truncated',
+            reason: 'bigint-magnitude',
+          });
+          expect(nested.thrown).toEqual({
+            value: { $appex: 'truncated', reason: 'bigint-magnitude' },
+          });
+        }
+      }
+      const publicReport = toPublicReport('ref', { details: { value } });
+      expect(publicReport.details).toEqual({
+        value: { $appex: 'truncated', reason: 'bigint-magnitude' },
+      });
+      expect(
+        Buffer.byteLength(JSON.stringify(publicReport)),
+      ).toBeLessThanOrEqual(65_536);
+    }
+    expect(conversions).toBe(0);
+  } finally {
+    stringSpy.mockRestore();
+  }
+});
+
+test('zero string/value and exhausted byte budgets skip even small bigint conversion', () => {
+  const value = 123456789n;
+  const nativeString = String;
+  let conversions = 0;
+  const stringSpy = jest
+    .spyOn(globalThis, 'String')
+    .mockImplementation((input) => {
+      if (input === value) conversions++;
+      return nativeString(input);
+    });
+  try {
+    roundTrip(value, { limits: { maxValues: 0 } });
+    roundTrip(value, { limits: { maxStringLength: 0 } });
+    roundTrip({ value }, { limits: { maxStringLength: 0 } });
+    roundTrip(['x'.repeat(65_536), value], {
+      limits: { maxStringLength: 65_536, maxBytes: 4096 },
+    });
+    expect(conversions).toBe(0);
+  } finally {
+    stringSpy.mockRestore();
+  }
+});
+
+test('bounded bigint conversion preserves signs and the exact 4096-digit threshold', () => {
+  const bounded = BigInt('9'.repeat(4096));
+  const oversized = BigInt(`1${'0'.repeat(4096)}`);
+  expect(roundTrip(12n).thrown).toEqual({ $appex: 'bigint', value: '12' });
+  expect(roundTrip(-12n).message).toBe('-12');
+  expect(toPublicReport('ref', { details: -12n }).details).toEqual({
+    $appex: 'bigint',
+    value: '-12',
+  });
+  for (const value of [bounded, -bounded]) {
+    const report = roundTrip(value, { limits: { maxStringLength: 65_536 } });
+    expect(report.thrown).toEqual({ $appex: 'bigint', value: String(value) });
+  }
+  for (const value of [oversized, -oversized]) {
+    expect(roundTrip(value).thrown).toEqual({
+      $appex: 'truncated',
+      reason: 'bigint-magnitude',
+    });
+  }
+});
+
+test('decoder rechecks descriptor credit after a recursive child before primitive siblings', () => {
+  let reads = 0;
+  const observe = (value: object) =>
+    new Proxy(value, {
+      getOwnPropertyDescriptor(target, key) {
+        reads++;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+  const child = observe(
+    Object.defineProperties(
+      {},
+      Object.fromEntries(
+        Array.from({ length: 99_990 }, (_, i) => [
+          `hidden${i}`,
+          { value: 0, configurable: true },
+        ]),
+      ),
+    ),
+  );
+  const details = observe({
+    child,
+    ...Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`sibling${i}`, i]),
+    ),
+  });
+  const report = observe({
+    v: DIAGNOSTIC_REPORT_VERSION,
+    reference: 'ref',
+    name: '',
+    message: '',
+    details,
+  });
+  const decoded = decodeDiagnosticReport(report);
+  expect(reads).toBeLessThanOrEqual(100_000);
+  expect(decoded).toMatchObject({
+    success: false,
+    error: {
+      code: 'INVALID_REPORT',
+      message: 'Report exceeds decode inspection limit',
+    },
+  });
+});
+
+test('public code defaults only for omitted or undefined values and rejects explicit null', () => {
+  expect(toPublicReport('ref').code).toBe('INTERNAL_ERROR');
+  expect(
+    toPublicReport('ref', { code: undefined } as unknown as { code: string })
+      .code,
+  ).toBe('INTERNAL_ERROR');
+  for (const code of [null, false, 0, {}, []]) {
+    expect(() =>
+      toPublicReport('ref', { code } as unknown as { code: string }),
+    ).toThrow(TypeError);
+  }
+});

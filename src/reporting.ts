@@ -1,7 +1,9 @@
 import { createOccurrence } from './occurrence';
 import { getMessageRenderingFailure } from './typed-internals';
 import {
+  boundedBigIntText,
   dataValue,
+  exhausted,
   diagnosticTypedView,
   DEFAULT_LIMITS,
   isErrorObject,
@@ -26,14 +28,21 @@ import type {
 export * from './report-types';
 export { decodeDiagnosticReport } from './report-codec';
 
-function safeString(value: unknown): string {
+function safeString(
+  value: unknown,
+  state: ReturnType<typeof makeState>,
+): string {
   switch (typeof value) {
     case 'string':
     case 'number':
     case 'boolean':
-    case 'bigint':
     case 'undefined':
       return String(value);
+    case 'bigint': {
+      if (exhausted(state)) return 'BigInt value was thrown';
+      const text = boundedBigIntText(value, state);
+      return text.success ? text.value : 'BigInt value was thrown';
+    }
     case 'symbol':
       return value.description ?? 'Symbol';
     default:
@@ -66,7 +75,7 @@ export function toDiagnosticReport(
     : 'NonErrorThrown';
   const rawMessage = error
     ? stringOr(dataValue(error, 'message'), typed?.tag ?? '')
-    : safeString(caught);
+    : safeString(caught, state);
   const messageOmitted = Math.max(
     0,
     rawMessage.length - state.limits.maxStringLength,
@@ -142,7 +151,8 @@ export function toPublicReport(
       'reference must be a nonempty string of at most 128 characters',
     );
   }
-  const code = presentation.code ?? 'INTERNAL_ERROR';
+  const selectedCode = presentation.code;
+  const code = selectedCode === undefined ? 'INTERNAL_ERROR' : selectedCode;
   const message = presentation.message ?? 'Something went wrong';
   if (typeof code !== 'string' || typeof message !== 'string')
     throw new TypeError('Public code and message must be strings');

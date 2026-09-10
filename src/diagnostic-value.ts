@@ -497,6 +497,31 @@ function normalizeString(
         omitted: value.length - state.limits.maxStringLength,
       });
 }
+let bigintUpperBound: bigint | undefined;
+let bigintLowerBound: bigint | undefined;
+export function boundedBigIntText(
+  value: bigint,
+  state: NormalizationState,
+):
+  | { readonly success: true; readonly value: string }
+  | {
+      readonly success: false;
+      readonly reason: 'string' | 'bytes' | 'bigint-magnitude';
+    } {
+  if (state.limits.maxStringLength === 0)
+    return { success: false, reason: 'string' };
+  if (state.bytes <= 0) return { success: false, reason: 'bytes' };
+  // Bound conversion work before allocating decimal text. Negate only the small
+  // fixed threshold, never the arbitrary input; huge values need no digit count.
+  if (bigintUpperBound === undefined) {
+    bigintUpperBound = 10n ** 4096n;
+    bigintLowerBound = -bigintUpperBound;
+  }
+  if (value >= bigintUpperBound || value <= bigintLowerBound!) {
+    return { success: false, reason: 'bigint-magnitude' };
+  }
+  return { success: true, value: String(value) };
+}
 export function normalizeValue(
   value: unknown,
   state: NormalizationState,
@@ -516,8 +541,12 @@ export function normalizeValue(
       return value;
     case 'undefined':
       return marker('undefined');
-    case 'bigint':
-      return boundedMarker('bigint', String(value), state);
+    case 'bigint': {
+      const text = boundedBigIntText(value, state);
+      return text.success
+        ? boundedMarker('bigint', text.value, state)
+        : marker('truncated', { reason: text.reason });
+    }
     case 'symbol':
       return boundedMarker('symbol', value.description ?? '', state);
     case 'function': {
