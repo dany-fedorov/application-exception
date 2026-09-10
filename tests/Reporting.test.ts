@@ -1,4 +1,3 @@
-import { ApplicationException } from '../src/ApplicationException';
 import {
   decodeDiagnosticReport,
   toDiagnosticReport,
@@ -7,12 +6,10 @@ import {
 import { defineException } from '../src/typed';
 
 describe('diagnostic reporting', () => {
-  const ToolFailure = defineException<{
-    tool: string;
-    input: Record<string, unknown>;
-  }>()({
+  const ToolFailure = defineException({
     tag: 'agent/ToolFailure',
-    message: ({ tool }) => `${tool} failed`,
+    message: ({ tool }: { tool: string; input: Record<string, unknown> }) =>
+      `${tool} failed`,
   });
 
   test('reports a typed occurrence with detached details and context', () => {
@@ -21,6 +18,8 @@ describe('diagnostic reporting', () => {
       cause: new Error('connection refused'),
     });
 
+    // Keep this v1 fixture's stack a data field while construction stays lazy.
+    Object.defineProperty(error, 'stack', { value: error.stack });
     const report = toDiagnosticReport(error, {
       context: { requestId: 'req-123', attempt: 2 },
     });
@@ -42,19 +41,6 @@ describe('diagnostic reporting', () => {
       name: 'Error',
       message: 'connection refused',
     });
-  });
-
-  test('reports legacy errors using their established occurrence metadata', () => {
-    const error = ApplicationException.new('Could not save {{id}}')
-      .code('SAVE_FAILED')
-      .details({ id: 42 });
-
-    const report = toDiagnosticReport(error);
-
-    expect(report.reference).toBe(error.getId());
-    expect(report.kind).toBe('SAVE_FAILED');
-    expect(report.message).toBe('Could not save 42');
-    expect(report.details).toEqual({ id: 42 });
   });
 
   test('normalizes a raw thrown value into an identifiable report', () => {
@@ -403,9 +389,9 @@ describe('diagnostic reporting', () => {
   });
 
   test('bounds the required diagnostic message and records omitted characters', () => {
-    const LongMessage = defineException<Record<string, never>>()({
+    const LongMessage = defineException({
       tag: 'LongMessage',
-      message: () => 'abcdefgh',
+      message: (_details: Record<string, never>) => 'abcdefgh',
     });
 
     const report = toDiagnosticReport(new LongMessage({ details: {} }), {
@@ -516,9 +502,9 @@ describe('diagnostic reporting', () => {
 
   test('captures a message rendering failure as diagnostics', () => {
     const rendererError = new Error('renderer failed');
-    const Broken = defineException<Record<string, never>>()({
+    const Broken = defineException({
       tag: 'agent/BrokenMessage',
-      message: () => {
+      message: (_details: Record<string, never>) => {
         throw rendererError;
       },
     });
@@ -534,9 +520,9 @@ describe('diagnostic reporting', () => {
 });
 
 describe('public reporting', () => {
-  const InternalFailure = defineException<{ secret: string }>()({
+  const InternalFailure = defineException({
     tag: 'InternalFailure',
-    message: ({ secret }) => `Failed with ${secret}`,
+    message: ({ secret }: { secret: string }) => `Failed with ${secret}`,
   });
 
   test('uses a generic disclosure-safe default', () => {

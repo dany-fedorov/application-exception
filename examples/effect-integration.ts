@@ -1,9 +1,9 @@
 import { Effect } from 'effect';
-import { defineException } from '../src/typed';
+import { defineException } from '../src';
 
-const SearchFailed = defineException<{ query: string }>()({
+const SearchFailed = defineException({
   tag: 'agent/SearchFailed',
-  message: ({ query }) => `Search failed for ${query}`,
+  message: ({ query }: { query: string }) => `Search failed for ${query}`,
 });
 
 export function runEffectExample(): Promise<string> {

@@ -4,23 +4,29 @@ interface InterfaceDetails {
   readonly operation: string;
 }
 
-const InterfaceFailure = defineException<InterfaceDetails>()({
+const InterfaceFailure = defineException({
   tag: 'InterfaceFailure',
-  message: ({ operation }) => operation,
+  message: ({ operation }: InterfaceDetails) => operation,
 });
 new InterfaceFailure({ details: { operation: 'search' } });
 
 // @ts-expect-error arrays do not satisfy record-like detail semantics.
-defineException<string[]>();
+defineException({ tag: 'Invalid', message: (_details: string[]) => 'invalid' });
 
 // @ts-expect-error functions do not satisfy record-like detail semantics.
-defineException<() => void>();
+defineException({
+  tag: 'Invalid',
+  message: (_details: () => void) => 'invalid',
+});
 
 // @ts-expect-error built-in class instances are not copied as detail records.
-defineException<Date>();
+defineException({ tag: 'Invalid', message: (_details: Date) => 'invalid' });
 
 // @ts-expect-error all built-in prototypes are rejected without an allowlist.
-defineException<ArrayBuffer>();
+defineException({
+  tag: 'Invalid',
+  message: (_details: ArrayBuffer) => 'invalid',
+});
 
 class DataOnlyDetails {
   readonly operation = 'search';
@@ -39,27 +45,33 @@ class DetailsWithFunctionField {
 }
 
 // @ts-expect-error method-bearing shapes do not satisfy data-only details.
-defineException<DetailsWithMethod>();
+defineException({
+  tag: 'Invalid',
+  message: (_details: DetailsWithMethod) => 'invalid',
+});
 
 // @ts-expect-error own function fields do not satisfy data-only details.
-defineException<DetailsWithFunctionField>();
+defineException({
+  tag: 'Invalid',
+  message: (_details: DetailsWithFunctionField) => 'invalid',
+});
 
-const CustomFailure = defineException<DataOnlyDetails>()({
+const CustomFailure = defineException({
   tag: 'CustomFailure',
-  message: ({ operation }) => operation,
+  message: ({ operation }: DataOnlyDetails) => operation,
 });
 const customFailure = new CustomFailure({ details: new DataOnlyDetails() });
 const customOperation: string = customFailure.details.operation;
 void customOperation;
 
-const UserAlreadyExists = defineException<{ email: string }>()({
+const UserAlreadyExists = defineException({
   tag: 'UserAlreadyExists',
-  message: ({ email }) => email,
+  message: ({ email }: { email: string }) => email,
 });
 
-const StorageUnavailable = defineException<{ retryAfter: number }>()({
+const StorageUnavailable = defineException({
   tag: 'StorageUnavailable',
-  message: ({ retryAfter }) => String(retryAfter),
+  message: ({ retryAfter }: { retryAfter: number }) => String(retryAfter),
 });
 
 const valid = new UserAlreadyExists({
@@ -111,3 +123,46 @@ const asInterface: TypedException<'UserAlreadyExists', { email: string }> =
   valid;
 void asInterface;
 void handle;
+
+const Unavailable = defineException({
+  tag: 'app/Unavailable',
+  message: 'Unavailable',
+});
+new Unavailable();
+new Unavailable({ cause: undefined });
+new Unavailable({ details: {} });
+// @ts-expect-error constant definitions have no detail fields.
+new Unavailable({ details: { unexpected: true } });
+// @ts-expect-error renderer definitions require input.
+new UserAlreadyExists();
+// @ts-expect-error cause options remain mutually exclusive without details.
+new Unavailable({ cause: undefined, causes: [] });
+// @ts-expect-error causes must be an array.
+new Unavailable({ causes: 'invalid' });
+class SpecializedFailure extends UserAlreadyExists {
+  readonly specialized = true;
+}
+// @ts-expect-error the factory does not claim arbitrary subclass instances.
+const specialized: SpecializedFailure = new UserAlreadyExists({
+  details: { email: 'a' },
+});
+void specialized;
+import type {
+  ExceptionInput,
+  ExceptionDefinition,
+  TypedExceptionClass,
+} from '../src';
+const noDetailsInput: ExceptionInput = { cause: undefined };
+const noDetailsDefinition: ExceptionDefinition<'Unavailable'> = {
+  tag: 'Unavailable',
+  message: 'Unavailable',
+};
+const noDetailsClass: TypedExceptionClass<'app/Unavailable'> = Unavailable;
+const noDetailsError: TypedException<'app/Unavailable'> = new noDetailsClass(
+  noDetailsInput,
+);
+void noDetailsDefinition;
+void noDetailsError;
+// @ts-expect-error internal rendering state is not a public API.
+import { getMessageRenderingError } from '../src';
+void getMessageRenderingError;

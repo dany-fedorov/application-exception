@@ -6,12 +6,15 @@ import {
   toPublicReport,
 } from '../src';
 
-export const AgentToolFailed = defineException<{
-  readonly tool: string;
-  readonly operation: string;
-}>()({
+export const AgentToolFailed = defineException({
   tag: 'agent/ToolFailed',
-  message: ({ tool, operation }) => `${tool} failed during ${operation}`,
+  message: ({
+    tool,
+    operation,
+  }: {
+    readonly tool: string;
+    readonly operation: string;
+  }) => `${tool} failed during ${operation}`,
 });
 
 export type AgentToolFailure = InstanceType<typeof AgentToolFailed>;

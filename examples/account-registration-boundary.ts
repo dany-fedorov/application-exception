@@ -20,9 +20,10 @@ export class UniqueEmailConstraintError extends Error {
   }
 }
 
-export const UserAlreadyExists = defineException<{ email: string }>()({
+export const UserAlreadyExists = defineException({
   tag: 'accounts/UserAlreadyExists',
-  message: ({ email }) => `An account already exists for ${email}`,
+  message: ({ email }: { email: string }) =>
+    `An account already exists for ${email}`,
 });
 
 type CreatedBody = {

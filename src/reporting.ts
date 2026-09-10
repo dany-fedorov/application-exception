@@ -1,10 +1,6 @@
-import { ApplicationException } from './ApplicationException';
+import { getMessageRenderingFailure } from './typed-internals';
 import { createOccurrence } from './occurrence';
-import {
-  getMessageRenderingError,
-  isTypedException,
-  TypedException,
-} from './typed';
+import { isTypedException, TypedException } from './typed';
 
 export const DIAGNOSTIC_REPORT_VERSION = 'appex/diagnostic/v1' as const;
 export const PUBLIC_REPORT_VERSION = 'appex/public/v1' as const;
@@ -484,7 +480,8 @@ function reportTypedException(
   const details = readPropertyWithoutGetter(error, 'details');
   let renderingError: unknown;
   try {
-    renderingError = getMessageRenderingError(error);
+    const failure = getMessageRenderingFailure(error);
+    renderingError = failure.present ? failure.value : undefined;
   } catch (_error: unknown) {
     renderingError = marker('unreadable', { reason: 'accessor' });
   }
@@ -524,45 +521,6 @@ function reportTypedException(
   };
 }
 
-function reportLegacyException(
-  error: ApplicationException,
-  options: DiagnosticReportOptions,
-  state: NormalizationState,
-): DiagnosticReport {
-  const kind = error.getCode();
-  const details = error.getDetails();
-  const cause = readPropertyWithoutGetter(error, 'cause');
-  const stack = readPropertyWithoutGetter(error, 'stack');
-  return {
-    v: DIAGNOSTIC_REPORT_VERSION,
-    reference: error.getId(),
-    ...(kind === undefined ? {} : { kind }),
-    name: error.name,
-    ...boundedMessage(error.getMessage(), state),
-    timestamp: error.getTimestampIsoString(),
-    ...(details === undefined
-      ? {}
-      : { details: normalizeValue(details, state) }),
-    ...(options.context
-      ? { context: normalizeValue(options.context, state) }
-      : {}),
-    ...(cause.found
-      ? {
-          cause: cause.readable
-            ? normalizeValue(cause.value, state)
-            : marker('unreadable', { reason: 'accessor' }),
-        }
-      : {}),
-    ...(stack.found
-      ? {
-          stack: stack.readable
-            ? normalizeValue(stack.value, state)
-            : marker('unreadable', { reason: 'accessor' }),
-        }
-      : {}),
-  };
-}
-
 function safeString(value: unknown): string {
   switch (typeof value) {
     case 'string':
@@ -590,9 +548,6 @@ export function toDiagnosticReport(
   try {
     if (isTypedException(caught)) {
       return reportTypedException(caught, options, state);
-    }
-    if (caught instanceof ApplicationException) {
-      return reportLegacyException(caught, options, state);
     }
     if (caught instanceof Error) {
       const occurrence = createOccurrence();

@@ -30,13 +30,15 @@ export function installCause(
   let shouldInstall = hasCause;
   let value = input.cause;
   if (hasCauses) {
-    const causes = input.causes ?? [];
+    const causes = input.causes;
+    if (!Array.isArray(causes))
+      throw new TypeError('Exception causes must be an array');
     if (causes.length === 1) {
       shouldInstall = true;
       value = causes[0];
     } else if (causes.length > 1) {
       shouldInstall = true;
-      value = new (globalThis as any).AggregateError(
+      value = new AggregateError(
         [...causes],
         `${target.name} has multiple causes`,
       );

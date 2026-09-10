@@ -1,13 +1,14 @@
+import { defineException, isTypedException } from '../src/typed';
 import {
-  defineException,
-  getMessageRenderingError,
-  isTypedException,
-} from '../src/typed';
+  getMessageRenderingFailure,
+  getTypedExceptionView,
+} from '../src/typed-internals';
 
 describe('defineException', () => {
-  const UserAlreadyExists = defineException<{ email: string }>()({
+  const UserAlreadyExists = defineException({
     tag: 'UserAlreadyExists',
-    message: ({ email }) => `An account already exists for ${email}`,
+    message: ({ email }: { email: string }) =>
+      `An account already exists for ${email}`,
   });
 
   test('constructs a tagged native error with complete occurrence metadata', () => {
@@ -34,12 +35,10 @@ describe('defineException', () => {
   test('copies and shallow-freezes details while preserving nested identity', () => {
     const nested = { attempt: 1 };
     const supplied = { email: 'ada@example.test', nested };
-    const RichError = defineException<{
-      email: string;
-      nested: { attempt: number };
-    }>()({
+    const RichError = defineException({
       tag: 'RichError',
-      message: ({ email }) => email,
+      message: ({ email }: { email: string; nested: { attempt: number } }) =>
+        email,
     });
 
     const error = new RichError({ details: supplied });
@@ -52,10 +51,10 @@ describe('defineException', () => {
   });
 
   test('uses the configured occurrence prefix and creates distinct ids', () => {
-    const AgentFailure = defineException<Record<string, never>>()({
+    const AgentFailure = defineException({
       tag: 'agent/ToolFailure',
       idPrefix: 'ERR_',
-      message: () => 'Tool invocation failed',
+      message: (_details: Record<string, never>) => 'Tool invocation failed',
     });
 
     const first = new AgentFailure({ details: {} });
@@ -129,9 +128,9 @@ describe('defineException', () => {
     const consoleWarn = jest
       .spyOn(console, 'warn')
       .mockImplementation(() => undefined);
-    const BrokenMessage = defineException<{ operation: string }>()({
+    const BrokenMessage = defineException({
       tag: 'agent/BrokenMessage',
-      message: () => {
+      message: (_details: { operation: string }) => {
         throw renderingFailure;
       },
     });
@@ -139,7 +138,10 @@ describe('defineException', () => {
     const error = new BrokenMessage({ details: { operation: 'search' } });
 
     expect(error.message).toBe('agent/BrokenMessage');
-    expect(getMessageRenderingError(error)).toBe(renderingFailure);
+    expect(getMessageRenderingFailure(error)).toEqual({
+      present: true,
+      value: renderingFailure,
+    });
     expect(consoleWarn).not.toHaveBeenCalled();
     consoleWarn.mockRestore();
   });
@@ -166,17 +168,17 @@ describe('defineException', () => {
 
   test('rejects invalid runtime definitions', () => {
     expect(() =>
-      defineException<Record<string, never>>()({
+      defineException({
         tag: '',
-        message: () => 'failed',
+        message: (_details: Record<string, never>) => 'failed',
       }),
     ).toThrow('Exception tag must be a non-empty string');
     expect(() =>
-      defineException<Record<string, never>>()({
+      defineException({
         tag: 'ValidTag',
-        message: 'not a function',
+        message: 123,
       } as never),
-    ).toThrow('Exception message must be a function');
+    ).toThrow('Exception message must be a string or function');
   });
 
   test('rejects non-record details from JavaScript callers', () => {
@@ -217,14 +219,184 @@ describe('defineException', () => {
     class DataOnlyDetails {
       readonly operation = 'search';
     }
-    const CustomFailure = defineException<DataOnlyDetails>()({
+    const CustomFailure = defineException({
       tag: 'CustomFailure',
-      message: ({ operation }) => operation,
+      message: ({ operation }: DataOnlyDetails) => operation,
     });
 
     const error = new CustomFailure({ details: new DataOnlyDetails() });
 
     expect(error.details).toEqual({ operation: 'search' });
     expect(error.details).not.toBeInstanceOf(DataOnlyDetails);
+  });
+});
+
+describe('typed construction boundaries', () => {
+  test('constant messages allow no input and freeze empty details', () => {
+    const Unavailable = defineException({
+      tag: 'Unavailable',
+      message: 'Literal {{text}}',
+    });
+    const absent = new Unavailable();
+    const explicit = new Unavailable({ cause: undefined });
+    expect(absent.message).toBe('Literal {{text}}');
+    expect(absent.details).toEqual({});
+    expect(Object.isFrozen(absent.details)).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(absent, 'cause')).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(explicit, 'cause')).toBe(true);
+  });
+  test('snapshots all definition fields before construction', () => {
+    const definition = {
+      tag: 'Original',
+      message: (_details: {}) => 'first',
+      idPrefix: 'FIRST_',
+    };
+    const Kind = defineException(definition);
+    definition.tag = 'Changed';
+    definition.message = () => 'second';
+    definition.idPrefix = 'SECOND_';
+    const error = new Kind({ details: {} });
+    expect(Kind.tag).toBe('Original');
+    expect(error._tag).toBe('Original');
+    expect(error.name).toBe('Original');
+    expect(error.message).toBe('first');
+    expect(error.id).toMatch(/^FIRST_/);
+  });
+  test.each(['', ' ', 'x'.repeat(129)])('rejects invalid tag %p', (tag) => {
+    expect(() => defineException({ tag, message: 'failure' })).toThrow(
+      TypeError,
+    );
+  });
+  test.each(['', ' ', 'x'.repeat(33), 42])(
+    'rejects invalid prefix %p',
+    (idPrefix) => {
+      expect(() =>
+        defineException({
+          tag: 'Failure',
+          message: 'failure',
+          idPrefix,
+        } as never),
+      ).toThrow(TypeError);
+    },
+  );
+  test('accepts identifier limits', () => {
+    const Kind = defineException({
+      tag: 'x'.repeat(128),
+      idPrefix: 'p'.repeat(32),
+      message: 'failure',
+    });
+    expect(new Kind().id).toHaveLength(58);
+  });
+  test.each([undefined, null, 'cause', { length: 2 }])(
+    'rejects non-array causes %p',
+    (causes) => {
+      const Kind = defineException({ tag: 'Failure', message: 'failure' });
+      expect(() => new Kind({ causes } as never)).toThrow(TypeError);
+    },
+  );
+  test('collapses a single-element causes array without wrapping', () => {
+    const Kind = defineException({ tag: 'Failure', message: 'failure' });
+    const cause = { provider: 'offline' };
+    expect(new Kind({ causes: [cause] }).cause).toBe(cause);
+  });
+  test('rejects detail overflow before inspecting descriptors', () => {
+    const Kind = defineException({
+      tag: 'Failure',
+      message: (_details: Record<string, number>) => 'failure',
+    });
+    let reads = 0;
+    const wide = Object.fromEntries(
+      Array.from({ length: 1001 }, (_, i) => [String(i), i]),
+    );
+    const proxy = new Proxy(wide, {
+      getOwnPropertyDescriptor(target, key) {
+        reads++;
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+    });
+    expect(() => new Kind({ details: proxy })).toThrow(TypeError);
+    expect(reads).toBe(0);
+    delete wide['1000'];
+    expect(Object.keys(new Kind({ details: wide }).details)).toHaveLength(1000);
+  });
+  test('bounds prototype traversal including cyclic proxy prototypes', () => {
+    const Kind = defineException({
+      tag: 'Failure',
+      message: (_details: {}) => 'failure',
+    });
+    let value = {};
+    for (let i = 0; i < 32; i++) value = Object.create(value) as object;
+    expect(() => new Kind({ details: value })).not.toThrow();
+    expect(() => new Kind({ details: Object.create(value) as object })).toThrow(
+      TypeError,
+    );
+    let reads = 0;
+    const cyclic: object = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          reads++;
+          if (reads > 40) throw new Error('unbounded');
+          return cyclic;
+        },
+      },
+    );
+    expect(() => new Kind({ details: cyclic })).toThrow(TypeError);
+    expect(reads).toBeLessThanOrEqual(33);
+  });
+  test('does not format a native stack during construction', () => {
+    const original = Error.prepareStackTrace;
+    let calls = 0;
+    Error.prepareStackTrace = () => {
+      calls++;
+      return 'formatted';
+    };
+    try {
+      const Kind = defineException({ tag: 'Failure', message: 'failure' });
+      const error = new Kind();
+      expect(calls).toBe(0);
+      expect(error.stack).toBe('formatted');
+      expect(calls).toBe(1);
+    } finally {
+      Error.prepareStackTrace = original;
+    }
+  });
+  test('records thrown undefined separately from successful rendering', () => {
+    const Broken = defineException({
+      tag: 'Broken',
+      message: (_details: {}) => {
+        throw undefined;
+      },
+    });
+    const Good = defineException({ tag: 'Good', message: 'good' });
+    expect(getMessageRenderingFailure(new Broken({ details: {} }))).toEqual({
+      present: true,
+      value: undefined,
+    });
+    expect(getMessageRenderingFailure(new Good())).toEqual({ present: false });
+  });
+  test('provides a descriptor-only foreign-copy view without granting local trust', () => {
+    let foreign: unknown;
+    jest.isolateModules(() => {
+      const copy = require('../src/typed') as typeof import('../src/typed');
+      const Kind = copy.defineException({ tag: 'Foreign', message: 'foreign' });
+      foreign = new Kind();
+    });
+    expect(isTypedException(foreign)).toBe(false);
+    expect(getTypedExceptionView(foreign)).toMatchObject({
+      tag: 'Foreign',
+      details: {},
+      id: expect.stringMatching(/^AE_/),
+    });
+    let reads = 0;
+    const hostile = {
+      [Symbol.for('application-exception/TypedException')]: true,
+      get _tag() {
+        reads++;
+        return 'Forged';
+      },
+    };
+    expect(getTypedExceptionView(hostile)).toBeUndefined();
+    expect(reads).toBe(0);
   });
 });

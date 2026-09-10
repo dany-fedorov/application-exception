@@ -4,14 +4,9 @@
     "baseUrl": "./src",
     "outDir": "./dist",
     "declaration": true,
-    "paths": {}
+    "paths": {},
+    "target": "ES2022",
+    "module": "CommonJS"
   },
-  "include": [
-    "src",
-    "examples",
-    "examples_prev",
-    "tests",
-    ".eslintrc.js",
-    "jest.config.js"
-  ]
+  "include": ["src", "examples", "tests", ".eslintrc.js", "jest.config.js"]
 }

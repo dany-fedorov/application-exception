@@ -7,9 +7,9 @@ import {
 } from '../src/reporting';
 import { defineException } from '../src/typed';
 
-const Failure = defineException<{ operation: string }>()({
+const Failure = defineException({
   tag: 'agent/Failure',
-  message: ({ operation }) => `${operation} failed`,
+  message: ({ operation }: { operation: string }) => `${operation} failed`,
 });
 const error = new Failure({ details: { operation: 'search' } });
 

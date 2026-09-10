@@ -1,12 +1,10 @@
 import { createOccurrence, installCause } from './occurrence';
-
-const TYPED_EXCEPTION_BRAND = Symbol.for(
-  'application-exception/TypedException',
-);
-const MESSAGE_RENDERING_ERROR = Symbol(
-  'application-exception/message-rendering-error',
-);
-const typedExceptionInstances = new WeakSet<object>();
+import {
+  TYPED_EXCEPTION_BRAND,
+  isLocalTypedException,
+  registerTypedException,
+  MessageRenderingFailure,
+} from './typed-internals';
 
 type NoCause = {
   readonly cause?: never;
@@ -44,9 +42,11 @@ function copyRecordDetails(
 ): Readonly<Record<PropertyKey, unknown>> {
   try {
     let prototype = Object.getPrototypeOf(value) as object | null;
+    let depth = 0;
     while (prototype !== null && prototype !== Object.prototype) {
-      const descriptors = Object.getOwnPropertyDescriptors(prototype);
-      if (Reflect.ownKeys(descriptors).some((key) => key !== 'constructor')) {
+      if (++depth > 32)
+        throw new TypeError('Exception details prototype exceeds 32 levels');
+      if (Reflect.ownKeys(prototype).some((key) => key !== 'constructor')) {
         throw new TypeError(
           'Exception details must have a data-only object prototype',
         );
@@ -55,11 +55,11 @@ function copyRecordDetails(
     }
 
     const output: Record<PropertyKey, unknown> = {};
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    for (const key of Reflect.ownKeys(descriptors)) {
-      const descriptor = Reflect.get(descriptors, key) as
-        | PropertyDescriptor
-        | undefined;
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > 1_000)
+      throw new TypeError('Exception details exceed 1,000 own keys');
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (
         !descriptor ||
         !descriptor.enumerable ||
@@ -84,156 +84,159 @@ function copyRecordDetails(
   }
 }
 
-export type ExceptionInput<Details extends object> = {
-  readonly details: RecordDetails<Details>;
-} & (NoCause | SingleCause | MultipleCauses);
+/** Omitting Details selects the constant-message, optional-input form. */
+export type ExceptionInput<Details extends object = never> = ([
+  Details,
+] extends [never]
+  ? { readonly details?: Record<string, never> }
+  : { readonly details: RecordDetails<Details> }) &
+  (NoCause | SingleCause | MultipleCauses);
 
-export type ExceptionDefinition<Tag extends string, Details extends object> = {
+export type ExceptionDefinition<
+  Tag extends string,
+  Details extends object = never,
+> = {
   readonly tag: Tag;
-  readonly message: (details: Readonly<RecordDetails<Details>>) => string;
+  readonly message: [Details] extends [never]
+    ? string
+    : (details: Readonly<RecordDetails<Details>>) => string;
   readonly idPrefix?: string;
 };
 
 export interface TypedException<
   Tag extends string = string,
-  Details extends object = Record<string, unknown>,
+  Details extends object = object,
 > extends Error {
   readonly _tag: Tag;
   readonly id: string;
   readonly timestamp: string;
-  readonly details: Readonly<RecordDetails<Details>>;
+  readonly details: [Details] extends [never]
+    ? Readonly<Record<string, never>>
+    : Readonly<RecordDetails<Details>>;
   readonly cause?: unknown;
   readonly [TYPED_EXCEPTION_BRAND]: true;
-  readonly [MESSAGE_RENDERING_ERROR]?: unknown;
 }
 
-export type TypedExceptionClass<Tag extends string, Details extends object> = {
-  new (input: ExceptionInput<Details>): TypedException<Tag, Details>;
+export type TypedExceptionClass<
+  Tag extends string,
+  Details extends object = never,
+> = {
+  new (
+    ...args: [Details] extends [never]
+      ? [input?: ExceptionInput]
+      : [input: ExceptionInput<Details>]
+  ): TypedException<Tag, Details>;
   readonly tag: Tag;
 };
 
-function renderMessage<Details extends object>(
+function renderMessage(
   tag: string,
-  renderer: (details: Readonly<Details>) => string,
-  details: Readonly<Details>,
-): { readonly message: string; readonly error?: unknown } {
+  message: string | ((details: object) => string),
+  details: object,
+): {
+  readonly message: string;
+  readonly failure: MessageRenderingFailure;
+} {
   try {
-    const message = renderer(details);
-    if (typeof message !== 'string') {
-      return {
-        message: tag,
-        error: new TypeError('Exception message renderer must return a string'),
-      };
-    }
-    return { message };
-  } catch (error: unknown) {
-    return { message: tag, error };
+    const rendered = typeof message === 'string' ? message : message(details);
+    if (typeof rendered !== 'string')
+      throw new TypeError('Exception message renderer must return a string');
+    return { message: rendered, failure: { present: false } };
+  } catch (value: unknown) {
+    return { message: tag, failure: { present: true, value } };
   }
 }
 
-export function defineException<Details extends object>(
-  ..._invalidDetails: [RecordDetails<Details>] extends [never]
-    ? [reason: 'Details must be a record-like object']
-    : []
-): <Tag extends string>(
-  definition: ExceptionDefinition<Tag, Details>,
-) => TypedExceptionClass<Tag, Details> {
-  void _invalidDetails;
-  return <Tag extends string>(
-    definition: ExceptionDefinition<Tag, Details>,
-  ) => {
-    if (
-      typeof definition?.tag !== 'string' ||
-      definition.tag.trim().length === 0
-    ) {
-      throw new TypeError('Exception tag must be a non-empty string');
-    }
-    if (typeof definition.message !== 'function') {
-      throw new TypeError('Exception message must be a function');
-    }
-
-    class DefinedException extends Error {
-      static readonly tag: Tag = definition.tag;
-
-      readonly _tag: Tag;
-      readonly id: string;
-      readonly timestamp: string;
-      readonly details: Readonly<RecordDetails<Details>>;
-      readonly cause?: unknown;
-      readonly [TYPED_EXCEPTION_BRAND] = true as const;
-      readonly [MESSAGE_RENDERING_ERROR]?: unknown;
-
-      constructor(input: ExceptionInput<Details>) {
-        const suppliedDetails = (
-          input as { readonly details?: unknown } | null | undefined
-        )?.details;
-        if (
-          typeof suppliedDetails !== 'object' ||
-          suppliedDetails === null ||
-          Array.isArray(suppliedDetails)
-        ) {
-          throw new TypeError('Exception details must be a non-array object');
-        }
-        if (
-          Object.prototype.hasOwnProperty.call(input, 'cause') &&
-          Object.prototype.hasOwnProperty.call(input, 'causes')
-        ) {
-          throw new TypeError('Provide either cause or causes, not both');
-        }
-        const details = copyRecordDetails(suppliedDetails) as Readonly<
-          RecordDetails<Details>
-        >;
-        const rendered = renderMessage(
-          definition.tag,
-          definition.message,
-          details,
-        );
-        super(rendered.message);
-
-        const occurrence = createOccurrence(definition.idPrefix);
-        this.name = definition.tag;
-        const capturedStack = this.stack;
-        if (typeof capturedStack === 'string') {
-          Object.defineProperty(this, 'stack', {
-            value: capturedStack,
-            configurable: true,
-            writable: true,
-          });
-        }
-        this._tag = definition.tag;
-        this.id = occurrence.id;
-        this.timestamp = occurrence.timestamp;
-        this.details = details;
-        if (Object.prototype.hasOwnProperty.call(rendered, 'error')) {
-          this[MESSAGE_RENDERING_ERROR] = rendered.error;
-        }
-        installCause(this, input);
-        Object.setPrototypeOf(this, new.target.prototype);
-        typedExceptionInstances.add(this);
-      }
-    }
-
-    Object.defineProperty(DefinedException, 'name', {
-      value: definition.tag,
-      configurable: true,
-    });
-
-    return DefinedException as unknown as TypedExceptionClass<Tag, Details>;
-  };
-}
-
-export function isTypedException(value: unknown): value is TypedException {
-  try {
-    return (
-      typeof value === 'object' &&
-      value !== null &&
-      typedExceptionInstances.has(value)
+export function defineException<Tag extends string>(
+  definition: ExceptionDefinition<Tag>,
+): TypedExceptionClass<Tag>;
+export function defineException<Tag extends string, Details extends object>(
+  definition: {
+    readonly tag: Tag;
+    readonly message: (details: Details) => string;
+    readonly idPrefix?: string;
+  } & ([RecordDetails<Details>] extends [never] ? never : unknown),
+): TypedExceptionClass<Tag, Details>;
+export function defineException(definition: {
+  readonly tag: string;
+  readonly message: string | ((details: never) => string);
+  readonly idPrefix?: string;
+}): unknown {
+  const { tag, message, idPrefix } = definition;
+  if (typeof tag !== 'string' || tag.trim().length === 0 || tag.length > 128) {
+    throw new TypeError(
+      'Exception tag must be a non-empty string of at most 128 characters',
     );
-  } catch (_error: unknown) {
-    return false;
   }
+  if (typeof message !== 'function' && typeof message !== 'string') {
+    throw new TypeError('Exception message must be a string or function');
+  }
+  if (
+    idPrefix !== undefined &&
+    (typeof idPrefix !== 'string' ||
+      idPrefix.trim().length === 0 ||
+      idPrefix.length > 32)
+  ) {
+    throw new TypeError(
+      'Exception ID prefix must be a non-empty string of at most 32 characters',
+    );
+  }
+
+  class DefinedException extends Error {
+    static readonly tag = tag;
+    readonly _tag: string;
+    readonly id: string;
+    readonly timestamp: string;
+    readonly details: Readonly<Record<PropertyKey, unknown>>;
+    declare readonly cause?: unknown;
+    readonly [TYPED_EXCEPTION_BRAND] = true as const;
+
+    constructor(input?: {
+      readonly details?: object;
+      readonly cause?: unknown;
+      readonly causes?: readonly unknown[];
+    }) {
+      const options =
+        input === undefined && typeof message === 'string' ? {} : input;
+      const suppliedDetails =
+        options?.details === undefined && typeof message === 'string'
+          ? {}
+          : options?.details;
+      if (
+        typeof options !== 'object' ||
+        options === null ||
+        Array.isArray(options) ||
+        typeof suppliedDetails !== 'object' ||
+        suppliedDetails === null ||
+        Array.isArray(suppliedDetails)
+      ) {
+        throw new TypeError('Exception details must be a non-array object');
+      }
+      const details = copyRecordDetails(suppliedDetails);
+      const rendered = renderMessage(
+        tag,
+        message as string | ((details: object) => string),
+        details,
+      );
+      super(rendered.message);
+      const occurrence = createOccurrence(idPrefix);
+      this.name = tag;
+      this._tag = tag;
+      this.id = occurrence.id;
+      this.timestamp = occurrence.timestamp;
+      this.details = details;
+      installCause(this, options);
+      registerTypedException(this, rendered.failure);
+    }
+  }
+  Object.defineProperty(DefinedException, 'name', {
+    value: tag,
+    configurable: true,
+  });
+  return DefinedException;
 }
 
-export function getMessageRenderingError(error: TypedException): unknown {
-  return error[MESSAGE_RENDERING_ERROR];
+/** Narrows instances created by this loaded copy of the library only. */
+export function isTypedException(value: unknown): value is TypedException {
+  return isLocalTypedException(value);
 }
