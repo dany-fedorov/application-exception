@@ -55,6 +55,12 @@ There is no automatic conversion for custom legacy defaults, helpers, or
 instance methods. Migrate one domain error at a time. Existing callers can keep
 using the builder while new boundaries use typed errors and reports.
 
+`wrap<Subclass>()` no longer claims that an existing unrelated
+`ApplicationException` has the requested subtype. Code that supplied this
+explicit generic may stop compiling. Remove the generic and narrow the returned
+value from its actual constructor or error code; the runtime object is preserved
+without a type cast that invents a subtype.
+
 ## Preserve causes deliberately
 
 `cause` and `causes` are mutually exclusive inputs. A single cause is retained
@@ -111,6 +117,9 @@ Configure them through `limits`. Field names matching `apiKey`, `api_key`,
 case-insensitively; `redactKeys` adds application-specific names. Redaction is a
 useful safeguard, not proof that free-form messages contain no secrets.
 
+Object keys longer than 4,096 characters are omitted with a `key-length`
+truncation marker so hostile property names cannot dominate the output size.
+
 Normalization does not invoke getters or custom `toJSON`. It distinguishes
 cycles from ordinary shared values and emits JSON markers:
 
@@ -143,7 +152,8 @@ consumePlainReport(decoded.value);
 The decoder validates the version and required envelope, recursively verifies
 plain JSON data, rejects accessors, cycles, and class instances, and returns a
 detached report. It never reconstructs exception prototypes or trusts a tag as
-validation of its details. Domain-error reconstruction needs an
+validation of its details. Decoding stops beyond 64 levels, 10,000 values, or a
+4,096-character property name. Domain-error reconstruction needs an
 application-owned decoder or schema adapter.
 
 ## Agent and tool consumers

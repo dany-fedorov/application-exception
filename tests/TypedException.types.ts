@@ -1,5 +1,15 @@
 import { defineException, TypedException } from '../src/typed';
 
+interface InterfaceDetails {
+  readonly operation: string;
+}
+
+const InterfaceFailure = defineException<InterfaceDetails>()({
+  tag: 'InterfaceFailure',
+  message: ({ operation }) => operation,
+});
+new InterfaceFailure({ details: { operation: 'search' } });
+
 const UserAlreadyExists = defineException<{ email: string }>()({
   tag: 'UserAlreadyExists',
   message: ({ email }) => email,

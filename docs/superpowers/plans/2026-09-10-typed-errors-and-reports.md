@@ -268,14 +268,14 @@ Run `npm run test:all` and both examples. Commit as
 - Consumes: complete implementation and repository/forge state.
 - Produces: reviewed commits merged into `main` and pushed to `origin`.
 
-- [ ] **Step 1: Audit the implementation against every spec stage**
+- [x] **Step 1: Audit the implementation against every spec stage**
 
 Check every acceptance criterion in the design against tests, declarations,
 examples, and the packed artifact. Scan for placeholders and stale “proposed”
 wording in user-facing docs. Review the entire branch diff for accidental files,
 secrets, generated build output, and backward-incompatible exports.
 
-- [ ] **Step 2: Request independent code review**
+- [x] **Step 2: Request independent code review**
 
 Give the reviewer the base SHA, head SHA, this plan, and the design. Address all
 critical and important findings with fresh failing tests before code changes,

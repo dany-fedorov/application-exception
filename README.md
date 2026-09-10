@@ -5,9 +5,6 @@
 [![Package License MIT](https://img.shields.io/npm/l/pojo-constructor.svg)](https://www.npmjs.org/package/application-exception)
 [![Npm Version](https://img.shields.io/npm/v/application-exception.svg)](https://www.npmjs.org/package/application-exception)
 
-> **Warning**
-> Please use fixed version (remove ^ from package.json).
-
 <!-- TOC -->
 
 - [Motivation](#motivation)
@@ -22,12 +19,7 @@
   - [Custom exceptions: Using `subclass` static method](#custom-exceptions--using-subclass-static-method)
   - [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions--providing-custom-handlebars-helpers)
   - [Custom exceptions: Setting a type for `details` field](#custom-exceptions--setting-a-type-for-details-field)
-  - [Consider not using `throw`](#consider-not-using-throw)
-- [API](#api)
-  - [Fields](#fields)
-  - [Options](#options)
-  - [Helper methods (lifecycle methods)](#helper-methods--lifecycle-methods-)
-  - [Handlebars Helpers](#handlebars-helpers)
+  - [Handling expected failures](#handling-expected-failures)
 
 <!-- TOC -->
 
@@ -37,11 +29,11 @@
 - Extending Error object with custom props must be convenient.
 - Error object must allow to specify a list of nested root causes.
 - Error object must have a consistent JSON representation.
-- Informative error messages must be easy to create. 
+- Informative error messages must be easy to create.
 
 ## Development direction
 
-The [design proposal](docs/superpowers/specs/2026-09-10-error-model-design.md)
+The [implemented design](docs/superpowers/specs/2026-09-10-error-model-design.md)
 developed these ideas into typed native errors, standard causes, and separate
 diagnostic and public reports. The existing builder remains available for
 compatibility.
@@ -96,6 +88,9 @@ cycles and unusual JavaScript values, and never invokes getters or custom
 `toJSON`. Public reports do not inherit diagnostic details. See the
 [migration and agent integration guide](docs/migration-to-typed-errors.md) and
 the runnable [application boundary example](examples/account-registration-boundary.ts).
+The [agent observation example](examples/agent-tool-observations.ts) shows
+aggregate provider failures, repeated observations of one occurrence, cyclic
+request context, and secret redaction.
 
 ## User Guide
 
@@ -590,34 +585,46 @@ And highlighting not allowed fields by TypeScript aware IDEs.
 
 ![Details Field Webstorm TypeScript Error Highlighting](https://github.com/dany-fedorov/application-exception/blob/main/details-field-webstorm-typescript-error-highlight.png)
 
-### Consider not using `throw`
+### Handling expected failures
 
-> _"Programs that use exceptions as part of their normal processing suffer from all the readability and
-> maintainability problems of classic spaghetti code."_
-> — Andy Hunt, Dave Thomas - The Pragmatic Programmer
+Typed errors work with native control flow and with typed effect systems. In
+ordinary TypeScript, use a discriminated result when the caller is expected to
+recover, and reserve `throw` for a boundary that already handles exceptions:
 
-Consider using conventional control flow for exceptions handling. This means returning exception object from a function
-instead of throwing an exception object.
+```typescript
+type Result<Value, Failure> =
+  | { readonly ok: true; readonly value: Value }
+  | { readonly ok: false; readonly error: Failure };
 
-TODO: example (?)
+function register(
+  email: string,
+): Result<string, InstanceType<typeof UserAlreadyExists>> {
+  if (email === 'ada@example.test') {
+    return {
+      ok: false,
+      error: new UserAlreadyExists({ details: { email } }),
+    };
+  }
+  return { ok: true, value: 'created' };
+}
+```
 
-## API
+With Effect, put the same tagged value in the typed failure channel explicitly
+and recover by its literal `_tag`:
 
-### Fields
+```typescript
+import { Effect } from 'effect';
 
-TODO
+const failure = Effect.fail(
+  new UserAlreadyExists({ details: { email: 'ada@example.test' } }),
+);
 
-### Options
+const recovered = Effect.catchTag(
+  failure,
+  'accounts/UserAlreadyExists',
+  (error) => Effect.succeed(error.details.email),
+);
+```
 
-TODO
-
-### Helper methods (lifecycle methods)
-
-TODO
-
-### Handlebars Helpers
-
-- pad
-- json
-
-TODO
+The package does not patch Effect or make errors yieldable. See the runnable
+[Effect example](examples/effect-integration.ts) for the tested integration.

@@ -6,6 +6,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18, 20]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -13,7 +16,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install
@@ -23,6 +26,7 @@ jobs:
         run: npm run test-ci
 
       - name: Generating coverage badges
+        if: matrix.node-version == 20
         uses: 'jpb06/jest-badges-action@latest'
         with:
           branches: main

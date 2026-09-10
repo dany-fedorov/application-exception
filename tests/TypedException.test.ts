@@ -151,4 +151,40 @@ describe('defineException', () => {
     expect(() => isTypedException(proxy)).not.toThrow();
     expect(isTypedException(proxy)).toBe(false);
   });
+
+  test('does not trust a forgeable global-symbol brand', () => {
+    const forged = {
+      [Symbol.for('application-exception/TypedException')]: true,
+      _tag: 'Forged',
+      id: 'AE_forged',
+      timestamp: new Date().toISOString(),
+      details: {},
+    };
+
+    expect(isTypedException(forged)).toBe(false);
+  });
+
+  test('rejects invalid runtime definitions', () => {
+    expect(() =>
+      defineException<Record<string, never>>()({
+        tag: '',
+        message: () => 'failed',
+      }),
+    ).toThrow('Exception tag must be a non-empty string');
+    expect(() =>
+      defineException<Record<string, never>>()({
+        tag: 'ValidTag',
+        message: 'not a function',
+      } as never),
+    ).toThrow('Exception message must be a function');
+  });
+
+  test('rejects non-record details from JavaScript callers', () => {
+    expect(() => new UserAlreadyExists({ details: null } as never)).toThrow(
+      'Exception details must be a non-array object',
+    );
+    expect(() => new UserAlreadyExists({ details: [] } as never)).toThrow(
+      'Exception details must be a non-array object',
+    );
+  });
 });

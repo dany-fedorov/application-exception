@@ -6,6 +6,7 @@ const TYPED_EXCEPTION_BRAND = Symbol.for(
 const MESSAGE_RENDERING_ERROR = Symbol(
   'application-exception/message-rendering-error',
 );
+const typedExceptionInstances = new WeakSet<object>();
 
 type NoCause = {
   readonly cause?: never;
@@ -22,14 +23,11 @@ type MultipleCauses = {
   readonly causes: readonly unknown[];
 };
 
-export type ExceptionInput<Details extends Record<string, unknown>> = {
+export type ExceptionInput<Details extends object> = {
   readonly details: Details;
 } & (NoCause | SingleCause | MultipleCauses);
 
-export type ExceptionDefinition<
-  Tag extends string,
-  Details extends Record<string, unknown>,
-> = {
+export type ExceptionDefinition<Tag extends string, Details extends object> = {
   readonly tag: Tag;
   readonly message: (details: Readonly<Details>) => string;
   readonly idPrefix?: string;
@@ -37,7 +35,7 @@ export type ExceptionDefinition<
 
 export interface TypedException<
   Tag extends string = string,
-  Details extends Record<string, unknown> = Record<string, unknown>,
+  Details extends object = Record<string, unknown>,
 > extends Error {
   readonly _tag: Tag;
   readonly id: string;
@@ -48,15 +46,12 @@ export interface TypedException<
   readonly [MESSAGE_RENDERING_ERROR]?: unknown;
 }
 
-export type TypedExceptionClass<
-  Tag extends string,
-  Details extends Record<string, unknown>,
-> = {
+export type TypedExceptionClass<Tag extends string, Details extends object> = {
   new (input: ExceptionInput<Details>): TypedException<Tag, Details>;
   readonly tag: Tag;
 };
 
-function renderMessage<Details extends Record<string, unknown>>(
+function renderMessage<Details extends object>(
   tag: string,
   renderer: (details: Readonly<Details>) => string,
   details: Readonly<Details>,
@@ -75,14 +70,22 @@ function renderMessage<Details extends Record<string, unknown>>(
   }
 }
 
-export function defineException<Details extends Record<string, unknown>>(): <
-  Tag extends string,
->(
+export function defineException<Details extends object>(): <Tag extends string>(
   definition: ExceptionDefinition<Tag, Details>,
 ) => TypedExceptionClass<Tag, Details> {
   return <Tag extends string>(
     definition: ExceptionDefinition<Tag, Details>,
   ) => {
+    if (
+      typeof definition?.tag !== 'string' ||
+      definition.tag.trim().length === 0
+    ) {
+      throw new TypeError('Exception tag must be a non-empty string');
+    }
+    if (typeof definition.message !== 'function') {
+      throw new TypeError('Exception message must be a function');
+    }
+
     class DefinedException extends Error {
       static readonly tag: Tag = definition.tag;
 
@@ -95,6 +98,16 @@ export function defineException<Details extends Record<string, unknown>>(): <
       readonly [MESSAGE_RENDERING_ERROR]?: unknown;
 
       constructor(input: ExceptionInput<Details>) {
+        const suppliedDetails = (
+          input as { readonly details?: unknown } | null | undefined
+        )?.details;
+        if (
+          typeof suppliedDetails !== 'object' ||
+          suppliedDetails === null ||
+          Array.isArray(suppliedDetails)
+        ) {
+          throw new TypeError('Exception details must be a non-array object');
+        }
         if (
           Object.prototype.hasOwnProperty.call(input, 'cause') &&
           Object.prototype.hasOwnProperty.call(input, 'causes')
@@ -102,7 +115,7 @@ export function defineException<Details extends Record<string, unknown>>(): <
           throw new TypeError('Provide either cause or causes, not both');
         }
         const details = Object.freeze({
-          ...input.details,
+          ...suppliedDetails,
         }) as Readonly<Details>;
         const rendered = renderMessage(
           definition.tag,
@@ -113,6 +126,14 @@ export function defineException<Details extends Record<string, unknown>>(): <
 
         const occurrence = createOccurrence(definition.idPrefix);
         this.name = definition.tag;
+        const capturedStack = this.stack;
+        if (typeof capturedStack === 'string') {
+          Object.defineProperty(this, 'stack', {
+            value: capturedStack,
+            configurable: true,
+            writable: true,
+          });
+        }
         this._tag = definition.tag;
         this.id = occurrence.id;
         this.timestamp = occurrence.timestamp;
@@ -122,6 +143,7 @@ export function defineException<Details extends Record<string, unknown>>(): <
         }
         installCause(this, input);
         Object.setPrototypeOf(this, new.target.prototype);
+        typedExceptionInstances.add(this);
       }
     }
 
@@ -139,9 +161,7 @@ export function isTypedException(value: unknown): value is TypedException {
     return (
       typeof value === 'object' &&
       value !== null &&
-      (value as { readonly [TYPED_EXCEPTION_BRAND]?: unknown })[
-        TYPED_EXCEPTION_BRAND
-      ] === true
+      typedExceptionInstances.has(value)
     );
   } catch (_error: unknown) {
     return false;

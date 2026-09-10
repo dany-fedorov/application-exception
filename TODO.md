@@ -1,7 +1,7 @@
 # Development roadmap
 
-See the [design proposal](docs/superpowers/specs/2026-09-10-error-model-design.md)
-for rationale, proposed contracts, compatibility, and acceptance criteria, and
+See the [implemented design](docs/superpowers/specs/2026-09-10-error-model-design.md)
+for rationale, contracts, compatibility, and acceptance criteria, and
 the [Effect research](docs/research/effect-error-model.md) for primary sources.
 Stages 1–4 below are implemented by the typed-errors-and-reports work. The final
 release and integration state is tracked by the implementation plan.
@@ -30,6 +30,7 @@ that the current implementation meets the contracts in the new roadmap.
 - [x] a way to provide a merge function to merge details
 - [x] Collect all superdefaults, not only from immediate prototype
 - [x] Simpler subclass with plain options
+
 ```typescript
 const MyAppException = AppEx.subclass(
   'MyAppException',
@@ -54,6 +55,7 @@ const MyAppException = AppEx.subclass('MyAppException', {
   useClassNameAsCode: true,
 })
 ```
+
 - [x] Allow to parametrize hbs helpers, add example with helpers to format date
 - [ ] docs
   - [ ] Make a good guide

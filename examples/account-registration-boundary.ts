@@ -35,8 +35,11 @@ type CreatedBody = {
 export type BoundaryResponse = {
   readonly status: number;
   readonly body: PublicReport | CreatedBody;
-  readonly diagnostic?: DiagnosticReport;
 };
+
+export type DiagnosticSink = (report: DiagnosticReport) => void;
+
+const ignoreDiagnostic: DiagnosticSink = () => undefined;
 
 export function registerUser(
   storage: Storage,
@@ -57,6 +60,7 @@ export function handleRegistration(
   storage: Storage,
   email: string,
   requestId: string,
+  recordDiagnostic: DiagnosticSink = ignoreDiagnostic,
 ): BoundaryResponse {
   try {
     const failure = registerUser(storage, email);
@@ -66,9 +70,9 @@ export function handleRegistration(
     const diagnostic = toDiagnosticReport(failure, {
       context: { operation: 'registerUser', requestId },
     });
+    recordDiagnostic(diagnostic);
     return {
       status: 409,
-      diagnostic,
       body: toPublicReport(diagnostic, {
         code: 'ACCOUNT_ALREADY_EXISTS',
         message: 'An account with this email already exists.',
@@ -78,9 +82,9 @@ export function handleRegistration(
     const diagnostic = toDiagnosticReport(caught, {
       context: { operation: 'registerUser', requestId },
     });
+    recordDiagnostic(diagnostic);
     return {
       status: 500,
-      diagnostic,
       body: toPublicReport(diagnostic),
     };
   }
@@ -89,13 +93,14 @@ export function handleRegistration(
 export function handleAccountRecoveryFailure(
   error: InstanceType<typeof UserAlreadyExists>,
   requestId: string,
-): Required<Pick<BoundaryResponse, 'status' | 'body' | 'diagnostic'>> {
+  recordDiagnostic: DiagnosticSink = ignoreDiagnostic,
+): BoundaryResponse {
   const diagnostic = toDiagnosticReport(error, {
     context: { operation: 'recoverAccount', requestId },
   });
+  recordDiagnostic(diagnostic);
   return {
     status: 202,
-    diagnostic,
     body: toPublicReport(diagnostic, {
       code: 'REQUEST_ACCEPTED',
       message: 'If the account exists, recovery instructions will be sent.',
@@ -109,11 +114,12 @@ if (require.main === module) {
       throw new UniqueEmailConstraintError(email);
     },
   };
-  process.stdout.write(
-    `${JSON.stringify(
-      handleRegistration(storage, 'ada@example.test', 'req-example'),
-      null,
-      2,
-    )}\n`,
+  const response = handleRegistration(
+    storage,
+    'ada@example.test',
+    'req-example',
+    (diagnostic) =>
+      process.stderr.write(`diagnostic=${JSON.stringify(diagnostic)}\n`),
   );
+  process.stdout.write(`response=${JSON.stringify(response, null, 2)}\n`);
 }

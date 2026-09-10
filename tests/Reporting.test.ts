@@ -32,6 +32,7 @@ describe('diagnostic reporting', () => {
     expect(report.name).toBe('agent/ToolFailure');
     expect(report.message).toBe('search failed');
     expect(report.timestamp).toBe(error.timestamp);
+    expect(report.stack).toEqual(expect.stringContaining('agent/ToolFailure'));
     expect(report.details).toEqual({
       tool: 'search',
       input: { query: 'Ada' },
@@ -211,10 +212,31 @@ describe('diagnostic reporting', () => {
     const report = toDiagnosticReport(error);
 
     expect(report.reference).toBe(error.id);
-    expect(report.cause).toEqual({
+    expect(report.cause).toMatchObject({
       name: 'Error',
       message: 'hidden',
-      stack: { $appex: 'unreadable', reason: 'accessor' },
+    });
+    expect((report.cause as Record<string, unknown>)['stack']).toBeDefined();
+  });
+
+  test('preserves a typed occurrence when its stack is an accessor', () => {
+    const error = new ToolFailure({
+      details: { tool: 'inspect', input: {} },
+    });
+    Object.defineProperty(error, 'stack', {
+      configurable: true,
+      get() {
+        throw new Error('stack unavailable');
+      },
+    });
+
+    const report = toDiagnosticReport(error);
+
+    expect(report.reference).toBe(error.id);
+    expect(report.kind).toBe(error._tag);
+    expect(report.stack).toEqual({
+      $appex: 'unreadable',
+      reason: 'accessor',
     });
   });
 
@@ -277,6 +299,79 @@ describe('diagnostic reporting', () => {
 
     expect(report.message).toBe('abcd');
     expect(report.truncation).toEqual({ messageOmitted: 4 });
+  });
+
+  test('bounds messages nested inside native causes', () => {
+    const error = new ToolFailure({
+      details: { tool: 'network', input: {} },
+      cause: new Error('abcdefgh'),
+    });
+
+    const report = toDiagnosticReport(error, {
+      limits: { maxStringLength: 4 },
+    });
+
+    expect((report.cause as Record<string, unknown>)['message']).toEqual({
+      $appex: 'truncated',
+      reason: 'string',
+      value: 'abcd',
+      omitted: 4,
+    });
+  });
+
+  test('does not invoke custom string conversion on thrown objects', () => {
+    let calls = 0;
+    const thrown = {
+      toString() {
+        calls += 1;
+        return 'private value';
+      },
+    };
+
+    const report = toDiagnosticReport(thrown);
+
+    expect(report.message).toBe('Non-Error value was thrown');
+    expect(calls).toBe(0);
+  });
+
+  test('preserves __proto__ as diagnostic data without changing prototypes', () => {
+    const input = JSON.parse('{"__proto__":{"admin":true}}') as Record<
+      string,
+      unknown
+    >;
+    const error = new ToolFailure({
+      details: { tool: 'inspect', input },
+    });
+
+    const report = toDiagnosticReport(error);
+    const normalizedInput = (report.details as Record<string, any>)['input'];
+
+    expect(Object.getPrototypeOf(normalizedInput)).toBe(Object.prototype);
+    expect(
+      Object.prototype.hasOwnProperty.call(normalizedInput, '__proto__'),
+    ).toBe(true);
+    expect(JSON.stringify(normalizedInput)).toBe(
+      '{"__proto__":{"admin":true}}',
+    );
+  });
+
+  test('does not copy unbounded attacker-controlled object keys', () => {
+    const longKey = 'k'.repeat(5_000);
+    const error = new ToolFailure({
+      details: { tool: 'inspect', input: { [longKey]: true } },
+    });
+
+    const report = toDiagnosticReport(error);
+    const normalizedInput = (report.details as Record<string, any>)['input'];
+
+    expect(normalizedInput).toEqual({
+      '$appex:truncated': {
+        $appex: 'truncated',
+        reason: 'key-length',
+        omitted: 1,
+      },
+    });
+    expect(JSON.stringify(normalizedInput).length).toBeLessThan(200);
   });
 
   test('redacts default and caller-provided sensitive keys before traversal', () => {
@@ -435,6 +530,126 @@ describe('diagnostic report decoding', () => {
       error: {
         code: 'INVALID_REPORT',
         message: 'Expected a plain JSON object',
+        path: '$.details',
+      },
+    });
+  });
+
+  test('rejects malformed truncation metadata', () => {
+    expect(
+      decodeDiagnosticReport({
+        v: 'appex/diagnostic/v1',
+        reference: 'AE_123',
+        name: 'Error',
+        message: 'fail',
+        truncation: { messageOmitted: -1 },
+      }),
+    ).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_REPORT',
+        message: 'Expected a non-negative integer',
+        path: '$.truncation.messageOmitted',
+      },
+    });
+  });
+
+  test('requires report fields to be enumerable own data properties', () => {
+    const input = {
+      v: 'appex/diagnostic/v1',
+      reference: 'AE_123',
+      name: 'Error',
+    } as Record<string, unknown>;
+    Object.defineProperty(input, 'message', {
+      value: 'hidden',
+      enumerable: false,
+    });
+
+    expect(decodeDiagnosticReport(input)).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_REPORT',
+        message: 'Expected an enumerable own data property',
+        path: '$.message',
+      },
+    });
+  });
+
+  test('preserves __proto__ as decoded data without changing prototypes', () => {
+    const input = JSON.parse(
+      '{"v":"appex/diagnostic/v1","reference":"AE_123","name":"Error","message":"failed","details":{"__proto__":{"admin":true}}}',
+    );
+
+    const decoded = decodeDiagnosticReport(input);
+
+    expect(decoded.success).toBe(true);
+    if (!decoded.success) return;
+    const details = decoded.value.details as Record<string, unknown>;
+    expect(Object.getPrototypeOf(details)).toBe(Object.prototype);
+    expect(Object.prototype.hasOwnProperty.call(details, '__proto__')).toBe(
+      true,
+    );
+    expect(JSON.stringify(details)).toBe('{"__proto__":{"admin":true}}');
+  });
+
+  test('bounds untrusted report depth before cloning', () => {
+    const input: Record<string, unknown> = {
+      v: 'appex/diagnostic/v1',
+      reference: 'AE_123',
+      name: 'Error',
+      message: 'failed',
+    };
+    let cursor = input;
+    for (let index = 0; index < 70; index += 1) {
+      const next: Record<string, unknown> = {};
+      cursor['details'] = next;
+      cursor = next;
+    }
+
+    const decoded = decodeDiagnosticReport(input);
+
+    expect(decoded).toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_REPORT',
+        message: 'Report exceeds decode depth limit',
+      },
+    });
+  });
+
+  test('bounds untrusted report value count before cloning', () => {
+    const decoded = decodeDiagnosticReport({
+      v: 'appex/diagnostic/v1',
+      reference: 'AE_123',
+      name: 'Error',
+      message: 'failed',
+      details: Array.from({ length: 10_001 }, () => null),
+    });
+
+    expect(decoded).toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_REPORT',
+        message: 'Report exceeds decode value limit',
+      },
+    });
+  });
+
+  test('rejects unbounded object keys without echoing them in the path', () => {
+    const longKey = 'k'.repeat(5_000);
+    const decoded = decodeDiagnosticReport({
+      v: 'appex/diagnostic/v1',
+      reference: 'AE_123',
+      name: 'Error',
+      message: 'failed',
+      details: { [longKey]: true },
+    });
+
+    expect(decoded).toEqual({
+      success: false,
+      error: {
+        code: 'INVALID_REPORT',
+        message: 'Report key exceeds decode length limit',
         path: '$.details',
       },
     });

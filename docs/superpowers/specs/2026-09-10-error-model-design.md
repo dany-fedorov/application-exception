@@ -1,8 +1,7 @@
 # Application Exception: useful errors at application boundaries
 
-Date: 2026-09-10. Status: design proposal; the proposed APIs below are not
-implemented. Baseline: commit `6d8aa7309fa356636e8a344b9304805b8cf8f719`, package
-`0.0.25`.
+Date: 2026-09-10. Status: implemented for package `0.1.0`. Baseline examined:
+commit `6d8aa7309fa356636e8a344b9304805b8cf8f719`, package `0.0.25`.
 
 ## Recommendation
 
@@ -82,7 +81,7 @@ and [non-enumerable property creation](https://tc39.es/ecma262/multipage/abstrac
 
 ## 1. Separate kind, occurrence, and presentation
 
-An error kind is the machine-readable discriminant, proposed as a readonly
+An error kind is the machine-readable discriminant, implemented as a readonly
 literal `_tag`. An occurrence has an `id`, a creation timestamp, and diagnostic
 details. Public codes, HTTP statuses, CLI exit codes, and user-facing messages
 belong to the application's presentation policy. See the
@@ -105,7 +104,7 @@ validate data or establish that a foreign object is a trusted exception. See
 
 ## 2. Construct a complete native error
 
-Proposed API sketch, not executable with the current release:
+Implemented API:
 
 ```ts
 import { defineException } from 'application-exception/typed';
@@ -231,8 +230,8 @@ promise termination for a deliberately non-returning trap.
 Start with explicit conservative defaults: maximum depth 8, 1,000 visited
 values, 50 entries per object or array, and 4,096 characters per string. Count
 causes and observation context within the same budget. Mark truncation instead
-of silently dropping information. These are proposed defaults to test against
-real reports, not measured optimal limits or an exact byte budget.
+of silently dropping information. These are conservative defaults to test
+against real reports, not measured optimal limits or an exact byte budget.
 
 Allow redaction at the reporting boundary, before traversing the selected
 value. A field-name denylist can help with known secrets but cannot guarantee

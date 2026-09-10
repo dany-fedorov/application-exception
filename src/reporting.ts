@@ -104,6 +104,8 @@ const DEFAULT_REDACT_KEYS = [
   'token',
 ] as const;
 
+const MAX_NORMALIZED_KEY_LENGTH = 4_096;
+
 type NormalizationState = {
   readonly limits: DiagnosticLimits;
   readonly redactKeys: ReadonlySet<string>;
@@ -192,13 +194,21 @@ function normalizeError(
   const cause = readPropertyWithoutGetter(error, 'cause');
   const errors = readPropertyWithoutGetter(error, 'errors');
   const output: Record<string, DiagnosticValue> = {
-    name: diagnosticString(
-      name.found && name.readable ? name.value : undefined,
-      'Error',
+    name: normalizeValue(
+      diagnosticString(
+        name.found && name.readable ? name.value : undefined,
+        'Error',
+      ),
+      state,
+      depth + 1,
     ),
-    message: diagnosticString(
-      message.found && message.readable ? message.value : undefined,
-      '',
+    message: normalizeValue(
+      diagnosticString(
+        message.found && message.readable ? message.value : undefined,
+        '',
+      ),
+      state,
+      depth + 1,
     ),
   };
   if (stack.found) {
@@ -231,6 +241,19 @@ function truncationKey(output: Record<string, DiagnosticValue>): string {
     key = `$appex:${key}`;
   }
   return key;
+}
+
+function setDiagnosticProperty(
+  output: Record<string, DiagnosticValue>,
+  key: string,
+  value: DiagnosticValue,
+): void {
+  Object.defineProperty(output, key, {
+    value,
+    enumerable: true,
+    writable: true,
+    configurable: true,
+  });
 }
 
 function normalizeObject(
@@ -301,23 +324,44 @@ function normalizeObject(
     const keys = Object.keys(descriptors).filter(
       (key) => descriptors[key]?.enumerable === true,
     );
-    const selected = keys.slice(0, state.limits.maxEntries);
+    const boundedKeys = keys.filter(
+      (key) => key.length <= MAX_NORMALIZED_KEY_LENGTH,
+    );
+    const omittedLongKeys = keys.length - boundedKeys.length;
+    const selected = boundedKeys.slice(0, state.limits.maxEntries);
     for (const key of selected) {
       if (state.redactKeys.has(key.toLowerCase())) {
-        output[key] = marker('redacted');
+        setDiagnosticProperty(output, key, marker('redacted'));
         continue;
       }
       const descriptor = descriptors[key];
-      output[key] =
+      setDiagnosticProperty(
+        output,
+        key,
         descriptor && 'value' in descriptor
           ? normalizeValue(descriptor.value, state, depth + 1)
-          : marker('unreadable', { reason: 'accessor' });
+          : marker('unreadable', { reason: 'accessor' }),
+      );
     }
-    if (keys.length > selected.length) {
-      output[truncationKey(output)] = marker('truncated', {
-        reason: 'entries',
-        omitted: keys.length - selected.length,
-      });
+    if (omittedLongKeys > 0) {
+      setDiagnosticProperty(
+        output,
+        truncationKey(output),
+        marker('truncated', {
+          reason: 'key-length',
+          omitted: omittedLongKeys,
+        }),
+      );
+    }
+    if (boundedKeys.length > selected.length) {
+      setDiagnosticProperty(
+        output,
+        truncationKey(output),
+        marker('truncated', {
+          reason: 'entries',
+          omitted: boundedKeys.length - selected.length,
+        }),
+      );
     }
     return output;
   } finally {
@@ -383,6 +427,7 @@ function reportTypedException(
 ): DiagnosticReport {
   const renderingError = getMessageRenderingError(error);
   const cause = readPropertyWithoutGetter(error, 'cause');
+  const stack = readPropertyWithoutGetter(error, 'stack');
   return {
     v: DIAGNOSTIC_REPORT_VERSION,
     reference: error.id,
@@ -404,8 +449,12 @@ function reportTypedException(
     ...(renderingError !== undefined
       ? { messageRenderingError: normalizeValue(renderingError, state) }
       : {}),
-    ...(typeof error.stack === 'string'
-      ? { stack: normalizeValue(error.stack, state) }
+    ...(stack.found
+      ? {
+          stack: stack.readable
+            ? normalizeValue(stack.value, state)
+            : marker('unreadable', { reason: 'accessor' }),
+        }
       : {}),
   };
 }
@@ -418,6 +467,7 @@ function reportLegacyException(
   const kind = error.getCode();
   const details = error.getDetails();
   const cause = readPropertyWithoutGetter(error, 'cause');
+  const stack = readPropertyWithoutGetter(error, 'stack');
   return {
     v: DIAGNOSTIC_REPORT_VERSION,
     reference: error.getId(),
@@ -438,17 +488,32 @@ function reportLegacyException(
             : marker('unreadable', { reason: 'accessor' }),
         }
       : {}),
-    ...(typeof error.stack === 'string'
-      ? { stack: normalizeValue(error.stack, state) }
+    ...(stack.found
+      ? {
+          stack: stack.readable
+            ? normalizeValue(stack.value, state)
+            : marker('unreadable', { reason: 'accessor' }),
+        }
       : {}),
   };
 }
 
 function safeString(value: unknown): string {
-  try {
-    return String(value);
-  } catch (_error: unknown) {
-    return 'Unknown thrown value';
+  switch (typeof value) {
+    case 'string':
+    case 'number':
+    case 'boolean':
+    case 'bigint':
+    case 'undefined':
+      return String(value);
+    case 'symbol':
+      return value.description ?? 'Symbol';
+    case 'object':
+      return value === null ? 'null' : 'Non-Error value was thrown';
+    case 'function':
+      return 'Non-Error value was thrown';
+    default:
+      return 'Unknown thrown value';
   }
 }
 
@@ -548,11 +613,36 @@ type JsonCloneResult =
       readonly path: string;
     };
 
+type JsonCloneState = {
+  readonly ancestors: WeakSet<object>;
+  values: number;
+};
+
+const MAX_DECODE_DEPTH = 64;
+const MAX_DECODE_VALUES = 10_000;
+const MAX_DECODE_KEY_LENGTH = 4_096;
+
 function cloneDiagnosticValue(
   value: unknown,
   path: string,
-  ancestors = new WeakSet<object>(),
+  state: JsonCloneState = { ancestors: new WeakSet<object>(), values: 0 },
+  depth = 0,
 ): JsonCloneResult {
+  state.values += 1;
+  if (state.values > MAX_DECODE_VALUES) {
+    return {
+      success: false,
+      message: 'Report exceeds decode value limit',
+      path,
+    };
+  }
+  if (depth > MAX_DECODE_DEPTH) {
+    return {
+      success: false,
+      message: 'Report exceeds decode depth limit',
+      path,
+    };
+  }
   if (
     value === null ||
     typeof value === 'string' ||
@@ -566,10 +656,10 @@ function cloneDiagnosticValue(
   if (typeof value !== 'object') {
     return { success: false, message: 'Expected a JSON value', path };
   }
-  if (ancestors.has(value)) {
+  if (state.ancestors.has(value)) {
     return { success: false, message: 'Expected an acyclic JSON value', path };
   }
-  ancestors.add(value);
+  state.ancestors.add(value);
   try {
     if (!Array.isArray(value)) {
       let prototype: object | null;
@@ -606,7 +696,8 @@ function cloneDiagnosticValue(
         const cloned = cloneDiagnosticValue(
           descriptor.value,
           `${path}[${index}]`,
-          ancestors,
+          state,
+          depth + 1,
         );
         if (!cloned.success) return cloned;
         output.push(cloned.value);
@@ -616,6 +707,13 @@ function cloneDiagnosticValue(
     const output: Record<string, DiagnosticValue> = {};
     for (const [key, descriptor] of Object.entries(descriptors)) {
       if (!descriptor.enumerable) continue;
+      if (key.length > MAX_DECODE_KEY_LENGTH) {
+        return {
+          success: false,
+          message: 'Report key exceeds decode length limit',
+          path,
+        };
+      }
       if (!('value' in descriptor)) {
         return {
           success: false,
@@ -626,14 +724,15 @@ function cloneDiagnosticValue(
       const cloned = cloneDiagnosticValue(
         descriptor.value,
         `${path}.${key}`,
-        ancestors,
+        state,
+        depth + 1,
       );
       if (!cloned.success) return cloned;
-      output[key] = cloned.value;
+      setDiagnosticProperty(output, key, cloned.value);
     }
     return { success: true, value: output };
   } finally {
-    ancestors.delete(value);
+    state.ancestors.delete(value);
   }
 }
 
@@ -647,18 +746,33 @@ function invalidReport(
   };
 }
 
+function readOwnEnumerableDataProperty(
+  value: object,
+  property: string,
+): PropertyRead {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, property);
+    if (!descriptor) return { found: false };
+    if (!descriptor.enumerable || !('value' in descriptor)) {
+      return { found: true, readable: false };
+    }
+    return { found: true, readable: true, value: descriptor.value };
+  } catch (_error: unknown) {
+    return { found: true, readable: false };
+  }
+}
+
 export function decodeDiagnosticReport(
   input: unknown,
 ): DecodeDiagnosticReportResult {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) {
     return invalidReport('Expected an object', '$');
   }
-  const version = readPropertyWithoutGetter(input, 'v');
-  if (
-    !version.found ||
-    !version.readable ||
-    typeof version.value !== 'string'
-  ) {
+  const version = readOwnEnumerableDataProperty(input, 'v');
+  if (!version.found || !version.readable) {
+    return invalidReport('Expected an enumerable own data property', '$.v');
+  }
+  if (typeof version.value !== 'string') {
     return invalidReport('Expected a string', '$.v');
   }
   if (version.value !== DIAGNOSTIC_REPORT_VERSION) {
@@ -673,16 +787,50 @@ export function decodeDiagnosticReport(
 
   const required = ['reference', 'name', 'message'] as const;
   for (const field of required) {
-    const read = readPropertyWithoutGetter(input, field);
-    if (!read.found || !read.readable || typeof read.value !== 'string') {
+    const read = readOwnEnumerableDataProperty(input, field);
+    if (!read.found || !read.readable) {
+      return invalidReport(
+        'Expected an enumerable own data property',
+        `$.${field}`,
+      );
+    }
+    if (typeof read.value !== 'string') {
       return invalidReport('Expected a string', `$.${field}`);
     }
   }
   const optionalStrings = ['kind', 'timestamp'] as const;
   for (const field of optionalStrings) {
-    const read = readPropertyWithoutGetter(input, field);
+    const read = readOwnEnumerableDataProperty(input, field);
     if (read.found && (!read.readable || typeof read.value !== 'string')) {
       return invalidReport('Expected a string', `$.${field}`);
+    }
+  }
+
+  const truncation = readOwnEnumerableDataProperty(input, 'truncation');
+  if (truncation.found) {
+    if (
+      !truncation.readable ||
+      typeof truncation.value !== 'object' ||
+      truncation.value === null ||
+      Array.isArray(truncation.value)
+    ) {
+      return invalidReport('Expected an object', '$.truncation');
+    }
+    const omitted = readOwnEnumerableDataProperty(
+      truncation.value,
+      'messageOmitted',
+    );
+    if (
+      !omitted.found ||
+      !omitted.readable ||
+      typeof omitted.value !== 'number' ||
+      !Number.isSafeInteger(omitted.value) ||
+      omitted.value < 0
+    ) {
+      return invalidReport(
+        'Expected a non-negative integer',
+        '$.truncation.messageOmitted',
+      );
     }
   }
 

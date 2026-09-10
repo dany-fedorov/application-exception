@@ -4,7 +4,26 @@ on:
     branches:
       - main
 jobs:
+  node_18_compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test-ci
+
   test_and_release:
+    needs: node_18_compatibility
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository code
