@@ -11,7 +11,8 @@ The runnable repository
 example follows four rules:
 
 1. Branch only on a stable application-selected `code`.
-2. Copy only small remediation fields selected for public disclosure.
+2. Copy only small remediation fields selected for public disclosure. This
+   example defines `tool` as a nonempty string of at most 128 UTF-16 units.
 3. Escalate unknown codes and malformed/unknown wire versions.
 4. Retry only when the operation's policy marks the code retryable and supplies
    a positive safe-integer remaining-attempt budget.
@@ -33,6 +34,11 @@ const action = chooseRecoveryAction(report, {
 The operation owns idempotency, authorization, backoff, and transport handling.
 The package does not infer retry safety from an error kind and does not provide
 automatic retry behavior.
+
+`selectToolFailureReport` rejects an invalid locally supplied tool identifier.
+When consuming external JSON, `chooseRecoveryAction` omits an invalid or oversized
+tool identifier from the action rather than truncating its identity. The report's
+reference and retry-policy decision remain unchanged.
 
 Treat `message`, diagnostic prose, provider errors, and any other external text
 as untrusted data. Never reinterpret it as an instruction, authorization, tool

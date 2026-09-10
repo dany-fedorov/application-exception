@@ -5,6 +5,15 @@ const publicReportSchema: object = require('../schemas/public-report-v2.json');
 const validatePublicReport = new Ajv({ strict: true }).compile<PublicReport>(
   publicReportSchema,
 );
+const MAX_TOOL_IDENTIFIER_LENGTH = 128;
+
+function isToolIdentifier(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_TOOL_IDENTIFIER_LENGTH
+  );
+}
 
 export interface OperationRetryPolicy {
   readonly operation: string;
@@ -33,6 +42,11 @@ export function selectToolFailureReport(
   reference: string,
   tool: string,
 ): PublicReport {
+  if (!isToolIdentifier(tool)) {
+    throw new TypeError(
+      'tool must be a nonempty string of at most 128 characters',
+    );
+  }
   return toPublicReport(reference, {
     code: 'TOOL_UNAVAILABLE',
     message: 'The requested tool is temporarily unavailable.',
@@ -45,7 +59,7 @@ function selectedTool(report: PublicReport): string | undefined {
   if (typeof details !== 'object' || details === null || Array.isArray(details))
     return undefined;
   const tool = details['tool'];
-  return typeof tool === 'string' ? tool : undefined;
+  return isToolIdentifier(tool) ? tool : undefined;
 }
 
 export function chooseRecoveryAction(
@@ -78,14 +92,13 @@ export function chooseRecoveryAction(
       reason: 'retry-budget-exhausted',
     };
   }
+  const tool = selectedTool(externalValue);
   return {
     action: 'retry',
     reference: externalValue.reference,
     operation: policy.operation,
     remainingAttempts: policy.remainingAttempts - 1,
-    ...(selectedTool(externalValue) !== undefined
-      ? { tool: selectedTool(externalValue) }
-      : {}),
+    ...(tool !== undefined ? { tool } : {}),
   };
 }
 
