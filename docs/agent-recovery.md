@@ -7,7 +7,7 @@ boundary. Keep the diagnostic report in an authorized operational sink; its
 messages, stack, causes, and context may contain sensitive data.
 
 The runnable repository
-[`agent-recovery.ts`](https://github.com/dany-fedorov/application-exception/blob/main/examples/agent-recovery.ts)
+[`agent-recovery.ts`](https://github.com/dany-fedorov/application-exception/blob/4f3e8dfcd3cdb5c7f1cf100443d6a2290853bb03/examples/agent-recovery.ts)
 example follows four rules:
 
 1. Branch only on a stable application-selected `code`.
