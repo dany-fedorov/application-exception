@@ -44,7 +44,7 @@ export function selectToolFailureReport(
 ): PublicReport {
   if (!isToolIdentifier(tool)) {
     throw new TypeError(
-      'tool must be a nonempty string of at most 128 characters',
+      'tool must be a nonempty string of at most 128 UTF-16 code units',
     );
   }
   return toPublicReport(reference, {
