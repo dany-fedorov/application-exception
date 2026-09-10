@@ -154,9 +154,9 @@ The [migration guide](docs/migration-to-typed-errors.md) lists every 0.2 break.
 The [agent recovery guide](docs/agent-recovery.md) shows schema validation,
 stable-code branching, selected public details, unknown-code escalation, and an
 operation-owned retry budget. The repository has runnable examples for an
-[application boundary](https://github.com/dany-fedorov/application-exception/blob/4f3e8dfcd3cdb5c7f1cf100443d6a2290853bb03/examples/account-registration-boundary.ts),
-[agent recovery](https://github.com/dany-fedorov/application-exception/blob/4f3e8dfcd3cdb5c7f1cf100443d6a2290853bb03/examples/agent-recovery.ts),
-and [Effect v3](https://github.com/dany-fedorov/application-exception/blob/4f3e8dfcd3cdb5c7f1cf100443d6a2290853bb03/examples/effect-integration.ts).
+[application boundary](https://github.com/dany-fedorov/application-exception/blob/3c39993ed130d0c5fd7aca21e09a607c6772bd74/examples/account-registration-boundary.ts),
+[agent recovery](https://github.com/dany-fedorov/application-exception/blob/3c39993ed130d0c5fd7aca21e09a607c6772bd74/examples/agent-recovery.ts),
+and [Effect v3](https://github.com/dany-fedorov/application-exception/blob/3c39993ed130d0c5fd7aca21e09a607c6772bd74/examples/effect-integration.ts).
 Effect remains optional and is not a production dependency.
 
 ## Development
