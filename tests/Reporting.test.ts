@@ -259,6 +259,28 @@ describe('diagnostic reporting', () => {
     expect((report.cause as Record<string, unknown>)['stack']).toBeDefined();
   });
 
+  test('contains unreadable metadata on nested typed causes', () => {
+    const inner = new ToolFailure({
+      details: { tool: 'inner', input: {} },
+    });
+    Object.defineProperty(inner, '_tag', {
+      configurable: true,
+      get() {
+        throw new Error('tag unavailable');
+      },
+    });
+    const outer = new ToolFailure({
+      details: { tool: 'outer', input: {} },
+      cause: inner,
+    });
+
+    expect(() => toDiagnosticReport(outer)).not.toThrow();
+    expect(toDiagnosticReport(outer).cause).toMatchObject({
+      reference: inner.id,
+      details: { tool: 'inner', input: {} },
+    });
+  });
+
   test('preserves a typed occurrence when its stack is an accessor', () => {
     const error = new ToolFailure({
       details: { tool: 'inspect', input: {} },
@@ -313,6 +335,23 @@ describe('diagnostic reporting', () => {
     expect(() => toDiagnosticReport(error)).not.toThrow();
     expect(toDiagnosticReport(error).details).toMatchObject({
       input: { array: [] },
+    });
+  });
+
+  test('contains non-string function names from hostile proxies', () => {
+    const fn = new Proxy(() => undefined, {
+      get(target, property, receiver) {
+        if (property === 'name') return { hostile: true };
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const error = new ToolFailure({
+      details: { tool: 'inspect', input: { fn } },
+    });
+
+    expect(() => toDiagnosticReport(error)).not.toThrow();
+    expect(toDiagnosticReport(error).details).toMatchObject({
+      input: { fn: { $appex: 'function', value: '' } },
     });
   });
 

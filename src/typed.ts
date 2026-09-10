@@ -31,11 +31,21 @@ type NonRecordDetails =
   | Error
   | Promise<unknown>
   | ReadonlyMap<unknown, unknown>
-  | ReadonlySet<unknown>;
+  | ReadonlySet<unknown>
+  | WeakMap<object, unknown>
+  | WeakSet<object>;
+
+type DataPropertyKeys<Details extends object> = {
+  [Key in keyof Details]-?: NonNullable<Details[Key]> extends (
+    ...args: never[]
+  ) => unknown
+    ? never
+    : Key;
+}[keyof Details];
 
 type RecordDetails<Details extends object> = Details extends NonRecordDetails
   ? never
-  : Details;
+  : Pick<Details, DataPropertyKeys<Details>>;
 
 export type ExceptionInput<Details extends object> = {
   readonly details: RecordDetails<Details>;
@@ -127,18 +137,21 @@ export function defineException<Details extends object>(
         ) {
           throw new TypeError('Exception details must be a non-array object');
         }
-        let detailsPrototype: object | null;
+        let isBuiltInDetails = false;
         try {
-          detailsPrototype = Object.getPrototypeOf(suppliedDetails) as
-            | object
-            | null;
+          isBuiltInDetails =
+            suppliedDetails instanceof Date ||
+            suppliedDetails instanceof RegExp ||
+            suppliedDetails instanceof Error ||
+            suppliedDetails instanceof Promise ||
+            suppliedDetails instanceof Map ||
+            suppliedDetails instanceof Set ||
+            suppliedDetails instanceof WeakMap ||
+            suppliedDetails instanceof WeakSet;
         } catch (_error: unknown) {
           throw new TypeError('Exception details must be a plain object');
         }
-        if (
-          detailsPrototype !== Object.prototype &&
-          detailsPrototype !== null
-        ) {
+        if (isBuiltInDetails) {
           throw new TypeError('Exception details must be a plain object');
         }
         if (

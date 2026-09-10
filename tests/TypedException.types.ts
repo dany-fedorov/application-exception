@@ -19,6 +19,23 @@ defineException<() => void>();
 // @ts-expect-error built-in class instances are not copied as detail records.
 defineException<Date>();
 
+class CustomDetails {
+  readonly operation = 'search';
+  describe(): string {
+    return this.operation;
+  }
+}
+
+const CustomFailure = defineException<CustomDetails>()({
+  tag: 'CustomFailure',
+  message: ({ operation }) => operation,
+});
+const customFailure = new CustomFailure({ details: new CustomDetails() });
+const customOperation: string = customFailure.details.operation;
+// @ts-expect-error prototype methods are not part of copied details.
+customFailure.details.describe();
+void customOperation;
+
 const UserAlreadyExists = defineException<{ email: string }>()({
   tag: 'UserAlreadyExists',
   message: ({ email }) => email,

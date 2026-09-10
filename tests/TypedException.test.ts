@@ -190,4 +190,24 @@ describe('defineException', () => {
       () => new UserAlreadyExists({ details: new Date() } as never),
     ).toThrow('Exception details must be a plain object');
   });
+
+  test('copies enumerable data from a custom class without its prototype', () => {
+    class CustomDetails {
+      readonly operation = 'search';
+
+      describe(): string {
+        return this.operation;
+      }
+    }
+    const CustomFailure = defineException<CustomDetails>()({
+      tag: 'CustomFailure',
+      message: ({ operation }) => operation,
+    });
+
+    const error = new CustomFailure({ details: new CustomDetails() });
+
+    expect(error.details).toEqual({ operation: 'search' });
+    expect(error.details).not.toBeInstanceOf(CustomDetails);
+    expect('describe' in error.details).toBe(false);
+  });
 });

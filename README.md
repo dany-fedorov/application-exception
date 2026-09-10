@@ -67,8 +67,9 @@ error.id; // unique occurrence reference
 error.cause; // original value, by identity
 ```
 
-Details must be a plain object. The factory rejects arrays, functions, and class
-instances so its shallow-copy type matches its runtime behavior.
+Details must be record-like. The factory rejects arrays, functions, and built-in
+non-record instances. Custom objects contribute only their enumerable data;
+prototype methods are absent from the copied value and its type.
 
 Create a diagnostic report for logs, then independently choose a public
 presentation:

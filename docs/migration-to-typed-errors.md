@@ -28,12 +28,13 @@ const error = new UserAlreadyExists({
 });
 ```
 
-The full detail object is required at construction and must be a plain record.
-Arrays, functions, and class instances are rejected. The library copies and
-shallow-freezes the record; nested values keep their identity. The message is rendered
-once and supplied to native `Error`, so `.message`, stacks, loggers, and generic
-error consumers agree. `_tag`, `id`, and `timestamp` describe the kind and this
-particular occurrence.
+The full detail object is required at construction and must be record-like.
+Arrays, functions, and built-in non-record instances are rejected. The library
+copies and shallow-freezes enumerable data; nested values keep their identity.
+For a custom object, prototype methods are absent from the copy and its type.
+The message is rendered once and supplied to native `Error`, so `.message`,
+stacks, loggers, and generic error consumers agree. `_tag`, `id`, and
+`timestamp` describe the kind and this particular occurrence.
 
 Use a tag that remains meaningful when message wording and transports change.
 Namespace tags when independent catalogs may meet, such as

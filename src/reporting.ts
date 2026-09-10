@@ -251,10 +251,17 @@ function normalizeError(
       : marker('unreadable', { reason: 'accessor' });
   }
   if (isTypedException(error)) {
-    output['kind'] = error._tag;
-    output['reference'] = error.id;
-    output['timestamp'] = error.timestamp;
-    output['details'] = normalizeValue(error.details, state, depth + 1);
+    const kind = errorField(error, '_tag');
+    const reference = errorField(error, 'id');
+    const timestamp = errorField(error, 'timestamp');
+    const details = readPropertyWithoutGetter(error, 'details');
+    if (typeof kind === 'string') output['kind'] = kind;
+    if (typeof reference === 'string') output['reference'] = reference;
+    if (typeof timestamp === 'string') output['timestamp'] = timestamp;
+    output['details'] =
+      details.found && details.readable
+        ? normalizeValue(details.value, state, depth + 1)
+        : marker('unreadable', { reason: 'accessor' });
   }
   return output;
 }
@@ -440,12 +447,13 @@ function normalizeValue(
     case 'bigint':
       return markerWithBoundedValue('bigint', String(value), state);
     case 'function': {
-      let name = '';
+      let inspectedName: unknown = '';
       try {
-        name = value.name;
+        inspectedName = value.name;
       } catch (_error: unknown) {
         return marker('unreadable', { reason: 'function-inspection' });
       }
+      const name = typeof inspectedName === 'string' ? inspectedName : '';
       return markerWithBoundedValue('function', name, state);
     }
     case 'symbol':
@@ -467,8 +475,8 @@ function reportTypedException(
   options: DiagnosticReportOptions,
   state: NormalizationState,
 ): DiagnosticReport {
-  const occurrence = createOccurrence();
-  const reference = diagnosticString(errorField(error, 'id'), occurrence.id);
+  const id = errorField(error, 'id');
+  const reference = typeof id === 'string' ? id : createOccurrence().id;
   const kind = diagnosticString(errorField(error, '_tag'), 'TypedException');
   const name = diagnosticString(errorField(error, 'name'), kind);
   const message = diagnosticString(errorField(error, 'message'), kind);
