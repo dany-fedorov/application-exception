@@ -14,7 +14,7 @@ example follows four rules:
 2. Copy only small remediation fields selected for public disclosure.
 3. Escalate unknown codes and malformed/unknown wire versions.
 4. Retry only when the operation's policy marks the code retryable and supplies
-   a positive remaining-attempt budget.
+   a positive safe-integer remaining-attempt budget.
 
 ```ts
 const report = toPublicReport(diagnostic.reference, {

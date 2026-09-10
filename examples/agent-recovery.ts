@@ -68,7 +68,10 @@ export function chooseRecoveryAction(
       reason: 'unknown-code',
     };
   }
-  if (policy.remainingAttempts <= 0) {
+  if (
+    !Number.isSafeInteger(policy.remainingAttempts) ||
+    policy.remainingAttempts <= 0
+  ) {
     return {
       action: 'escalate',
       reference: externalValue.reference,

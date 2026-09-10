@@ -29,6 +29,27 @@ describe('agent recovery example', () => {
     });
   });
 
+  test.each([
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+    0,
+    -1,
+    0.5,
+    1.5,
+    Number.MAX_SAFE_INTEGER + 1,
+  ])('rejects invalid remaining-attempt budget %p', (remainingAttempts) => {
+    const report = selectToolFailureReport('AE_invalid_budget', 'search');
+
+    expect(
+      chooseRecoveryAction(report, { ...retryPolicy, remainingAttempts }),
+    ).toEqual({
+      action: 'escalate',
+      reference: 'AE_invalid_budget',
+      reason: 'retry-budget-exhausted',
+    });
+  });
+
   test('changing explanatory prose cannot change the chosen action', () => {
     const report = selectToolFailureReport('AE_stable', 'search');
 
