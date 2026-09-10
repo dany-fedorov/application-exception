@@ -143,4 +143,12 @@ describe('defineException', () => {
     expect(consoleWarn).not.toHaveBeenCalled();
     consoleWarn.mockRestore();
   });
+
+  test('rejects hostile proxies without throwing during narrowing', () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+
+    expect(() => isTypedException(proxy)).not.toThrow();
+    expect(isTypedException(proxy)).toBe(false);
+  });
 });

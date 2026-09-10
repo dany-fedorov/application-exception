@@ -135,13 +135,17 @@ export function defineException<Details extends Record<string, unknown>>(): <
 }
 
 export function isTypedException(value: unknown): value is TypedException {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { readonly [TYPED_EXCEPTION_BRAND]?: unknown })[
-      TYPED_EXCEPTION_BRAND
-    ] === true
-  );
+  try {
+    return (
+      typeof value === 'object' &&
+      value !== null &&
+      (value as { readonly [TYPED_EXCEPTION_BRAND]?: unknown })[
+        TYPED_EXCEPTION_BRAND
+      ] === true
+    );
+  } catch (_error: unknown) {
+    return false;
+  }
 }
 
 export function getMessageRenderingError(error: TypedException): unknown {
