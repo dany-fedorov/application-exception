@@ -12,6 +12,6 @@
     "examples_prev",
     "tests",
     ".eslintrc.js",
-    "jest.config.ts"
+    "jest.config.js"
   ]
 }

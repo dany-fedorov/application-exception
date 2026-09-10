@@ -5,12 +5,11 @@
 [![Package License MIT](https://img.shields.io/npm/l/pojo-constructor.svg)](https://www.npmjs.org/package/application-exception)
 [![Npm Version](https://img.shields.io/npm/v/application-exception.svg)](https://www.npmjs.org/package/application-exception)
 
-> **Warning**
-> Please use fixed version (remove ^ from package.json).
-
 <!-- TOC -->
 
 - [Motivation](#motivation)
+- [Development direction](#development-direction)
+- [Typed errors and reports](#typed-errors-and-reports)
 - [User Guide](#user-guide)
   - [Defaults of `ApplicationException`](#defaults-of-applicationexception)
   - [Using builder pattern](#using-builder-pattern)
@@ -20,12 +19,7 @@
   - [Custom exceptions: Using `subclass` static method](#custom-exceptions--using-subclass-static-method)
   - [Custom exceptions: Providing custom handlebars helpers](#custom-exceptions--providing-custom-handlebars-helpers)
   - [Custom exceptions: Setting a type for `details` field](#custom-exceptions--setting-a-type-for-details-field)
-  - [Consider not using `throw`](#consider-not-using-throw)
-- [API](#api)
-  - [Fields](#fields)
-  - [Options](#options)
-  - [Helper methods (lifecycle methods)](#helper-methods--lifecycle-methods-)
-  - [Handlebars Helpers](#handlebars-helpers)
+  - [Handling expected failures](#handling-expected-failures)
 
 <!-- TOC -->
 
@@ -35,7 +29,72 @@
 - Extending Error object with custom props must be convenient.
 - Error object must allow to specify a list of nested root causes.
 - Error object must have a consistent JSON representation.
-- Informative error messages must be easy to create. 
+- Informative error messages must be easy to create.
+
+## Development direction
+
+The [implemented design](docs/superpowers/specs/2026-09-10-error-model-design.md)
+developed these ideas into typed native errors, standard causes, and separate
+diagnostic and public reports. The existing builder remains available for
+compatibility.
+
+The accompanying [Effect comparison](docs/research/effect-error-model.md)
+examines tagged errors, typed failures, causes, and schema boundaries using
+official documentation and source. The [glossary](CONTEXT.md) distinguishes an
+error's kind, its occurrence, and its presentation.
+
+## Typed errors and reports
+
+Define an error kind with complete details and a native cause:
+
+```typescript
+import { defineException } from 'application-exception/typed';
+
+const UserAlreadyExists = defineException<{ email: string }>()({
+  tag: 'accounts/UserAlreadyExists',
+  message: ({ email }) => `An account already exists for ${email}`,
+});
+
+const error = new UserAlreadyExists({
+  details: { email: 'ada@example.test' },
+  cause: databaseError,
+});
+
+error._tag; // 'accounts/UserAlreadyExists'
+error.message; // rendered native Error message
+error.details.email; // string
+error.id; // unique occurrence reference
+error.cause; // original value, by identity
+```
+
+Details must be data-only and record-like. The factory rejects arrays,
+functions, method-bearing types, and objects whose prototype adds methods or
+accessors. A data-only class instance is copied into a plain frozen object.
+
+Create a diagnostic report for logs, then independently choose a public
+presentation:
+
+```typescript
+import { toDiagnosticReport, toPublicReport } from 'application-exception';
+
+const diagnostic = toDiagnosticReport(error, {
+  context: { requestId: 'req-123', operation: 'registerUser' },
+});
+
+const body = toPublicReport(diagnostic, {
+  code: 'ACCOUNT_ALREADY_EXISTS',
+  message: 'An account with this email already exists.',
+});
+```
+
+Diagnostic normalization is bounded, redacts common secret fields, handles
+cycles and unusual JavaScript values, and never invokes getters or custom
+`toJSON`. Public reports do not inherit diagnostic details. See the
+[migration and agent integration guide](docs/migration-to-typed-errors.md) and
+the runnable [application boundary example](examples/account-registration-boundary.ts).
+The [agent observation example](examples/agent-tool-observations.ts) shows
+aggregate provider failures, repeated observations of one occurrence, cyclic
+request context, and secret redaction.
 
 ## User Guide
 
@@ -85,8 +144,10 @@ message:   I'm an error message
 
 All fields available with builder pattern are listed in `AppExOwnProps` type.<br>
 
-You can use builder methods to set all of these fields except for `message` field because once message is set on `Error`
-instance it is impossible to change it. One time when setting `message` is available is during object creation.
+This library accepts the message template during construction and provides no
+fluent message setter. Native JavaScript `Error.message` is writable; that is
+separate from this library's rendering behavior and from how a runtime formats
+the stack trace.
 
 Here is a simple example.
 
@@ -528,34 +589,46 @@ And highlighting not allowed fields by TypeScript aware IDEs.
 
 ![Details Field Webstorm TypeScript Error Highlighting](https://github.com/dany-fedorov/application-exception/blob/main/details-field-webstorm-typescript-error-highlight.png)
 
-### Consider not using `throw`
+### Handling expected failures
 
-> _"Programs that use exceptions as part of their normal processing suffer from all the readability and
-> maintainability problems of classic spaghetti code."_
-> — Andy Hunt, Dave Thomas - The Pragmatic Programmer
+Typed errors work with native control flow and with typed effect systems. In
+ordinary TypeScript, use a discriminated result when the caller is expected to
+recover, and reserve `throw` for a boundary that already handles exceptions:
 
-Consider using conventional control flow for exceptions handling. This means returning exception object from a function
-instead of throwing an exception object.
+```typescript
+type Result<Value, Failure> =
+  | { readonly ok: true; readonly value: Value }
+  | { readonly ok: false; readonly error: Failure };
 
-TODO: example (?)
+function register(
+  email: string,
+): Result<string, InstanceType<typeof UserAlreadyExists>> {
+  if (email === 'ada@example.test') {
+    return {
+      ok: false,
+      error: new UserAlreadyExists({ details: { email } }),
+    };
+  }
+  return { ok: true, value: 'created' };
+}
+```
 
-## API
+With Effect, put the same tagged value in the typed failure channel explicitly
+and recover by its literal `_tag`:
 
-### Fields
+```typescript
+import { Effect } from 'effect';
 
-TODO
+const failure = Effect.fail(
+  new UserAlreadyExists({ details: { email: 'ada@example.test' } }),
+);
 
-### Options
+const recovered = Effect.catchTag(
+  failure,
+  'accounts/UserAlreadyExists',
+  (error) => Effect.succeed(error.details.email),
+);
+```
 
-TODO
-
-### Helper methods (lifecycle methods)
-
-TODO
-
-### Handlebars Helpers
-
-- pad
-- json
-
-TODO
+The package does not patch Effect or make errors yieldable. See the runnable
+[Effect example](examples/effect-integration.ts) for the tested integration.

@@ -1,6 +1,8 @@
 import { AppExIcfg, ApplicationException } from '../src';
 
-jest.useFakeTimers().setSystemTime(new Date('2023-01-01'));
+jest
+  .useFakeTimers({ doNotFake: ['performance'] })
+  .setSystemTime(new Date('2023-01-01'));
 
 const APPLICATION_EXCEPTION_DEFAULTS: AppExIcfg = {
   idPrefix: 'ID_PREFIX_',
@@ -13,6 +15,7 @@ const APPLICATION_EXCEPTION_DEFAULTS: AppExIcfg = {
   useClassNameAsCode: false,
   timestampFormatInJson: 'iso',
   applySuperDefaults: true,
+  addWrapperInstanceStackToJson: false,
 };
 
 describe('ApplicationException: Regular constructor', function () {
@@ -27,7 +30,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
         "message": "test message",
@@ -50,7 +53,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "code": "ApplicationException",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
@@ -75,7 +78,7 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-        Object {
+        {
           "constructor_name": "ApplicationException",
           "display_message": "test message",
           "id": "ID_PREFIX_test-id",
@@ -101,7 +104,7 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-        Object {
+        {
           "constructor_name": "ApplicationException",
           "display_message": "test display message",
           "id": "ID_PREFIX_test-id",
@@ -143,15 +146,15 @@ describe('ApplicationException: Regular constructor', function () {
       // @ts-ignore
       delete json.stack;
       expect(json).toMatchInlineSnapshot(`
-        Object {
+        {
           "constructor_name": "ApplicationException",
-          "details": Object {
+          "details": {
             "a": 111,
             "b": 2,
-            "c": Object {
+            "c": {
               "d": 333,
             },
-            "deep": Object {
+            "deep": {
               "da": 111,
               "db": 2,
               "dc": 333,
@@ -178,7 +181,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "code": "the-new-code",
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
@@ -201,7 +204,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
         "message": "test message",
@@ -224,7 +227,7 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
+      {
         "constructor_name": "ApplicationException",
         "id": "ID_PREFIX_test-id",
         "message": "test message",
@@ -252,15 +255,15 @@ describe('ApplicationException: Regular constructor', function () {
     // @ts-ignore
     delete json.causes[0].stack;
     expect(json).toMatchInlineSnapshot(`
-      Object {
-        "causes": Array [
-          Object {
+      {
+        "causes": [
+          {
             "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.8/report-object.json",
-            "as_json": Object {},
+            "as_json": {},
             "as_json_format": "safe-stable-stringify@2.4.1",
             "as_string": "Error: Je suis Erreur",
             "as_string_format": "String",
-            "children_sources": Array [
+            "children_sources": [
               "cause",
               "errors",
             ],
@@ -270,13 +273,13 @@ describe('ApplicationException: Regular constructor', function () {
             "typeof": "object",
             "v": "corj/v0.8",
           },
-          Object {
+          {
             "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.8/report-object.json",
             "as_json": "And I'm just a string",
             "as_json_format": "safe-stable-stringify@2.4.1",
             "as_string": "And I'm just a string",
             "as_string_format": "String",
-            "children_sources": Array [
+            "children_sources": [
               "cause",
               "errors",
             ],
@@ -285,13 +288,13 @@ describe('ApplicationException: Regular constructor', function () {
             "typeof": "string",
             "v": "corj/v0.8",
           },
-          Object {
+          {
             "$schema": "https://raw.githubusercontent.com/dany-fedorov/caught-object-report-json/main/schema-versions/corj/v0.8/report-object.json",
             "as_json": 9876,
             "as_json_format": "safe-stable-stringify@2.4.1",
             "as_string": "9876",
             "as_string_format": "String",
-            "children_sources": Array [
+            "children_sources": [
               "cause",
               "errors",
             ],
@@ -313,19 +316,153 @@ describe('ApplicationException: Regular constructor', function () {
 });
 
 describe('ApplicationException: Constructor variants', function () {
-  test('createDefaultInstance', () => {});
-  test('new', () => {});
-  test('lines', () => {});
-  test('prefixedLines', () => {});
-  test('plines', () => {});
+  test('createDefaultInstance preserves configured causes', () => {
+    const cause = new Error('database unavailable');
+
+    const error = ApplicationException.createDefaultInstance({
+      message: 'registration failed',
+      causes: [cause],
+    });
+
+    expect(error.getMessage()).toBe('registration failed');
+    expect(error.getCauses()).toEqual([cause]);
+  });
+
+  test('new uses the default message when omitted', () => {
+    expect(ApplicationException.new().getMessage()).toBe(
+      'Something went wrong',
+    );
+  });
+
+  test('lines joins every line', () => {
+    expect(ApplicationException.lines('first', 'second').getMessage()).toBe(
+      'first\nsecond',
+    );
+  });
+
+  test('prefixedLines prefixes every line', () => {
+    expect(
+      ApplicationException.prefixedLines(
+        'UserService.register',
+        'first',
+        'second',
+      ).getMessage(),
+    ).toBe('UserService.register: first\nUserService.register: second');
+  });
+
+  test('plines is the prefixedLines shorthand', () => {
+    expect(ApplicationException.plines('scope', 'failed').getMessage()).toBe(
+      'scope: failed',
+    );
+  });
 });
 describe('ApplicationException: Static helpers', function () {
-  test('normalizeInstanceConfig', () => {});
-  test('compileTemplate', () => {});
+  test('normalizeInstanceConfig applies defaults and input', () => {
+    const normalized = ApplicationException.normalizeInstanceConfig({
+      message: 'custom',
+      code: 'CUSTOM',
+    });
+
+    expect(normalized.message).toBe('custom');
+    expect(normalized.code).toBe('CUSTOM');
+    expect(normalized.idPrefix).toBe('AE_');
+    expect(normalized.timestamp).toEqual(new Date('2023-01-01'));
+  });
+
+  test('compileTemplate renders the supplied context', () => {
+    expect(
+      ApplicationException.compileTemplate(
+        'Hello {{name}}',
+        { name: 'Ada' },
+        {},
+      ),
+    ).toBe('Hello Ada');
+  });
 });
 
-describe('ApplicationException: Subclass helper', function () {});
+describe('ApplicationException: wrapping', function () {
+  test('a subclass keeps an existing application exception by identity', () => {
+    class RegistrationException extends ApplicationException {}
+    const existing = ApplicationException.new('existing');
 
-describe('ApplicationException: Template compilation', function () {});
+    const wrapped = RegistrationException.wrap(existing);
 
-describe('ApplicationException: Builder methods', function () {});
+    expect(wrapped).toBe(existing);
+    expect(wrapped).not.toBeInstanceOf(RegistrationException);
+  });
+
+  test('a newly wrapped value is an instance of the receiver', () => {
+    class RegistrationException extends ApplicationException {}
+    const cause = new Error('database unavailable');
+
+    const wrapped = RegistrationException.wrap(cause);
+
+    expect(wrapped).toBeInstanceOf(RegistrationException);
+    expect(wrapped.getCauses()).toEqual([cause]);
+  });
+});
+
+describe('ApplicationException: Template compilation', function () {
+  test('message reflects details added after an earlier read', () => {
+    const error = ApplicationException.new('Hello {{name}}').details({
+      name: 'Ada',
+    });
+    expect(error.getMessage()).toBe('Hello Ada');
+
+    error.details({ name: 'Grace' });
+
+    expect(error.getMessage()).toBe('Hello Grace');
+  });
+
+  test('message reflects external mutation of legacy details', () => {
+    const details = { name: 'Ada' };
+    const error = ApplicationException.new('Hello {{name}}').details(details);
+    expect(error.getMessage()).toBe('Hello Ada');
+
+    const storedDetails = error.getDetails();
+    if (!storedDetails) {
+      throw new Error('expected stored details');
+    }
+    storedDetails['name'] = 'Grace';
+
+    expect(error.getMessage()).toBe('Hello Grace');
+  });
+
+  test('display message reflects a replacement after an earlier read', () => {
+    const error =
+      ApplicationException.new('internal').displayMessage('First message');
+    expect(error.getDisplayMessage()).toBe('First message');
+
+    error.displayMessage('Second message');
+
+    expect(error.getDisplayMessage()).toBe('Second message');
+  });
+});
+
+describe('ApplicationException: causes', function () {
+  test('one cause is exposed through the native cause property', () => {
+    const cause = new Error('database unavailable');
+
+    const error = ApplicationException.new('registration failed').causedBy(
+      cause,
+    );
+
+    expect((error as Error & { cause?: unknown }).cause).toBe(cause);
+  });
+
+  test('several causes are exposed through an ordered AggregateError', () => {
+    const first = new Error('first');
+    const second = new Error('second');
+
+    const error = ApplicationException.new('import failed').causedBy(
+      first,
+      second,
+    );
+    const aggregate = (error as Error & { cause?: unknown }).cause as Error & {
+      errors: unknown[];
+    };
+
+    expect(aggregate.constructor.name).toBe('AggregateError');
+    expect(aggregate.errors).toEqual([first, second]);
+  });
+});
