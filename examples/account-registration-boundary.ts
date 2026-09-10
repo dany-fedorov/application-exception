@@ -74,7 +74,7 @@ export function handleRegistration(
     recordDiagnostic(diagnostic);
     return {
       status: 409,
-      body: toPublicReport(diagnostic, {
+      body: toPublicReport(diagnostic.reference, {
         code: 'ACCOUNT_ALREADY_EXISTS',
         message: 'An account with this email already exists.',
       }),
@@ -86,7 +86,7 @@ export function handleRegistration(
     recordDiagnostic(diagnostic);
     return {
       status: 500,
-      body: toPublicReport(diagnostic),
+      body: toPublicReport(diagnostic.reference),
     };
   }
 }
@@ -102,7 +102,7 @@ export function handleAccountRecoveryFailure(
   recordDiagnostic(diagnostic);
   return {
     status: 202,
-    body: toPublicReport(diagnostic, {
+    body: toPublicReport(diagnostic.reference, {
       code: 'REQUEST_ACCEPTED',
       message: 'If the account exists, recovery instructions will be sent.',
     }),

@@ -14,7 +14,7 @@ const Failure = defineException({
 const error = new Failure({ details: { operation: 'search' } });
 
 const diagnostic: DiagnosticReport = toDiagnosticReport(error);
-const publicReport: PublicReport = toPublicReport(diagnostic);
+const publicReport: PublicReport = toPublicReport(diagnostic.reference);
 const reference: string = publicReport.reference;
 void reference;
 
@@ -35,3 +35,17 @@ function consume(
   return null;
 }
 void consume;
+
+interface RequestContext {
+  requestId: string;
+}
+const context: RequestContext = { requestId: 'req' };
+toDiagnosticReport(error, {
+  context,
+  includeStack: false,
+  limits: { maxBytes: 4096 },
+});
+// @ts-expect-error public projection accepts only an explicit reference.
+toPublicReport(error);
+// @ts-expect-error diagnostic objects must be projected by reference.
+toPublicReport(diagnostic);

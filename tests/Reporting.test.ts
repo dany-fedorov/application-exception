@@ -18,14 +18,13 @@ describe('diagnostic reporting', () => {
       cause: new Error('connection refused'),
     });
 
-    // Keep this v1 fixture's stack a data field while construction stays lazy.
-    Object.defineProperty(error, 'stack', { value: error.stack });
     const report = toDiagnosticReport(error, {
       context: { requestId: 'req-123', attempt: 2 },
+      includeStack: true,
     });
     (error.details.input as { query: string }).query = 'changed';
 
-    expect(report.v).toBe('appex/diagnostic/v1');
+    expect(report.v).toBe('appex/diagnostic/v2');
     expect(report.reference).toBe(error.id);
     expect(report.kind).toBe('agent/ToolFailure');
     expect(report.name).toBe('agent/ToolFailure');
@@ -242,7 +241,7 @@ describe('diagnostic reporting', () => {
       name: 'Error',
       message: 'hidden',
     });
-    expect((report.cause as Record<string, unknown>)['stack']).toBeDefined();
+    expect((report.cause as Record<string, unknown>)['stack']).toBeUndefined();
   });
 
   test('contains unreadable metadata on nested typed causes', () => {
@@ -278,7 +277,7 @@ describe('diagnostic reporting', () => {
       },
     });
 
-    const report = toDiagnosticReport(error);
+    const report = toDiagnosticReport(error, { includeStack: true });
 
     expect(report.reference).toBe(error.id);
     expect(report.kind).toBe(error._tag);
@@ -384,7 +383,7 @@ describe('diagnostic reporting', () => {
     });
     expect(valueReport.details).toEqual({
       tool: 'limits',
-      input: { $appex: 'truncated', reason: 'values' },
+      '$appex:truncated': { $appex: 'truncated', reason: 'values' },
     });
   });
 
@@ -528,8 +527,8 @@ describe('public reporting', () => {
   test('uses a generic disclosure-safe default', () => {
     const error = new InternalFailure({ details: { secret: 'token-123' } });
 
-    expect(toPublicReport(error)).toEqual({
-      v: 'appex/public/v1',
+    expect(toPublicReport(error.id)).toEqual({
+      v: 'appex/public/v2',
       reference: error.id,
       code: 'INTERNAL_ERROR',
       message: 'Something went wrong',
@@ -540,14 +539,14 @@ describe('public reporting', () => {
     const error = new InternalFailure({ details: { secret: 'token-123' } });
     const diagnostic = toDiagnosticReport(error);
 
-    const report = toPublicReport(diagnostic, {
+    const report = toPublicReport(diagnostic.reference, {
       code: 'ACCOUNT_EXISTS',
       message: 'An account already exists.',
       details: { field: 'email' },
     });
 
     expect(report).toEqual({
-      v: 'appex/public/v1',
+      v: 'appex/public/v2',
       reference: diagnostic.reference,
       code: 'ACCOUNT_EXISTS',
       message: 'An account already exists.',
@@ -556,10 +555,10 @@ describe('public reporting', () => {
     expect(JSON.stringify(report)).not.toContain('token-123');
   });
 
-  test('uses the detached decoded value for hostile report inputs', () => {
+  test('rejects hostile report inputs without inspecting them', () => {
     const input = new Proxy(
       {
-        v: 'appex/diagnostic/v1' as const,
+        v: 'appex/diagnostic/v2' as const,
         reference: 'AE_123',
         name: 'Error',
         message: 'failed',
@@ -572,19 +571,14 @@ describe('public reporting', () => {
       },
     );
 
-    expect(toPublicReport(input)).toEqual({
-      v: 'appex/public/v1',
-      reference: 'AE_123',
-      code: 'INTERNAL_ERROR',
-      message: 'Something went wrong',
-    });
+    expect(() => toPublicReport(input as unknown as string)).toThrow(TypeError);
   });
 });
 
 describe('diagnostic report decoding', () => {
   test('validates and detaches a supported plain report', () => {
     const input = {
-      v: 'appex/diagnostic/v1',
+      v: 'appex/diagnostic/v2',
       reference: 'AE_123',
       name: 'Error',
       message: 'failed',
@@ -597,7 +591,7 @@ describe('diagnostic report decoding', () => {
     expect(decoded).toEqual({
       success: true,
       value: {
-        v: 'appex/diagnostic/v1',
+        v: 'appex/diagnostic/v2',
         reference: 'AE_123',
         name: 'Error',
         message: 'failed',
@@ -609,7 +603,7 @@ describe('diagnostic report decoding', () => {
   test('rejects unknown versions explicitly', () => {
     expect(
       decodeDiagnosticReport({
-        v: 'appex/diagnostic/v2',
+        v: 'appex/diagnostic/v1',
         reference: 'AE_123',
         name: 'Error',
         message: 'failed',
@@ -618,7 +612,7 @@ describe('diagnostic report decoding', () => {
       success: false,
       error: {
         code: 'UNSUPPORTED_VERSION',
-        message: 'Unsupported diagnostic report version: appex/diagnostic/v2',
+        message: 'Unsupported diagnostic report version',
       },
     });
   });
@@ -626,7 +620,7 @@ describe('diagnostic report decoding', () => {
   test('returns a path for malformed reports instead of casting', () => {
     expect(
       decodeDiagnosticReport({
-        v: 'appex/diagnostic/v1',
+        v: 'appex/diagnostic/v2',
         reference: 123,
         name: 'Error',
         message: 'failed',
@@ -644,7 +638,7 @@ describe('diagnostic report decoding', () => {
   test('rejects class instances hidden inside an otherwise valid report', () => {
     expect(
       decodeDiagnosticReport({
-        v: 'appex/diagnostic/v1',
+        v: 'appex/diagnostic/v2',
         reference: 'AE_123',
         name: 'Error',
         message: 'failed',
@@ -663,7 +657,7 @@ describe('diagnostic report decoding', () => {
   test('rejects malformed truncation metadata', () => {
     expect(
       decodeDiagnosticReport({
-        v: 'appex/diagnostic/v1',
+        v: 'appex/diagnostic/v2',
         reference: 'AE_123',
         name: 'Error',
         message: 'fail',
@@ -681,7 +675,7 @@ describe('diagnostic report decoding', () => {
 
   test('requires report fields to be enumerable own data properties', () => {
     const input = {
-      v: 'appex/diagnostic/v1',
+      v: 'appex/diagnostic/v2',
       reference: 'AE_123',
       name: 'Error',
     } as Record<string, unknown>;
@@ -694,7 +688,7 @@ describe('diagnostic report decoding', () => {
       success: false,
       error: {
         code: 'INVALID_REPORT',
-        message: 'Expected an enumerable own data property',
+        message: 'Expected a string',
         path: '$.message',
       },
     });
@@ -702,7 +696,7 @@ describe('diagnostic report decoding', () => {
 
   test('preserves __proto__ as decoded data without changing prototypes', () => {
     const input = JSON.parse(
-      '{"v":"appex/diagnostic/v1","reference":"AE_123","name":"Error","message":"failed","details":{"__proto__":{"admin":true}}}',
+      '{"v":"appex/diagnostic/v2","reference":"AE_123","name":"Error","message":"failed","details":{"__proto__":{"admin":true}}}',
     );
 
     const decoded = decodeDiagnosticReport(input);
@@ -719,7 +713,7 @@ describe('diagnostic report decoding', () => {
 
   test('bounds untrusted report depth before cloning', () => {
     const input: Record<string, unknown> = {
-      v: 'appex/diagnostic/v1',
+      v: 'appex/diagnostic/v2',
       reference: 'AE_123',
       name: 'Error',
       message: 'failed',
@@ -744,11 +738,11 @@ describe('diagnostic report decoding', () => {
 
   test('bounds untrusted report value count before cloning', () => {
     const decoded = decodeDiagnosticReport({
-      v: 'appex/diagnostic/v1',
+      v: 'appex/diagnostic/v2',
       reference: 'AE_123',
       name: 'Error',
       message: 'failed',
-      details: Array.from({ length: 10_001 }, () => null),
+      details: Array.from({ length: 100_001 }, () => null),
     });
 
     expect(decoded).toMatchObject({
@@ -763,7 +757,7 @@ describe('diagnostic report decoding', () => {
   test('rejects unbounded object keys without echoing them in the path', () => {
     const longKey = 'k'.repeat(5_000);
     const decoded = decodeDiagnosticReport({
-      v: 'appex/diagnostic/v1',
+      v: 'appex/diagnostic/v2',
       reference: 'AE_123',
       name: 'Error',
       message: 'failed',
@@ -788,7 +782,7 @@ describe('diagnostic report decoding', () => {
       },
     });
     const report = {
-      v: 'appex/diagnostic/v1',
+      v: 'appex/diagnostic/v2',
       reference: 'AE_123',
       name: 'Error',
       message: 'failed',

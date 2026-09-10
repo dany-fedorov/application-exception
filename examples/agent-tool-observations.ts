@@ -41,7 +41,7 @@ export function observeAgentToolFailure(
 }
 
 export function presentAgentToolFailure(error: AgentToolFailure): PublicReport {
-  return toPublicReport(error, {
+  return toPublicReport(error.id, {
     code: 'TOOL_UNAVAILABLE',
     message: 'The requested tool is temporarily unavailable.',
   });
