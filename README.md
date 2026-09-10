@@ -67,6 +67,9 @@ error.id; // unique occurrence reference
 error.cause; // original value, by identity
 ```
 
+Details must be a plain object. The factory rejects arrays, functions, and class
+instances so its shallow-copy type matches its runtime behavior.
+
 Create a diagnostic report for logs, then independently choose a public
 presentation:
 

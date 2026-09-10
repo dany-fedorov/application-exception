@@ -135,6 +135,46 @@ describe('diagnostic reporting', () => {
     });
   });
 
+  test('bounds text carried by diagnostic markers', () => {
+    const long = 'x'.repeat(100);
+    const named = {
+      [long]: function (): void {
+        return undefined;
+      },
+    }[long];
+    const error = new ToolFailure({
+      details: {
+        tool: 'serialize',
+        input: {
+          bigint: BigInt('9'.repeat(100)),
+          fn: named,
+          symbol: Symbol(long),
+        },
+      },
+    });
+
+    const report = toDiagnosticReport(error, {
+      limits: { maxStringLength: 4 },
+    });
+    const input = (report.details as Record<string, any>)['input'];
+
+    expect(input['bigint']).toEqual({
+      $appex: 'bigint',
+      value: '9999',
+      omitted: 96,
+    });
+    expect(input['fn']).toEqual({
+      $appex: 'function',
+      value: 'xxxx',
+      omitted: 96,
+    });
+    expect(input['symbol']).toEqual({
+      $appex: 'symbol',
+      value: 'xxxx',
+      omitted: 96,
+    });
+  });
+
   test('does not invoke getters or custom toJSON methods', () => {
     let getterCalls = 0;
     let toJsonCalls = 0;
@@ -237,6 +277,42 @@ describe('diagnostic reporting', () => {
     expect(report.stack).toEqual({
       $appex: 'unreadable',
       reason: 'accessor',
+    });
+  });
+
+  test('preserves safe typed metadata when another field is unreadable', () => {
+    const error = new ToolFailure({
+      details: { tool: 'inspect', input: {} },
+    });
+    Object.defineProperty(error, 'message', {
+      configurable: true,
+      get() {
+        throw new Error('message unavailable');
+      },
+    });
+
+    const report = toDiagnosticReport(error);
+
+    expect(report.reference).toBe(error.id);
+    expect(report.kind).toBe(error._tag);
+    expect(report.message).toBe(error._tag);
+    expect(report.details).toEqual({ tool: 'inspect', input: {} });
+  });
+
+  test('contains proxy array length failures', () => {
+    const array = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === 'length') throw new Error('length unavailable');
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const error = new ToolFailure({
+      details: { tool: 'inspect', input: { array } },
+    });
+
+    expect(() => toDiagnosticReport(error)).not.toThrow();
+    expect(toDiagnosticReport(error).details).toMatchObject({
+      input: { array: [] },
     });
   });
 
@@ -454,6 +530,30 @@ describe('public reporting', () => {
     });
     expect(JSON.stringify(report)).not.toContain('token-123');
   });
+
+  test('uses the detached decoded value for hostile report inputs', () => {
+    const input = new Proxy(
+      {
+        v: 'appex/diagnostic/v1' as const,
+        reference: 'AE_123',
+        name: 'Error',
+        message: 'failed',
+      },
+      {
+        get(target, property, receiver) {
+          if (property === 'reference') throw new Error('direct read denied');
+          return Reflect.get(target, property, receiver);
+        },
+      },
+    );
+
+    expect(toPublicReport(input)).toEqual({
+      v: 'appex/public/v1',
+      reference: 'AE_123',
+      code: 'INTERNAL_ERROR',
+      message: 'Something went wrong',
+    });
+  });
 });
 
 describe('diagnostic report decoding', () => {
@@ -652,6 +752,32 @@ describe('diagnostic report decoding', () => {
         message: 'Report key exceeds decode length limit',
         path: '$.details',
       },
+    });
+  });
+
+  test('contains hostile arrays and revoked top-level proxies while decoding', () => {
+    const hostileArray = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === 'length') throw new Error('length unavailable');
+        return Reflect.get(target, property, receiver);
+      },
+    });
+    const report = {
+      v: 'appex/diagnostic/v1',
+      reference: 'AE_123',
+      name: 'Error',
+      message: 'failed',
+      details: hostileArray,
+    };
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+
+    expect(() => decodeDiagnosticReport(report)).not.toThrow();
+    expect(decodeDiagnosticReport(report)).toMatchObject({ success: true });
+    expect(() => decodeDiagnosticReport(proxy)).not.toThrow();
+    expect(decodeDiagnosticReport(proxy)).toMatchObject({
+      success: false,
+      error: { code: 'INVALID_REPORT' },
     });
   });
 });

@@ -186,5 +186,8 @@ describe('defineException', () => {
     expect(() => new UserAlreadyExists({ details: [] } as never)).toThrow(
       'Exception details must be a non-array object',
     );
+    expect(
+      () => new UserAlreadyExists({ details: new Date() } as never),
+    ).toThrow('Exception details must be a plain object');
   });
 });

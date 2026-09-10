@@ -125,6 +125,30 @@ function marker(
   return { $appex: kind, ...extras };
 }
 
+function markerWithBoundedValue(
+  kind: DiagnosticMarker['$appex'],
+  value: string,
+  state: NormalizationState,
+): DiagnosticMarker {
+  const omitted = value.length - state.limits.maxStringLength;
+  return marker(kind, {
+    value: value.slice(0, state.limits.maxStringLength),
+    ...(omitted > 0 ? { omitted } : {}),
+  });
+}
+
+function inspectArray(
+  value: object,
+):
+  | { readonly readable: true; readonly isArray: boolean }
+  | { readonly readable: false } {
+  try {
+    return { readable: true, isArray: Array.isArray(value) };
+  } catch (_error: unknown) {
+    return { readable: false };
+  }
+}
+
 function makeState(options: DiagnosticReportOptions = {}): NormalizationState {
   const limits = { ...DEFAULT_LIMITS, ...options.limits };
   for (const [name, value] of Object.entries(limits)) {
@@ -280,12 +304,17 @@ function normalizeObject(
     if (isError) {
       return normalizeError(value as Error, state, depth);
     }
-    if (value instanceof Date) {
+    let isDate = false;
+    try {
+      isDate = value instanceof Date;
+    } catch (_error: unknown) {
+      return marker('unreadable', { reason: 'object-inspection' });
+    }
+    if (isDate) {
       try {
-        const time = value.getTime();
-        return Number.isNaN(time)
-          ? marker('invalid-date')
-          : value.toISOString();
+        const date = value as Date;
+        const time = date.getTime();
+        return Number.isNaN(time) ? marker('invalid-date') : date.toISOString();
       } catch (_error: unknown) {
         return marker('unreadable', { reason: 'date-inspection' });
       }
@@ -298,9 +327,22 @@ function normalizeObject(
       return marker('unreadable', { reason: 'object-inspection' });
     }
 
-    if (Array.isArray(value)) {
+    const arrayInspection = inspectArray(value);
+    if (!arrayInspection.readable) {
+      return marker('unreadable', { reason: 'object-inspection' });
+    }
+    if (arrayInspection.isArray) {
       const output: DiagnosticValue[] = [];
-      const length = Math.min(value.length, state.limits.maxEntries);
+      const lengthDescriptor = descriptors['length'];
+      const sourceLength =
+        lengthDescriptor &&
+        'value' in lengthDescriptor &&
+        typeof lengthDescriptor.value === 'number' &&
+        Number.isSafeInteger(lengthDescriptor.value) &&
+        lengthDescriptor.value >= 0
+          ? lengthDescriptor.value
+          : 0;
+      const length = Math.min(sourceLength, state.limits.maxEntries);
       for (let index = 0; index < length; index += 1) {
         const descriptor = descriptors[String(index)];
         output.push(
@@ -309,11 +351,11 @@ function normalizeObject(
             : normalizeValue(descriptor.value, state, depth + 1),
         );
       }
-      if (value.length > length) {
+      if (sourceLength > length) {
         output.push(
           marker('truncated', {
             reason: 'entries',
-            omitted: value.length - length,
+            omitted: sourceLength - length,
           }),
         );
       }
@@ -396,7 +438,7 @@ function normalizeValue(
     case 'undefined':
       return marker('undefined');
     case 'bigint':
-      return marker('bigint', { value: String(value) });
+      return markerWithBoundedValue('bigint', String(value), state);
     case 'function': {
       let name = '';
       try {
@@ -404,10 +446,10 @@ function normalizeValue(
       } catch (_error: unknown) {
         return marker('unreadable', { reason: 'function-inspection' });
       }
-      return marker('function', { value: name });
+      return markerWithBoundedValue('function', name, state);
     }
     case 'symbol':
-      return marker('symbol', { value: value.description ?? '' });
+      return markerWithBoundedValue('symbol', value.description ?? '', state);
     case 'object':
       return value === null ? null : normalizeObject(value, state, depth);
     default:
@@ -425,17 +467,32 @@ function reportTypedException(
   options: DiagnosticReportOptions,
   state: NormalizationState,
 ): DiagnosticReport {
-  const renderingError = getMessageRenderingError(error);
+  const occurrence = createOccurrence();
+  const reference = diagnosticString(errorField(error, 'id'), occurrence.id);
+  const kind = diagnosticString(errorField(error, '_tag'), 'TypedException');
+  const name = diagnosticString(errorField(error, 'name'), kind);
+  const message = diagnosticString(errorField(error, 'message'), kind);
+  const timestamp = errorField(error, 'timestamp');
+  const details = readPropertyWithoutGetter(error, 'details');
+  let renderingError: unknown;
+  try {
+    renderingError = getMessageRenderingError(error);
+  } catch (_error: unknown) {
+    renderingError = marker('unreadable', { reason: 'accessor' });
+  }
   const cause = readPropertyWithoutGetter(error, 'cause');
   const stack = readPropertyWithoutGetter(error, 'stack');
   return {
     v: DIAGNOSTIC_REPORT_VERSION,
-    reference: error.id,
-    kind: error._tag,
-    name: error.name,
-    ...boundedMessage(error.message, state),
-    timestamp: error.timestamp,
-    details: normalizeValue(error.details, state),
+    reference,
+    kind,
+    name,
+    ...boundedMessage(message, state),
+    ...(typeof timestamp === 'string' ? { timestamp } : {}),
+    details:
+      details.found && details.readable
+        ? normalizeValue(details.value, state)
+        : marker('unreadable', { reason: 'accessor' }),
     ...(options.context
       ? { context: normalizeValue(options.context, state) }
       : {}),
@@ -582,16 +639,13 @@ export function toDiagnosticReport(
   };
 }
 
-function isDiagnosticReport(value: unknown): value is DiagnosticReport {
-  return decodeDiagnosticReport(value).success;
-}
-
 export function toPublicReport(
   caughtOrReport: unknown,
   presentation: PublicPresentation = {},
 ): PublicReport {
-  const diagnostic = isDiagnosticReport(caughtOrReport)
-    ? caughtOrReport
+  const decoded = decodeDiagnosticReport(caughtOrReport);
+  const diagnostic = decoded.success
+    ? decoded.value
     : toDiagnosticReport(caughtOrReport);
   const state = makeState();
   return {
@@ -656,12 +710,16 @@ function cloneDiagnosticValue(
   if (typeof value !== 'object') {
     return { success: false, message: 'Expected a JSON value', path };
   }
+  const arrayInspection = inspectArray(value);
+  if (!arrayInspection.readable) {
+    return { success: false, message: 'Could not inspect value', path };
+  }
   if (state.ancestors.has(value)) {
     return { success: false, message: 'Expected an acyclic JSON value', path };
   }
   state.ancestors.add(value);
   try {
-    if (!Array.isArray(value)) {
+    if (!arrayInspection.isArray) {
       let prototype: object | null;
       try {
         prototype = Object.getPrototypeOf(value) as object | null;
@@ -682,9 +740,19 @@ function cloneDiagnosticValue(
     } catch (_error: unknown) {
       return { success: false, message: 'Could not inspect value', path };
     }
-    if (Array.isArray(value)) {
+    if (arrayInspection.isArray) {
       const output: DiagnosticValue[] = [];
-      for (let index = 0; index < value.length; index += 1) {
+      const lengthDescriptor = descriptors['length'];
+      if (
+        !lengthDescriptor ||
+        !('value' in lengthDescriptor) ||
+        typeof lengthDescriptor.value !== 'number' ||
+        !Number.isSafeInteger(lengthDescriptor.value) ||
+        lengthDescriptor.value < 0
+      ) {
+        return { success: false, message: 'Expected an array length', path };
+      }
+      for (let index = 0; index < lengthDescriptor.value; index += 1) {
         const descriptor = descriptors[String(index)];
         if (!descriptor || !('value' in descriptor)) {
           return {
@@ -765,9 +833,13 @@ function readOwnEnumerableDataProperty(
 export function decodeDiagnosticReport(
   input: unknown,
 ): DecodeDiagnosticReportResult {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) {
+  if (typeof input !== 'object' || input === null) {
     return invalidReport('Expected an object', '$');
   }
+  const inputArray = inspectArray(input);
+  if (!inputArray.readable)
+    return invalidReport('Could not inspect value', '$');
+  if (inputArray.isArray) return invalidReport('Expected an object', '$');
   const version = readOwnEnumerableDataProperty(input, 'v');
   if (!version.found || !version.readable) {
     return invalidReport('Expected an enumerable own data property', '$.v');
@@ -808,11 +880,18 @@ export function decodeDiagnosticReport(
 
   const truncation = readOwnEnumerableDataProperty(input, 'truncation');
   if (truncation.found) {
+    const truncationArray =
+      truncation.readable &&
+      typeof truncation.value === 'object' &&
+      truncation.value !== null
+        ? inspectArray(truncation.value)
+        : undefined;
     if (
       !truncation.readable ||
       typeof truncation.value !== 'object' ||
       truncation.value === null ||
-      Array.isArray(truncation.value)
+      !truncationArray?.readable ||
+      truncationArray.isArray
     ) {
       return invalidReport('Expected an object', '$.truncation');
     }

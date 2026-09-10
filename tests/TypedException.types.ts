@@ -10,6 +10,15 @@ const InterfaceFailure = defineException<InterfaceDetails>()({
 });
 new InterfaceFailure({ details: { operation: 'search' } });
 
+// @ts-expect-error arrays do not satisfy record-like detail semantics.
+defineException<string[]>();
+
+// @ts-expect-error functions do not satisfy record-like detail semantics.
+defineException<() => void>();
+
+// @ts-expect-error built-in class instances are not copied as detail records.
+defineException<Date>();
+
 const UserAlreadyExists = defineException<{ email: string }>()({
   tag: 'UserAlreadyExists',
   message: ({ email }) => email,

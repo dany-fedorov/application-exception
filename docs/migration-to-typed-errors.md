@@ -28,8 +28,9 @@ const error = new UserAlreadyExists({
 });
 ```
 
-The full detail object is required at construction. The library copies and
-shallow-freezes it; nested values keep their identity. The message is rendered
+The full detail object is required at construction and must be a plain record.
+Arrays, functions, and class instances are rejected. The library copies and
+shallow-freezes the record; nested values keep their identity. The message is rendered
 once and supplied to native `Error`, so `.message`, stacks, loggers, and generic
 error consumers agree. `_tag`, `id`, and `timestamp` describe the kind and this
 particular occurrence.

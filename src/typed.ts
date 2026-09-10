@@ -23,13 +23,27 @@ type MultipleCauses = {
   readonly causes: readonly unknown[];
 };
 
+type NonRecordDetails =
+  | readonly unknown[]
+  | ((...args: never[]) => unknown)
+  | Date
+  | RegExp
+  | Error
+  | Promise<unknown>
+  | ReadonlyMap<unknown, unknown>
+  | ReadonlySet<unknown>;
+
+type RecordDetails<Details extends object> = Details extends NonRecordDetails
+  ? never
+  : Details;
+
 export type ExceptionInput<Details extends object> = {
-  readonly details: Details;
+  readonly details: RecordDetails<Details>;
 } & (NoCause | SingleCause | MultipleCauses);
 
 export type ExceptionDefinition<Tag extends string, Details extends object> = {
   readonly tag: Tag;
-  readonly message: (details: Readonly<Details>) => string;
+  readonly message: (details: Readonly<RecordDetails<Details>>) => string;
   readonly idPrefix?: string;
 };
 
@@ -40,7 +54,7 @@ export interface TypedException<
   readonly _tag: Tag;
   readonly id: string;
   readonly timestamp: string;
-  readonly details: Readonly<Details>;
+  readonly details: Readonly<RecordDetails<Details>>;
   readonly cause?: unknown;
   readonly [TYPED_EXCEPTION_BRAND]: true;
   readonly [MESSAGE_RENDERING_ERROR]?: unknown;
@@ -70,9 +84,14 @@ function renderMessage<Details extends object>(
   }
 }
 
-export function defineException<Details extends object>(): <Tag extends string>(
+export function defineException<Details extends object>(
+  ..._invalidDetails: Details extends NonRecordDetails
+    ? [reason: 'Details must be a record-like object']
+    : []
+): <Tag extends string>(
   definition: ExceptionDefinition<Tag, Details>,
 ) => TypedExceptionClass<Tag, Details> {
+  void _invalidDetails;
   return <Tag extends string>(
     definition: ExceptionDefinition<Tag, Details>,
   ) => {
@@ -92,7 +111,7 @@ export function defineException<Details extends object>(): <Tag extends string>(
       readonly _tag: Tag;
       readonly id: string;
       readonly timestamp: string;
-      readonly details: Readonly<Details>;
+      readonly details: Readonly<RecordDetails<Details>>;
       readonly cause?: unknown;
       readonly [TYPED_EXCEPTION_BRAND] = true as const;
       readonly [MESSAGE_RENDERING_ERROR]?: unknown;
@@ -108,6 +127,20 @@ export function defineException<Details extends object>(): <Tag extends string>(
         ) {
           throw new TypeError('Exception details must be a non-array object');
         }
+        let detailsPrototype: object | null;
+        try {
+          detailsPrototype = Object.getPrototypeOf(suppliedDetails) as
+            | object
+            | null;
+        } catch (_error: unknown) {
+          throw new TypeError('Exception details must be a plain object');
+        }
+        if (
+          detailsPrototype !== Object.prototype &&
+          detailsPrototype !== null
+        ) {
+          throw new TypeError('Exception details must be a plain object');
+        }
         if (
           Object.prototype.hasOwnProperty.call(input, 'cause') &&
           Object.prototype.hasOwnProperty.call(input, 'causes')
@@ -116,7 +149,7 @@ export function defineException<Details extends object>(): <Tag extends string>(
         }
         const details = Object.freeze({
           ...suppliedDetails,
-        }) as Readonly<Details>;
+        }) as Readonly<RecordDetails<Details>>;
         const rendered = renderMessage(
           definition.tag,
           definition.message,
