@@ -96,6 +96,11 @@ agent example with stable machine fields, explicitly selected small details,
 unknown-code handling, operation-owned retry decisions, and no diagnostic prose
 treated as instructions. Package the guides and both schemas. Keep Effect optional
 and demonstrate its existing structural integration.
+The example's selected tool identifier is nonempty and at most 128 UTF-16 code
+units. Validate local identifiers and omit invalid external identifiers without
+truncating their identity; schema validation alone does not enforce this field
+bound. Read the selected field once. Retry attempt budgets must be positive safe
+integers before they can authorize a retry.
 
 Build with ES2022/CommonJS for the declared Node 18 minimum. Test built exports,
 constant and detail-bearing constructors, native inheritance, stack behavior,

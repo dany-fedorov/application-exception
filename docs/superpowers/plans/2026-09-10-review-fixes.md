@@ -187,13 +187,13 @@ with decoder constraints without claiming to validate domain-specific details.
 
 **Files:** fix any reviewed omissions, update resolution evidence and this plan.
 
-- [ ] Obtain one independent whole-branch review against `2cc5e7e`, including the
+- [x] Obtain one independent whole-branch review against `2cc5e7e`, including the
       review findings, spec, task reports, final diff, and all deferred concerns.
-- [ ] Address remaining required findings with covering regression tests and one
+- [x] Address remaining required findings with covering regression tests and one
       scoped re-review; do not substitute a partial implementation for the spec.
-- [ ] Audit F1–F12, API breaks, schemas, docs, packed tests, byte/work budgets,
+- [x] Audit F1–F12, API breaks, schemas, docs, packed tests, byte/work budgets,
       supported runtime behavior, and intended file changes against actual evidence.
-- [ ] Run final applicable verification after the last code changes and record it.
+- [x] Run final applicable verification after the last code changes and record it.
 - [ ] Commit remaining intentional docs, push `fix/reviewed-api-and-reporting`,
       verify the remote SHA matches local HEAD, and inspect/wait for the branch CI run.
       Fix CI failures and push again as needed; do not merge or publish to npm.

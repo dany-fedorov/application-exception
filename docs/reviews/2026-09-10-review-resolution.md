@@ -30,15 +30,16 @@ The working probe now asserts current invariants.
 These rulings are carried from the implementation ledger into the versioned
 record:
 
-| Decision                                                                                          | Reason                                                                                                                 | Cost if the choice is wrong                                                                            |
-| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Develop on `fix/reviewed-api-and-reporting` in the existing checkout.                             | Preserve review artifacts and avoid the npm-publishing `main` workflow.                                                | A separate checkout could have provided more isolation; the feature branch requires later integration. |
-| Remove legacy instead of retaining a facade or second package.                                    | One learning path and no legacy runtime/dependency cost.                                                               | Legacy consumers must migrate or remain on 0.1.x.                                                      |
-| Use wire v2, root-only exports, and reference-only public projection.                             | Make the new bounds and trust boundary explicit.                                                                       | Imports, call sites, and wire decoders require an intentional upgrade.                                 |
-| Omit stacks by default; default to a 64 KiB report with bounded overrides.                        | Avoid eager formatting and keep ordinary tool reports compact.                                                         | Operators must opt into stacks or increase limits when richer diagnostics are justified.               |
-| Reject empty/oversized public codes instead of truncating them.                                   | Truncation could collapse distinct machine codes into one branch.                                                      | Applications with codes over 128 UTF-16 units must rename them.                                        |
-| Return detached plain JSON with readonly TypeScript types; do not deep-freeze reports at runtime. | Detachment prevents later input mutation from changing the result without imposing recursive freeze cost or semantics. | Consumers that require runtime immutability must freeze their own report copy.                         |
-| Cap bigint decimal conversion at 4,096 magnitude digits even with a larger string limit.          | Bound conversion work before allocating decimal text.                                                                  | Larger exact bigints must be encoded upstream; reports emit `bigint-magnitude` truncation.             |
+| Decision                                                                                                             | Reason                                                                                                                 | Cost if the choice is wrong                                                                                   |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Develop on `fix/reviewed-api-and-reporting` in the existing checkout.                                                | Preserve review artifacts and avoid the npm-publishing `main` workflow.                                                | A separate checkout could have provided more isolation; the feature branch requires later integration.        |
+| Remove legacy instead of retaining a facade or second package.                                                       | One learning path and no legacy runtime/dependency cost.                                                               | Legacy consumers must migrate or remain on 0.1.x.                                                             |
+| Use wire v2, root-only exports, and reference-only public projection.                                                | Make the new bounds and trust boundary explicit.                                                                       | Imports, call sites, and wire decoders require an intentional upgrade.                                        |
+| Omit stacks by default; default to a 64 KiB report with bounded overrides.                                           | Avoid eager formatting and keep ordinary tool reports compact.                                                         | Operators must opt into stacks or increase limits when richer diagnostics are justified.                      |
+| Reject empty/oversized public codes instead of truncating them.                                                      | Truncation could collapse distinct machine codes into one branch.                                                      | Applications with codes over 128 UTF-16 units must rename them.                                               |
+| Return detached plain JSON with readonly TypeScript types; do not deep-freeze reports at runtime.                    | Detachment prevents later input mutation from changing the result without imposing recursive freeze cost or semantics. | Consumers that require runtime immutability must freeze their own report copy.                                |
+| Cap bigint decimal conversion at 4,096 magnitude digits even with a larger string limit.                             | Bound conversion work before allocating decimal text.                                                                  | Larger exact bigints must be encoded upstream; reports emit `bigint-magnitude` truncation.                    |
+| Bound selected example tool identifiers to 1–128 UTF-16 units; omit invalid external identifiers without truncation. | Schema-valid arbitrary details can otherwise inflate remediation actions.                                              | Applications with longer identifiers must map them to short stable names or omit the optional selected field. |
 
 ## Schemas and procedural bounds
 
@@ -70,7 +71,12 @@ these figures describe this machine and method rather than production throughput
 
 ## Verification
 
-- Full `npm run test:all` passed on Node 18.20.8, 20.20.2, and 24.20.0:
+Independent task and whole-branch reviews are complete. Their follow-up findings
+were addressed: bounded bigint conversion, descriptor checks after recursion,
+explicit invalid public codes, valid retry counts, small selected external tool
+identifiers, and immutable example links. No review finding remains open.
+
+- The initial delivery gate `npm run test:all` passed on Node 18.20.8, 20.20.2, and 24.20.0:
   153 tests across eight suites, declaration checks, build, and an installed-tarball
   consumer check. TypeScript was 5.9.3; npm was 10.9.9 on Node 18/20 and 11.19.0
   on Node 24.
@@ -78,6 +84,11 @@ these figures describe this machine and method rather than production throughput
   `npm run test-ci` on Node 24.20.0, including coverage and installed-package
   verification. Line coverage was 93.91%; no coverage target substitutes for the
   behavioral regressions listed above.
+- After the retry-budget and external-tool-field regressions, the final
+  `npm run test-ci` at `e221409` passed on Node 24.20.0 with **173 tests**,
+  declaration checks, build, and installed-tarball verification. The four example
+  links point to the amended source commit `3c39993`, so delivery does not depend
+  on a future merge to `main`.
 - Four repository examples, the current invariant probe, formatting, and diff
   checks passed. The tarball test verifies all shipped relative Markdown links.
 - `npm audit --omit=dev` reported zero production vulnerabilities. The unchanged
