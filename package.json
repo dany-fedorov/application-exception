@@ -5,6 +5,7 @@
   "main": "./index.js",
   "scripts": {
     "test": "NODE_OPTIONS='--stack-trace-limit=1000' ./node_modules/.bin/jest",
+    "test:types": "tsc -p ./tsconfig.types.json --noEmit",
     "build": "tsc -p ./tsconfig.build.json",
     "prepare-me": "rm -rf ./dist && npm run build",
     "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mv dist ./npm-module-build && cp package.json ./npm-module-build && cp README.md ./npm-module-build && cp LICENSE ./npm-module-build",

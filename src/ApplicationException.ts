@@ -631,6 +631,32 @@ class AppExIcfgPojoConstructor
     return {};
   }
 
+  causes(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorSyncHelpersHost<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
+      propName: 'causes',
+      isValid: Array.isArray,
+    });
+  }
+
+  isWrapper(
+    input: AppExIcfgPojoConstructorInput,
+    helpers: PojoConstructorSyncHelpersHost<
+      AppExIcfg,
+      AppExIcfgPojoConstructorInput
+    >,
+  ) {
+    return this[PRIVATE].resolveAppExIcfgProp(helpers.cache, input, {
+      propName: 'isWrapper',
+      isValid: (v) => typeof v === 'boolean',
+    });
+  }
+
   useClassNameAsCode(
     input: AppExIcfgPojoConstructorInput,
     helpers: PojoConstructorSyncHelpersHost<
@@ -739,17 +765,18 @@ const APP_EX_JSON_VERSION_0_1 = 'appex/v0.1';
 
 export type ApplicationExceptionJson = {
   constructor_name: string;
-  compiled_message: string;
-  compiled_display_message?: string;
+  message: string;
+  display_message?: string;
   code?: string;
   num_code?: number;
-  details?: Record<string, AppExJsonValue<AppExJsonPrimitive>>;
-  stack: string;
+  details?: Record<string, unknown>;
+  is_wrapper?: boolean;
+  stack?: string;
   id: string;
   causes?: unknown[];
   timestamp: string;
   raw_message: string;
-  raw_display_message: string;
+  raw_display_message?: string;
   v: typeof APP_EX_JSON_VERSION_0_1;
 };
 
@@ -766,7 +793,7 @@ export type ApplicationExceptionStatic<
   plines: (
     ...args: Parameters<typeof ApplicationException.prefixedLines>
   ) => Instance;
-  wrap: (caught: unknown) => Instance;
+  wrap: (caught: unknown) => Instance | ApplicationException;
 
   subclass: typeof ApplicationException.subclass;
 
@@ -822,9 +849,14 @@ export class ApplicationException extends Error {
       timestamp: icfg.timestamp,
       ...Object.fromEntries(
         (
-          ['displayMessage', 'code', 'numCode', 'details', 'causes'] as Array<
-            keyof AppExIcfg
-          >
+          [
+            'displayMessage',
+            'code',
+            'numCode',
+            'details',
+            'causes',
+            'isWrapper',
+          ] as Array<keyof AppExIcfg>
         ).flatMap((propName) => {
           if (!hasProp(icfg, propName)) {
             return [];
@@ -834,6 +866,7 @@ export class ApplicationException extends Error {
       ),
     };
     this._compiled = {};
+    this.syncNativeCause();
     Object.setPrototypeOf(this, new.target.prototype);
   }
 
@@ -938,11 +971,12 @@ export class ApplicationException extends Error {
     return this.prefixedLines<Class>(prefix, ...lines);
   }
 
-  static wrap<Class extends ApplicationException = ApplicationException>(
+  static wrap<This extends ApplicationExceptionStatic>(
+    this: This,
     caught: unknown,
-  ): Class {
+  ): InstanceType<This> | ApplicationException {
     if (caught instanceof ApplicationException) {
-      return caught as Class;
+      return caught;
     }
     return this.new(
       `[${this.name} Wrapper]${
@@ -950,7 +984,7 @@ export class ApplicationException extends Error {
       }`,
     )
       .causedBy(caught)
-      .setIsWrapper(true) as Class;
+      .setIsWrapper(true) as InstanceType<This>;
   }
 
   /**
@@ -1205,61 +1239,30 @@ export class ApplicationException extends Error {
     return undefined;
   }
 
-  private mutCompileDisplayMessage(): void {
-    if (
-      typeof this._compiled.compiledDisplayMessage === 'string' ||
-      this.getRawDisplayMessage() === undefined
-    ) {
-      return;
+  private getCompiledDisplayMessage(): string | undefined {
+    const rawDisplayMessage = this.getRawDisplayMessage();
+    if (rawDisplayMessage === undefined) {
+      return undefined;
     }
     const compiled = this.compileTemplate(
-      this.getRawDisplayMessage() as string,
+      rawDisplayMessage,
       this.getTemplateCompilationContext(),
     );
     this._compiled.compiledDisplayMessage = compiled;
-  }
-
-  private getCompiledDisplayMessage(): string | undefined {
-    if (typeof this._compiled?.compiledDisplayMessage === 'string') {
-      return this._compiled?.compiledDisplayMessage;
-    }
-    if (this.getRawDisplayMessage() === undefined) {
-      return undefined;
-    }
-    this.mutCompileDisplayMessage();
-    if (this._compiled?.compiledDisplayMessage === undefined) {
-      return undefined;
-    }
-    return this._compiled.compiledDisplayMessage;
+    return compiled;
   }
 
   getDisplayMessage(): string | undefined {
     return this.getCompiledDisplayMessage();
   }
 
-  private mutCompileMessage(): void {
-    if (
-      typeof this._compiled?.compiledMessage === 'string' ||
-      typeof this.message !== 'string'
-    ) {
-      return;
-    }
+  getCompiledMessage(): string {
     const compiled = this.compileTemplate(
       this.message,
       this.getTemplateCompilationContext(),
     );
     this._compiled.compiledMessage = compiled;
-  }
-
-  getCompiledMessage(): string {
-    if (typeof this._compiled?.compiledMessage === 'string') {
-      return this._compiled?.compiledMessage;
-    }
-    this.mutCompileMessage();
-    if (this._compiled?.compiledMessage === undefined) {
-      return this.message;
-    }
-    return this._compiled?.compiledMessage;
+    return compiled;
   }
 
   getRawMessage(): string {
@@ -1291,6 +1294,7 @@ export class ApplicationException extends Error {
 
   setCauses(causes: unknown[]): this {
     this._own.causes = causes;
+    this.syncNativeCause();
     return this;
   }
 
@@ -1299,6 +1303,29 @@ export class ApplicationException extends Error {
       this.setCauses([]);
     }
     return this.setCauses([...(this.getCauses() ?? []), ...causes]);
+  }
+
+  private syncNativeCause(): void {
+    const causes = this.getCauses();
+    if (!Array.isArray(causes) || causes.length === 0) {
+      if (Object.prototype.hasOwnProperty.call(this, 'cause')) {
+        delete (this as Error & { cause?: unknown }).cause;
+      }
+      return;
+    }
+    const nativeCause =
+      causes.length === 1
+        ? causes[0]
+        : new (globalThis as any).AggregateError(
+            causes,
+            `${this.constructor.name} has multiple causes`,
+          );
+    Object.defineProperty(this, 'cause', {
+      value: nativeCause,
+      writable: true,
+      configurable: true,
+      enumerable: false,
+    });
   }
 
   getCausesJson() {
