@@ -32,8 +32,9 @@ the migration/agent guides and wire schemas.
 - Stacks omitted by default; `includeStack: true` enables safe native stack reading.
 - Do not run user getters, date overrides, custom coercion, or custom `toJSON`.
   Explicit native stack formatting may run `Error.prepareStackTrace`.
-- Decoder detachment limits: depth 64, values 100,000, bytes 1,048,576, key length
-  4,096. Validate the detached output. All supported generated reports round-trip.
+- Decoder detachment limits: depth 64, values 100,000, descriptor inspections
+  100,000, bytes 1,048,576, key length 4,096. Validate the detached output. All
+  supported generated reports round-trip.
 - Write meaningful failing regressions before implementation. Run focused tests
   during iteration, the full applicable suite before committing each task, and
   the complete packed-package/CI gate at completion.
@@ -56,7 +57,10 @@ const Failure = defineException({
   message: ({ operation }: { operation: string }) => `${operation} failed`,
 });
 new Failure({ details: { operation: 'search' }, cause: new Error('cause') });
-const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
+const Unavailable = defineException({
+  tag: 'app/Unavailable',
+  message: 'Unavailable',
+});
 new Unavailable();
 new Unavailable({ cause: undefined });
 ```
@@ -67,10 +71,10 @@ Keep diagnostics' foreign-copy metadata accessor and rendering-failure presence
 helpers internal. The local guard must continue rejecting a forged symbol/tag.
 Report the exact internal interface names to the controller for Task 2.
 
-- [ ] Add regressions for the new factory, no-details construction, inference,
-  literal narrowing, complete/excess fields, no arbitrary subclass claims,
-  `cause`/`causes` validation, snapshotting a mutable definition, invalid identifiers,
-  bounded detail copying/prototype depth, and no eager stack formatting. Example:
+- [x] Add regressions for the new factory, no-details construction, inference,
+      literal narrowing, complete/excess fields, no arbitrary subclass claims,
+      `cause`/`causes` validation, snapshotting a mutable definition, invalid identifiers,
+      bounded detail copying/prototype depth, and no eager stack formatting. Example:
 
   ```ts
   const definition = { tag: 'Original', message: () => 'first' };
@@ -79,18 +83,18 @@ Report the exact internal interface names to the controller for Task 2.
   expect(new Kind({ details: {} })._tag).toBe('Original');
   ```
 
-- [ ] Run `npm test -- --runInBand tests/TypedException.test.ts` and
-  `npm run test:types`; record the expected pre-fix failures.
-- [ ] Implement the one-call factory and no-details overload, snapshot validated
-  config, keep no-argument constructor details `{}` frozen, remove stack reads,
-  and move internal state helpers out of public exports. Tags max 128 characters,
-  prefixes max 32, top-level details max 1,000 own keys, prototype walk max 32.
-- [ ] Remove the legacy implementation and legacy reporting branch; migrate every
-  remaining source example/test to the new factory. Keep Task 2's public signature
-  unchanged until that task. Use ES2022/CommonJS and maintain Node 18 compatibility.
-- [ ] Run runtime tests, type tests, and build. Probe built `instanceof`, literal
-  message rendering, optional/no-details construction, and absence of legacy root
-  exports. Self-review and commit task files only. Report red/green evidence.
+- [x] Run `npm test -- --runInBand tests/TypedException.test.ts` and
+      `npm run test:types`; record the expected pre-fix failures.
+- [x] Implement the one-call factory and no-details overload, snapshot validated
+      config, keep no-argument constructor details `{}` frozen, remove stack reads,
+      and move internal state helpers out of public exports. Tags max 128 characters,
+      prefixes max 32, top-level details max 1,000 own keys, prototype walk max 32.
+- [x] Remove the legacy implementation and legacy reporting branch; migrate every
+      remaining source example/test to the new factory. Keep Task 2's public signature
+      unchanged until that task. Use ES2022/CommonJS and maintain Node 18 compatibility.
+- [x] Run runtime tests, type tests, and build. Probe built `instanceof`, literal
+      message rendering, optional/no-details construction, and absence of legacy root
+      exports. Self-review and commit task files only. Report red/green evidence.
 
 ### Task 2: Enforce report contracts and bounded processing
 
@@ -112,34 +116,34 @@ const decoded = decodeDiagnosticReport(diagnostic);
 const body = toPublicReport(diagnostic.reference, { code: 'UNAVAILABLE' });
 ```
 
-- [ ] Add failing regressions for F2–F7/F10/F12 and thrown `undefined`: 100,000-key
-  object descriptor reads remain capped; dense arrays read selected indexes only;
-  the review's 5×50×50 accessor graph stays bounded and decodes; redactions count;
-  exhausted containers emit one marker; UTF-8 size cap includes multibyte strings,
-  long keys/envelope text, and repeated branches; every allowed limit combination
-  returns decodable JSON. Assert `Buffer.byteLength(JSON.stringify(report)) <=
-  configuredMaxBytes` and reference equality, not timing thresholds.
-- [ ] Add date/function getter and custom `toISOString`/`toJSON` regressions;
-  decoder-changing-proxy regression must fail safely or return a validated string
-  reference; duplicate-module reporting retains kind/details/reference while the
-  local guard rejects it; explicit `throw undefined` remains visible.
-- [ ] Add public projection runtime/type regressions rejecting objects and accepting
-  only a nonempty reference up to 128 characters. Add interface context typing,
-  stack omission/native opt-in/accessor handling, selected provider code/status,
-  and explicit unsupported collection/binary markers.
-- [ ] Run the focused reporting/runtime/type tests and record red evidence.
-- [ ] Implement v2 reporting. Use bounded selected descriptor reads, count markers
-  and slots against shared budgets, native Date intrinsics, descriptor-only function
-  names, capped traversal/prototype handling, and an exact final UTF-8 cap that
-  preserves the reference and signals omission. Cap configuration to spec limits.
-  Provider code/status use bounded data descriptors; other arbitrary fields stay
-  excluded. Avoid adding a retry or schema framework.
-- [ ] Make decoder detachment bounded and validate the detached result; share its
-  wire types with reporting. Explicitly reject v1/unknown versions. Preserve own
-  `__proto__` as data. Make public projection reference-only and bounded for its
-  explicitly selected presentation, with fixed default byte limits.
-- [ ] Update affected tests/examples, run full runtime/type/build checks, self-review,
-  and commit. Report exported types and exact wire markers for schema delivery.
+- [x] Add failing regressions for F2–F7/F10/F12 and thrown `undefined`: 100,000-key
+      object descriptor reads remain capped; dense arrays read selected indexes only;
+      the review's 5×50×50 accessor graph stays bounded and decodes; redactions count;
+      exhausted containers emit one marker; UTF-8 size cap includes multibyte strings,
+      long keys/envelope text, and repeated branches; every allowed limit combination
+      returns decodable JSON. Assert `Buffer.byteLength(JSON.stringify(report)) <=
+configuredMaxBytes` and reference equality, not timing thresholds.
+- [x] Add date/function getter and custom `toISOString`/`toJSON` regressions;
+      decoder-changing-proxy regression must fail safely or return a validated string
+      reference; duplicate-module reporting retains kind/details/reference while the
+      local guard rejects it; explicit `throw undefined` remains visible.
+- [x] Add public projection runtime/type regressions rejecting objects and accepting
+      only a nonempty reference up to 128 characters. Add interface context typing,
+      stack omission/native opt-in/accessor handling, selected provider code/status,
+      and explicit unsupported collection/binary markers.
+- [x] Run the focused reporting/runtime/type tests and record red evidence.
+- [x] Implement v2 reporting. Use bounded selected descriptor reads, count markers
+      and slots against shared budgets, native Date intrinsics, descriptor-only function
+      names, capped traversal/prototype handling, and an exact final UTF-8 cap that
+      preserves the reference and signals omission. Cap configuration to spec limits.
+      Provider code/status use bounded data descriptors; other arbitrary fields stay
+      excluded. Avoid adding a retry or schema framework.
+- [x] Make decoder detachment bounded and validate the detached result; share its
+      wire types with reporting. Explicitly reject v1/unknown versions. Preserve own
+      `__proto__` as data. Make public projection reference-only and bounded for its
+      explicitly selected presentation, with fixed default byte limits.
+- [x] Update affected tests/examples, run full runtime/type/build checks, self-review,
+      and commit. Report exported types and exact wire markers for schema delivery.
 
 ### Task 3: Deliver schemas, package verification, and clear documentation
 
@@ -151,45 +155,45 @@ review resolution/probe/benchmark artifacts under `docs/reviews/`.
 Consume Tasks 1–2's finalized signatures and v2 wire types. Keep schemas aligned
 with decoder constraints without claiming to validate domain-specific details.
 
-- [ ] Add failing packed-package/schema checks: only root/public schema exports;
-  no `AppEx`, no public rendering helper, no `/typed`; native built constructors
-  with/without details; literal typing and negative inputs from an installed
-  consumer; stack omission/opt-in; report round-trip/public reference; both JSON
-  schemas and migration/agent guide files present; root loads none of Handlebars,
-  pojo-constructor, or caught-object-report-json. Validate emitted fixtures with AJV
-  and reject malformed envelopes/versions consistently with the runtime decoder.
-- [ ] Run focused checks, record failure, then remove legacy runtime dependencies
-  and stale type exports, set version `0.2.0`, stage docs/schemas with correct
-  paths, and generate a reproducible lockfile. Keep Effect dev-only. Make package
-  smoke coverage exercise the actual tarball; do not settle for source imports.
-- [ ] Rewrite the README to one complete typed workflow and document all breaks,
-  supported limits, foreign-copy trust boundary, stack runtime-hook behavior,
-  unsupported markers, and object-key/proxy traversal limitations. Include local
-  catch narrowing and exhaustive union handling. Add a compact agent recovery
-  example with selected public details, stable-code branching, unknown-code
-  escalation, and operation-owned retry policy. Treat external prose as data.
-- [ ] Add plain v2 diagnostic/public JSON Schemas, package them, and document their
-  use. Provide no domain codec or automatic retry behavior.
-- [ ] Replace the defect-asserting review probe with current invariants and a
-  repeatable optional benchmark for import/module count, typed construction,
-  stack opt-in, projection, and wide-object behavior. Record actual measurements,
-  tool/runtime versions, and limitations in a resolution document mapping every
-  F1–F12 finding and thrown-undefined edge to fixes/tests. Preserve the original
-  review as a historical observation with a resolution link.
-- [ ] Run `npm run test:all`, formatting/diff checks, runnable examples, and the
-  supported Node matrix where available. Self-review and commit all delivery files.
+- [x] Add failing packed-package/schema checks: only root/public schema exports;
+      no `AppEx`, no public rendering helper, no `/typed`; native built constructors
+      with/without details; literal typing and negative inputs from an installed
+      consumer; stack omission/opt-in; report round-trip/public reference; both JSON
+      schemas and migration/agent guide files present; root loads none of Handlebars,
+      pojo-constructor, or caught-object-report-json. Validate emitted fixtures with AJV
+      and reject malformed envelopes/versions consistently with the runtime decoder.
+- [x] Run focused checks, record failure, then remove legacy runtime dependencies
+      and stale type exports, set version `0.2.0`, stage docs/schemas with correct
+      paths, and generate a reproducible lockfile. Keep Effect dev-only. Make package
+      smoke coverage exercise the actual tarball; do not settle for source imports.
+- [x] Rewrite the README to one complete typed workflow and document all breaks,
+      supported limits, foreign-copy trust boundary, stack runtime-hook behavior,
+      unsupported markers, and object-key/proxy traversal limitations. Include local
+      catch narrowing and exhaustive union handling. Add a compact agent recovery
+      example with selected public details, stable-code branching, unknown-code
+      escalation, and operation-owned retry policy. Treat external prose as data.
+- [x] Add plain v2 diagnostic/public JSON Schemas, package them, and document their
+      use. Provide no domain codec or automatic retry behavior.
+- [x] Replace the defect-asserting review probe with current invariants and a
+      repeatable optional benchmark for import/module count, typed construction,
+      stack opt-in, projection, and wide-object behavior. Record actual measurements,
+      tool/runtime versions, and limitations in a resolution document mapping every
+      F1–F12 finding and thrown-undefined edge to fixes/tests. Preserve the original
+      review as a historical observation with a resolution link.
+- [x] Run `npm run test:all`, formatting/diff checks, runnable examples, and the
+      supported Node matrix where available. Self-review and commit all delivery files.
 
 ### Task 4: Whole-branch review, final verification, and push
 
 **Files:** fix any reviewed omissions, update resolution evidence and this plan.
 
 - [ ] Obtain one independent whole-branch review against `2cc5e7e`, including the
-  review findings, spec, task reports, final diff, and all deferred concerns.
+      review findings, spec, task reports, final diff, and all deferred concerns.
 - [ ] Address remaining required findings with covering regression tests and one
-  scoped re-review; do not substitute a partial implementation for the spec.
+      scoped re-review; do not substitute a partial implementation for the spec.
 - [ ] Audit F1–F12, API breaks, schemas, docs, packed tests, byte/work budgets,
-  supported runtime behavior, and intended file changes against actual evidence.
+      supported runtime behavior, and intended file changes against actual evidence.
 - [ ] Run final applicable verification after the last code changes and record it.
 - [ ] Commit remaining intentional docs, push `fix/reviewed-api-and-reporting`,
-  verify the remote SHA matches local HEAD, and inspect/wait for the branch CI run.
-  Fix CI failures and push again as needed; do not merge or publish to npm.
+      verify the remote SHA matches local HEAD, and inspect/wait for the branch CI run.
+      Fix CI failures and push again as needed; do not merge or publish to npm.

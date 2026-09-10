@@ -28,6 +28,8 @@ This design records the choices made under that authorization.
   view of branded foreign errors for diagnostics only; preserve their valid tag,
   ID, timestamp, and details without certifying a remote detail schema. Internal
   rendering-failure state records presence independently of a thrown value.
+  For known local occurrences, unreadable metadata fields are handled independently:
+  a bad tag/details accessor must not discard a still-valid occurrence reference.
 - Preserve native lazy stack behavior; constructors must not read `.stack`.
   Diagnostic stacks are omitted by default and enabled with `includeStack: true`.
   Skip user-defined stack accessors. Recognize an engine-native stack getter where
@@ -42,6 +44,9 @@ JSON. `toPublicReport(reference: string, presentation?)` never inspects diagnost
 or an error object. Raw caught values are normalized once and their returned
 reference is explicitly reused. References must be nonempty strings of at most
 128 characters. Public defaults remain `INTERNAL_ERROR` / `Something went wrong`.
+An explicitly supplied public code must also be a nonempty string of at most 128
+UTF-16 code units. Reject invalid codes instead of truncating machine identifiers;
+message/details truncation remains explicit diagnostic presentation behavior.
 
 Use new wire versions `appex/diagnostic/v2` and `appex/public/v2`. Decoders reject
 older/unknown versions explicitly. Envelope identifiers and names are bounded;
@@ -56,8 +61,11 @@ values 10,000, entries 1,000, string length 65,536, bytes 1,048,576. Non-byte li
 may be zero; bytes must be between 4,096 and 1,048,576. Keys longer than 4,096
 characters are omitted. Count inspected/emitted slots including redactions and
 unreadable markers; stop an exhausted container with one truncation marker.
-The final JSON byte cap includes the envelope and preserves its occurrence
-reference. A byte-cap fallback must explicitly signal omitted diagnostics.
+Charge selected keys, strings, markers, and values against an incremental byte
+budget before building a large intermediate report. A final exact JSON byte cap
+includes the envelope and preserves its occurrence reference. A byte-cap fallback
+must explicitly signal omitted diagnostics; it is a safeguard, not the first size
+check after serializing an arbitrarily large normalized graph.
 
 Array processing reads length and only selected indexes. Object processing avoids
 full descriptor maps and caps descriptor reads; enumeration of all keys can still
@@ -66,9 +74,15 @@ guarantee. Do not claim otherwise. Selected redactions happen before value reads
 Date intrinsic methods and function-name data descriptors prevent custom getter,
 method, and `toJSON` execution. Ordinary errors' arbitrary custom fields are not
 copied automatically.
+Before converting bigint values to decimal, compare their magnitude against a
+fixed 4,096-digit ceiling. Larger values emit an explicit `truncated` marker with
+reason `bigint-magnitude`; do not allocate a full decimal string to truncate it or
+compute an exact omitted-digit count. Exhausted value/string budgets skip decimal
+conversion. This procedural cap also applies when larger string limits are chosen.
 
-The decoder bounds detachment (64 levels, 100,000 JSON values, 1 MiB UTF-8, keys
-4,096 characters) then validates the detached result. Never validate one proxy
+The decoder bounds detachment (64 levels, 100,000 JSON values, 100,000 property
+descriptor inspections, 1 MiB UTF-8, keys 4,096 UTF-16 code units) then validates
+the detached result. Never validate one proxy
 snapshot and return a different snapshot. Every report produced by supported
 normalization settings must decode successfully. A plain JSON Schema describes
 each wire envelope and diagnostic values; fixture/schema/runtime decoder checks

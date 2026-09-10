@@ -67,3 +67,23 @@ proxy with `maxEntries=1`, `maxValues=5`, and `maxBytes=4096` took 36.25 ms,
 performed two descriptor reads, and produced 268 bytes. Key enumeration still
 dominates that wide case. Baseline and current scenarios differ where noted, so
 these figures describe this machine and method rather than production throughput.
+
+## Verification
+
+- Full `npm run test:all` passed on Node 18.20.8, 20.20.2, and 24.20.0:
+  153 tests across eight suites, declaration checks, build, and an installed-tarball
+  consumer check. TypeScript was 5.9.3; npm was 10.9.9 on Node 18/20 and 11.19.0
+  on Node 24.
+- An independent clean checkout of `c1c87c8` passed `npm ci` followed by
+  `npm run test-ci` on Node 24.20.0, including coverage and installed-package
+  verification. Line coverage was 93.91%; no coverage target substitutes for the
+  behavioral regressions listed above.
+- Four repository examples, the current invariant probe, formatting, and diff
+  checks passed. The tarball test verifies all shipped relative Markdown links.
+- `npm audit --omit=dev` reported zero production vulnerabilities. The unchanged
+  development toolchain still produced 14 audit findings during the clean install;
+  upgrading that toolchain is outside this API/reporting change.
+
+Check remote delivery on the
+[feature branch](https://github.com/dany-fedorov/application-exception/tree/fix/reviewed-api-and-reporting)
+and its [test runs](https://github.com/dany-fedorov/application-exception/actions/workflows/test.yml?query=branch%3Afix%2Freviewed-api-and-reporting).
