@@ -287,7 +287,7 @@ Choose the next semver from the actual published version and update both package
 manifest and lockfile. Verify `npm pack --dry-run`, the complete test suite,
 examples, clean diff checks, and Git status. Commit release metadata separately.
 
-- [ ] **Step 4: Push, open a PR, wait for checks, and merge**
+- [x] **Step 4: Push, open a PR, wait for checks, and merge**
 
 Push the feature branch, create a PR against `main` with the concrete behavior
 and validation, monitor required checks to completion, merge without force, then
