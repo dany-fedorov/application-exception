@@ -194,6 +194,6 @@ with decoder constraints without claiming to validate domain-specific details.
 - [x] Audit F1–F12, API breaks, schemas, docs, packed tests, byte/work budgets,
       supported runtime behavior, and intended file changes against actual evidence.
 - [x] Run final applicable verification after the last code changes and record it.
-- [ ] Commit remaining intentional docs, push `fix/reviewed-api-and-reporting`,
+- [x] Commit remaining intentional docs, push `fix/reviewed-api-and-reporting`,
       verify the remote SHA matches local HEAD, and inspect/wait for the branch CI run.
       Fix CI failures and push again as needed; do not merge or publish to npm.

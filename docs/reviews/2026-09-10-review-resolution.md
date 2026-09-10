@@ -95,6 +95,11 @@ identifiers, and immutable example links. No review finding remains open.
   development toolchain still produced 14 audit findings during the clean install;
   upgrading that toolchain is outside this API/reporting change.
 
+GitHub Actions [run 34536614177](https://github.com/dany-fedorov/application-exception/actions/runs/34536614177)
+passed the Node 18, 20, and 24 jobs at `1607788`, including the runtime, type,
+build, and installed-package checks. The pushed remote SHA matched the local
+commit; no merge or npm publication was performed.
+
 Check remote delivery on the
 [feature branch](https://github.com/dany-fedorov/application-exception/tree/fix/reviewed-api-and-reporting)
 and its [test runs](https://github.com/dany-fedorov/application-exception/actions/workflows/test.yml?query=branch%3Afix%2Freviewed-api-and-reporting).
