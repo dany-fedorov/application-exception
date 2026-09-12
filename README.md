@@ -1,17 +1,14 @@
 # application-exception
 
-Typed failures for agent tools. Bounded diagnostics for operators.
-Explicit reports for recovery decisions.
+Typed failures and deliberate disclosure for agentic development, LLM harnesses,
+and agent graphs.
 
-`application-exception` turns a tool or application failure into a native
-`Error` with a stable kind, typed details, an occurrence ID, and its original
-cause. The host handles known failures by type, records bounded diagnostic JSON,
-and sends the agent a separately selected report with a stable code and the same
-reference.
+Define native errors with typed details and stable kinds. Handle known failures
+by type, keep bounded diagnostics for operators, and give the agent a separately
+selected report linked to the same occurrence.
 
-Use it when tool failures need predictable handling, diagnostic correlation,
-and a deliberate boundary between operational details and model-visible data.
-It also works at ordinary service, HTTP, and CLI boundaries.
+Use it at tool, service, HTTP, or CLI boundaries where recovery code and
+diagnostic disclosure need explicit contracts.
 
 ## Install
 
