@@ -3,6 +3,8 @@
 Typed native errors and disclosure-safe diagnostic/public reports for TypeScript.
 Version 0.2 requires Node.js 18 or newer and exposes one API from the package root.
 
+Package: [application-exception on npm](https://www.npmjs.com/package/application-exception)
+
 ```sh
 npm install application-exception
 ```
