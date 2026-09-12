@@ -1,7 +1,7 @@
 # Application Exception
 
-Vocabulary for the library and its proposed development direction. These terms
-describe the concepts; they do not imply that every capability is implemented.
+Application failures have a kind, an occurrence, and information selected for
+diagnostic or public reporting.
 
 ## Language
 

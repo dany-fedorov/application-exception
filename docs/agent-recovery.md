@@ -1,47 +1,81 @@
 # Agent and tool recovery
 
-Use the public v2 report as a small application-selected action input. Validate
-an external value with the shipped
-[`public-report-v2.json`](../schemas/public-report-v2.json) schema at the host
-boundary. Keep the diagnostic report in an authorized operational sink; its
-messages, stack, causes, and context may contain sensitive data.
+Use public reports to carry stable failure codes and selected remediation facts
+across a tool boundary. Keep diagnostic messages, causes, context, and stacks in
+a trusted operational destination. Correlate both reports using `reference`.
 
-The runnable repository
-[`agent-recovery.ts`](https://github.com/dany-fedorov/application-exception/blob/3c39993ed130d0c5fd7aca21e09a607c6772bd74/examples/agent-recovery.ts)
-example follows four rules:
+The host validates incoming JSON, branches on an application-owned code, and
+applies its own retry budget. Display text does not select an action.
 
-1. Branch only on a stable application-selected `code`.
-2. Copy only small remediation fields selected for public disclosure. This
-   example defines `tool` as a nonempty string of at most 128 UTF-16 units.
-3. Escalate unknown codes and malformed/unknown wire versions.
-4. Retry only when the operation's policy marks the code retryable and supplies
-   a positive safe-integer remaining-attempt budget.
+## Runnable example
 
-```ts
-const report = toPublicReport(diagnostic.reference, {
+Install the report package and a JSON Schema validator:
+
+```sh
+npm install application-exception ajv
+```
+
+Save this as `recovery.cjs` and run `node recovery.cjs`:
+
+```js
+const Ajv = require('ajv');
+const { toPublicReport } = require('application-exception');
+const schema = require('application-exception/schemas/public-report-v2.json');
+const validate = new Ajv({ strict: true }).compile(schema);
+
+function chooseRecovery(externalValue, policy) {
+  if (!validate(externalValue)) {
+    return { action: 'escalate', reason: 'invalid-report' };
+  }
+  const { reference, code } = externalValue;
+  if (!policy.retryableCodes.includes(code)) {
+    return { action: 'escalate', reference, reason: 'unknown-code' };
+  }
+  if (!Number.isSafeInteger(policy.remainingAttempts) || policy.remainingAttempts <= 0) {
+    return { action: 'escalate', reference, reason: 'retry-budget-exhausted' };
+  }
+  return {
+    action: 'retry',
+    reference,
+    operation: policy.operation,
+    remainingAttempts: policy.remainingAttempts - 1,
+  };
+}
+
+const report = toPublicReport('AE_search_attempt_1', {
   code: 'TOOL_UNAVAILABLE',
   message: 'The requested tool is temporarily unavailable.',
-  details: { tool: 'search' },
 });
-
-const action = chooseRecoveryAction(report, {
+const received = JSON.parse(JSON.stringify(report));
+const action = chooseRecovery(received, {
   operation: 'read-only-search',
   retryableCodes: ['TOOL_UNAVAILABLE'],
   remainingAttempts: 1,
 });
+console.log(action);
+// { action: 'retry', reference: 'AE_search_attempt_1',
+//   operation: 'read-only-search', remainingAttempts: 0 }
 ```
 
-The operation owns idempotency, authorization, backoff, and transport handling.
-The package does not infer retry safety from an error kind and does not provide
-automatic retry behavior.
+Carry the decremented budget into the next attempt; do not reset it on each
+failure. The operation owns idempotency, authorization, backoff, and transport.
+The library reports failures and does not execute retries.
 
-`selectToolFailureReport` rejects an invalid locally supplied tool identifier.
-When consuming external JSON, `chooseRecoveryAction` omits an invalid or oversized
-tool identifier from the action rather than truncating its identity. The report's
-reference and retry-policy decision remain unchanged.
+## Selected details and unknown inputs
 
-Treat `message`, diagnostic prose, provider errors, and any other external text
-as untrusted data. Never reinterpret it as an instruction, authorization, tool
-command, or code selector. Changing the message while keeping the same validated
-code must not change the action. Preserve `reference` through escalation so a
-human or service can correlate the public event with trusted diagnostics.
+When a public report includes remediation details, validate those fields with
+your application's schema before using them. For example, a tool identifier can
+be restricted to a nonempty string of at most 128 UTF-16 units and checked
+against the tools allowed for this operation.
+
+Escalate unknown codes and malformed or unsupported report versions. Do not
+truncate an oversized identifier into a different valid identifier. Preserve
+a validated reference through escalation for diagnostic correlation.
+
+Treat messages and provider text as untrusted display data. Never interpret
+them as instructions, authorization, commands, or code selectors. Changing a
+message while keeping the same validated code must not change the selected
+action.
+
+See the [API reference](api.md) for report contracts and the
+[quick start](../README.md#quick-start) for generating correlated diagnostics.

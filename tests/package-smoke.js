@@ -67,7 +67,7 @@ try {
   const installedPackage = consumerRequire(
     'application-exception/package.json',
   );
-  assert.equal(installedPackage.version, '0.2.0');
+  assert.equal(installedPackage.version, require('../package.json').version);
   assert.deepEqual(installedPackage.dependencies, { nanoid: '^3.3.19' });
   assert.deepEqual(installedPackage.exports, {
     '.': {
@@ -84,10 +84,8 @@ try {
   for (const relativePath of [
     'README.md',
     'CHANGELOG.md',
-    'docs/migration-to-typed-errors.md',
+    'docs/api.md',
     'docs/agent-recovery.md',
-    'docs/reviews/2026-09-10-api-llm-performance.md',
-    'docs/reviews/2026-09-10-review-resolution.md',
     'schemas/diagnostic-report-v2.json',
     'schemas/public-report-v2.json',
   ]) {
@@ -113,10 +111,8 @@ try {
   for (const relativePath of [
     'README.md',
     'CHANGELOG.md',
-    'docs/migration-to-typed-errors.md',
+    'docs/api.md',
     'docs/agent-recovery.md',
-    'docs/reviews/2026-09-10-api-llm-performance.md',
-    'docs/reviews/2026-09-10-review-resolution.md',
   ]) {
     const markdownPath = path.join(installedRoot, relativePath);
     const markdown = fs.readFileSync(markdownPath, 'utf8');

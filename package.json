@@ -1,7 +1,7 @@
 {
   "name": "application-exception",
-  "version": "0.2.0",
-  "description": "Typed application errors and disclosure-safe reports for TypeScript",
+  "version": "0.2.1",
+  "description": "Typed agent tool failures, bounded diagnostics, and explicit public reports for TypeScript",
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
@@ -25,7 +25,7 @@
     "test:all": "npm test -- --runInBand && npm run test:types && npm run build && npm run test:package",
     "build": "tsc -p ./tsconfig.build.json",
     "prepare-me": "rm -rf ./dist && npm run build",
-    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mkdir -p ./npm-module-build/docs/reviews ./npm-module-build/schemas && cp -R ./dist/. ./npm-module-build && cp package.json README.md CHANGELOG.md LICENSE ./npm-module-build && cp docs/migration-to-typed-errors.md docs/agent-recovery.md ./npm-module-build/docs && cp docs/reviews/* ./npm-module-build/docs/reviews && cp schemas/*.json ./npm-module-build/schemas",
+    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mkdir -p ./npm-module-build/docs ./npm-module-build/schemas && cp -R ./dist/. ./npm-module-build && cp package.json README.md CHANGELOG.md LICENSE ./npm-module-build && cp docs/api.md docs/agent-recovery.md ./npm-module-build/docs && cp schemas/*.json ./npm-module-build/schemas",
     "publish-me": "npm run prepublish-me && cd npm-module-build && npm publish --access public --registry https://registry.npmjs.org/",
     "postpublish-me": "rm -fr npm-module-build",
     "build-watch": "chokidar './src/**/*.ts' -c 'npm run build' -i './node_modules/**/*' --initial",

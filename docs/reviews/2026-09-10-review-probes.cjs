@@ -1,4 +1,4 @@
-// Current invariants replacing the historical defect reproductions at 34d5532.
+// Verify construction, report bounds, decoding, and instance identity.
 // Run from the repository root after `npm run build`.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
