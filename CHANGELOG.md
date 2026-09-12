@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 — 2026-09-12
+
+- Refresh the npm README with a concise explanation of typed failures,
+  bounded operator diagnostics, and selected reports for agentic LLM harnesses.
+- Clarify the package's role at tool, service, HTTP, and CLI boundaries.
+- No runtime or public API changes.
+
 ## 0.2.1
 
 - Add complete agent tool failure examples and a current API reference.
