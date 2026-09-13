@@ -78,6 +78,7 @@
     "typescript": "5.9.3"
   },
   "dependencies": {
+    "caught-object-report-json": "^9.0.1",
     "nanoid": "^3.3.19"
   }
 }
