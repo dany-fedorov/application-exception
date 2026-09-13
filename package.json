@@ -1,6 +1,6 @@
 {
   "name": "application-exception",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Typed failures and deliberate disclosure for TypeScript services and LLM harnesses.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -11,8 +11,8 @@
       "default": "./index.js"
     },
     "./package.json": "./package.json",
-    "./schemas/diagnostic-report-v2.json": "./schemas/diagnostic-report-v2.json",
-    "./schemas/public-report-v2.json": "./schemas/public-report-v2.json"
+    "./schemas/diagnostic-report-v3.json": "./schemas/diagnostic-report-v3.json",
+    "./schemas/public-report-v3.json": "./schemas/public-report-v3.json"
   },
   "sideEffects": false,
   "engines": {
@@ -22,17 +22,17 @@
     "test": "NODE_OPTIONS='--stack-trace-limit=1000' ./node_modules/.bin/jest",
     "test:types": "tsc -p ./tsconfig.types.json --noEmit",
     "test:package": "node ./tests/package-smoke.js",
-    "test:all": "npm test -- --runInBand && npm run test:types && npm run build && npm run test:package",
+    "test:all": "npm test -- --runInBand --coverage && npm run test:types && npm run build && npm run test:package && npm run docs:check",
     "build": "tsc -p ./tsconfig.build.json",
     "prepare-me": "rm -rf ./dist && npm run build",
-    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mkdir -p ./npm-module-build/docs ./npm-module-build/schemas && cp -R ./dist/. ./npm-module-build && cp package.json README.md CHANGELOG.md LICENSE ./npm-module-build && cp docs/api.md docs/agent-recovery.md ./npm-module-build/docs && cp schemas/*.json ./npm-module-build/schemas",
+    "prepublish-me": "npm run prepare-me && rm -fr ./npm-module-build && mkdir -p ./npm-module-build/docs/agent ./npm-module-build/schemas && cp -R ./dist/. ./npm-module-build && cp package.json README.md CHANGELOG.md LICENSE AGENTS.md ./npm-module-build && cp docs/agent/*.md ./npm-module-build/docs/agent && cp schemas/*.json ./npm-module-build/schemas",
     "publish-me": "npm run prepublish-me && cd npm-module-build && npm publish --access public --registry https://registry.npmjs.org/",
     "postpublish-me": "rm -fr npm-module-build",
     "build-watch": "chokidar './src/**/*.ts' -c 'npm run build' -i './node_modules/**/*' --initial",
     "ts-file": "tsx",
-    "test-ci": "npm test -- --runInBand --ci --coverage && npm run test:types && npm run build && npm run test:package",
-    "review:probe": "npm run build && node docs/reviews/2026-09-10-review-probes.cjs",
-    "benchmark": "npm run build && node docs/reviews/2026-09-10-benchmark.cjs"
+    "docs:generate": "node tools/docs/api-card.cjs --write",
+    "docs:check": "node tools/docs/check.cjs",
+    "test-ci": "npm test -- --runInBand --ci --coverage && npm run test:types && npm run build && npm run test:package && npm run docs:check"
   },
   "repository": {
     "type": "git",
@@ -45,11 +45,14 @@
     "typescript",
     "typed errors",
     "error reporting",
-    "effect",
+    "corj",
+    "caught-object-report-json",
+    "agents",
+    "coding-agents",
     "agent tools",
+    "llm",
+    "harness",
     "exception",
-    "error helper",
-    "error wrapper",
     "ApplicationException"
   ],
   "author": "Dany Fedorov",
