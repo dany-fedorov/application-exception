@@ -1,10 +1,11 @@
+import { invalid } from './errors';
 import { createOccurrence, installCause } from './occurrence';
 import {
   TYPED_EXCEPTION_BRAND,
   isLocalTypedException,
   registerTypedException,
-  MessageRenderingFailure,
 } from './typed-internals';
+import type { PublicPolicyRecord } from './typed-internals';
 
 type NoCause = {
   readonly cause?: never;
@@ -37,54 +38,25 @@ type RecordDetails<Details extends object> = Details extends
   ? Details
   : never;
 
-function copyRecordDetails(
-  value: object,
-): Readonly<Record<PropertyKey, unknown>> {
-  try {
-    let prototype = Object.getPrototypeOf(value) as object | null;
-    let depth = 0;
-    while (prototype !== null && prototype !== Object.prototype) {
-      if (++depth > 32)
-        throw new TypeError('Exception details prototype exceeds 32 levels');
-      if (Reflect.ownKeys(prototype).some((key) => key !== 'constructor')) {
-        throw new TypeError(
-          'Exception details must have a data-only object prototype',
-        );
-      }
-      prototype = Object.getPrototypeOf(prototype) as object | null;
-    }
+/** The frozen details record an occurrence exposes. `never` selects the empty record of a constant-message kind. */
+export type DetailsRecord<Details extends object> = [Details] extends [never]
+  ? Readonly<Record<string, never>>
+  : Readonly<RecordDetails<Details>>;
 
-    const output: Record<PropertyKey, unknown> = {};
-    const keys = Reflect.ownKeys(value);
-    if (keys.length > 1_000)
-      throw new TypeError('Exception details exceed 1,000 own keys');
-    for (const key of keys) {
-      const descriptor = Object.getOwnPropertyDescriptor(value, key);
-      if (
-        !descriptor ||
-        !descriptor.enumerable ||
-        !('value' in descriptor) ||
-        typeof descriptor.value === 'function'
-      ) {
-        throw new TypeError(
-          'Exception details must contain enumerable data properties',
-        );
-      }
-      Object.defineProperty(output, key, {
-        value: descriptor.value,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    }
-    return Object.freeze(output);
-  } catch (_error: unknown) {
-    if (_error instanceof TypeError) throw _error;
-    throw new TypeError('Exception details could not be inspected');
-  }
-}
+/**
+ * What `toPublicReport` discloses for occurrences of a kind.
+ *
+ * `code` is the value an agent branches on. `message` is display text, constant
+ * or rendered from the details. `details` selects the JSON that becomes
+ * `as_json`; return only what the audience may see.
+ */
+export type PublicPolicy<Details extends object = never> = {
+  readonly code: string;
+  readonly message?: string | ((details: DetailsRecord<Details>) => string);
+  readonly details?: (details: DetailsRecord<Details>) => unknown;
+};
 
-/** Omitting Details selects the constant-message, optional-input form. */
+/** Constructor input. Omitting `Details` selects the constant-message form, whose input is optional. */
 export type ExceptionInput<Details extends object = never> = ([
   Details,
 ] extends [never]
@@ -92,6 +64,7 @@ export type ExceptionInput<Details extends object = never> = ([
   : { readonly details: RecordDetails<Details> }) &
   (NoCause | SingleCause | MultipleCauses);
 
+/** Input of `defineException`. A string `message` defines a kind without details. */
 export type ExceptionDefinition<
   Tag extends string,
   Details extends object = never,
@@ -101,8 +74,10 @@ export type ExceptionDefinition<
     ? string
     : (details: Readonly<RecordDetails<Details>>) => string;
   readonly idPrefix?: string;
+  readonly public?: PublicPolicy<Details>;
 };
 
+/** One occurrence: a native `Error` with a stable `_tag`, an `id` used as the report `reference`, and frozen `details`. */
 export interface TypedException<
   Tag extends string = string,
   Details extends object = object,
@@ -110,13 +85,12 @@ export interface TypedException<
   readonly _tag: Tag;
   readonly id: string;
   readonly timestamp: string;
-  readonly details: [Details] extends [never]
-    ? Readonly<Record<string, never>>
-    : Readonly<RecordDetails<Details>>;
+  readonly details: DetailsRecord<Details>;
   readonly cause?: unknown;
   readonly [TYPED_EXCEPTION_BRAND]: true;
 }
 
+/** The constructor `defineException` returns. `tag` is the kind's tag. */
 export type TypedExceptionClass<
   Tag extends string,
   Details extends object = never,
@@ -129,24 +103,146 @@ export type TypedExceptionClass<
   readonly tag: Tag;
 };
 
+function describe(value: unknown): string {
+  try {
+    return String(value).slice(0, 256);
+  } catch {
+    return '[unprintable value]';
+  }
+}
+
+function copyRecordDetails(
+  value: object,
+): Readonly<Record<PropertyKey, unknown>> {
+  try {
+    let prototype = Object.getPrototypeOf(value) as object | null;
+    let depth = 0;
+    while (prototype !== null && prototype !== Object.prototype) {
+      if (++depth > 32)
+        throw invalid(
+          'APPEX_INVALID_DETAILS',
+          'details prototype chain exceeds 32 levels',
+        );
+      if (Reflect.ownKeys(prototype).some((key) => key !== 'constructor')) {
+        throw invalid(
+          'APPEX_INVALID_DETAILS',
+          'details must have a data-only object prototype',
+        );
+      }
+      prototype = Object.getPrototypeOf(prototype) as object | null;
+    }
+
+    const output: Record<PropertyKey, unknown> = {};
+    const keys = Reflect.ownKeys(value);
+    if (keys.length > 1_000)
+      throw invalid('APPEX_INVALID_DETAILS', 'details exceed 1,000 own keys');
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
+      if (
+        !descriptor ||
+        !descriptor.enumerable ||
+        !('value' in descriptor) ||
+        typeof descriptor.value === 'function'
+      ) {
+        throw invalid(
+          'APPEX_INVALID_DETAILS',
+          'details must contain only enumerable data properties',
+        );
+      }
+      Object.defineProperty(output, key, {
+        value: descriptor.value,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return Object.freeze(output);
+  } catch (failure: unknown) {
+    if (failure instanceof TypeError) throw failure;
+    throw invalid('APPEX_INVALID_DETAILS', 'details could not be inspected');
+  }
+}
+
 function renderMessage(
   tag: string,
   message: string | ((details: object) => string),
   details: object,
-): {
-  readonly message: string;
-  readonly failure: MessageRenderingFailure;
-} {
+): string {
   try {
     const rendered = typeof message === 'string' ? message : message(details);
-    if (typeof rendered !== 'string')
-      throw new TypeError('Exception message renderer must return a string');
-    return { message: rendered, failure: { present: false } };
-  } catch (value: unknown) {
-    return { message: tag, failure: { present: true, value } };
+    if (typeof rendered === 'string') return rendered;
+    return `${tag} [message rendering failed: renderer returned ${typeof rendered}]`;
+  } catch (failure: unknown) {
+    return `${tag} [message rendering failed: ${describe(failure)}]`;
   }
 }
 
+function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
+  if (policy === undefined) return undefined;
+  if (typeof policy !== 'object' || policy === null || Array.isArray(policy))
+    throw invalid('APPEX_INVALID_PUBLIC_POLICY', 'public must be an object');
+  const { code, message, details } = policy as Record<string, unknown>;
+  if (typeof code !== 'string' || code.length === 0 || code.length > 128)
+    throw invalid(
+      'APPEX_INVALID_PUBLIC_POLICY',
+      'public.code must be a nonempty string of at most 128 characters',
+    );
+  if (
+    message !== undefined &&
+    typeof message !== 'string' &&
+    typeof message !== 'function'
+  )
+    throw invalid(
+      'APPEX_INVALID_PUBLIC_POLICY',
+      'public.message must be a string or a function',
+    );
+  if (details !== undefined && typeof details !== 'function')
+    throw invalid(
+      'APPEX_INVALID_PUBLIC_POLICY',
+      'public.details must be a function',
+    );
+  const record: {
+    code: string;
+    message?: NonNullable<PublicPolicyRecord['message']>;
+    details?: NonNullable<PublicPolicyRecord['details']>;
+  } = { code };
+  if (message !== undefined)
+    record.message = message as NonNullable<PublicPolicyRecord['message']>;
+  if (details !== undefined)
+    record.details = details as NonNullable<PublicPolicyRecord['details']>;
+  return record;
+}
+
+/**
+ * Define an error kind: a native `Error` subclass with a stable `_tag`, typed
+ * `details`, an occurrence `id`, and an optional `public` disclosure policy.
+ *
+ * Annotate the message renderer's parameter to declare the details type. A
+ * string message defines a kind without details. Details must be a data-only
+ * record: no arrays, functions, accessors, or methods.
+ *
+ * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`
+ * @example
+ * ```ts
+ * import { defineException } from 'application-exception';
+ *
+ * const ToolUnavailable = defineException({
+ *   tag: 'tools/Unavailable',
+ *   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+ *   public: {
+ *     code: 'TOOL_UNAVAILABLE',
+ *     message: 'The requested tool is temporarily unavailable.',
+ *     details: ({ tool }) => ({ tool }),
+ *   },
+ * });
+ *
+ * const error = new ToolUnavailable({
+ *   details: { tool: 'search' },
+ *   cause: new Error('connection refused'),
+ * });
+ * console.log(error instanceof Error, error._tag, error.details.tool);
+ * ```
+ */
 export function defineException<Tag extends string>(
   definition: ExceptionDefinition<Tag>,
 ): TypedExceptionClass<Tag>;
@@ -155,21 +251,27 @@ export function defineException<Tag extends string, Details extends object>(
     readonly tag: Tag;
     readonly message: (details: Details) => string;
     readonly idPrefix?: string;
+    readonly public?: PublicPolicy<Details>;
   } & ([RecordDetails<Details>] extends [never] ? never : unknown),
 ): TypedExceptionClass<Tag, Details>;
 export function defineException(definition: {
   readonly tag: string;
   readonly message: string | ((details: never) => string);
   readonly idPrefix?: string;
+  readonly public?: unknown;
 }): unknown {
   const { tag, message, idPrefix } = definition;
   if (typeof tag !== 'string' || tag.trim().length === 0 || tag.length > 128) {
-    throw new TypeError(
-      'Exception tag must be a non-empty string of at most 128 characters',
+    throw invalid(
+      'APPEX_INVALID_TAG',
+      'tag must be a nonempty string of at most 128 characters',
     );
   }
   if (typeof message !== 'function' && typeof message !== 'string') {
-    throw new TypeError('Exception message must be a string or function');
+    throw invalid(
+      'APPEX_INVALID_MESSAGE',
+      'message must be a string or a function',
+    );
   }
   if (
     idPrefix !== undefined &&
@@ -177,10 +279,12 @@ export function defineException(definition: {
       idPrefix.trim().length === 0 ||
       idPrefix.length > 32)
   ) {
-    throw new TypeError(
-      'Exception ID prefix must be a non-empty string of at most 32 characters',
+    throw invalid(
+      'APPEX_INVALID_ID_PREFIX',
+      'idPrefix must be a nonempty string of at most 32 characters',
     );
   }
+  const policy = validatePublicPolicy(definition.public);
 
   class DefinedException extends Error {
     static readonly tag = tag;
@@ -210,33 +314,54 @@ export function defineException(definition: {
         suppliedDetails === null ||
         Array.isArray(suppliedDetails)
       ) {
-        throw new TypeError('Exception details must be a non-array object');
+        throw invalid(
+          'APPEX_INVALID_DETAILS',
+          'details must be a non-array object',
+        );
       }
       const details = copyRecordDetails(suppliedDetails);
-      const rendered = renderMessage(
-        tag,
-        message as string | ((details: object) => string),
-        details,
+      super(
+        renderMessage(
+          tag,
+          message as string | ((details: object) => string),
+          details,
+        ),
       );
-      super(rendered.message);
       const occurrence = createOccurrence(idPrefix);
-      this.name = tag;
       this._tag = tag;
       this.id = occurrence.id;
       this.timestamp = occurrence.timestamp;
       this.details = details;
       installCause(this, options);
-      registerTypedException(this, rendered.failure);
+      registerTypedException(this, policy);
     }
   }
   Object.defineProperty(DefinedException, 'name', {
     value: tag,
     configurable: true,
   });
+  Object.defineProperty(DefinedException.prototype, 'name', {
+    value: tag,
+    writable: true,
+    configurable: true,
+  });
   return DefinedException;
 }
 
-/** Narrows instances created by this loaded copy of the library only. */
+/**
+ * Whether a value is an occurrence created by this loaded copy of the package.
+ * Narrow a specific kind with `instanceof` before reading its details.
+ *
+ * @example
+ * ```ts
+ * import { defineException, isTypedException } from 'application-exception';
+ *
+ * const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
+ * const caught: unknown = new Unavailable();
+ * if (isTypedException(caught)) console.log(caught._tag, caught.id);
+ * if (caught instanceof Unavailable) console.log(caught.details);
+ * ```
+ */
 export function isTypedException(value: unknown): value is TypedException {
   return isLocalTypedException(value);
 }
