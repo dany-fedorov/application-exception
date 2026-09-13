@@ -136,25 +136,17 @@ function jsonView(
 }
 
 /**
- * Report any caught value for operators: a corj report with `reference`,
- * optional `context`, and `reporting_errors`. Send it to a trusted sink; it
- * contains messages, stacks, and every enumerable property of the error graph.
+ * Report any caught value for operators: a corj report with `reference`, optional `context`, and `reporting_errors`.
+ * Send it to a trusted sink; it contains messages, stacks, and every enumerable property of the error graph.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`; corj option errors propagate.
  * @example
  * ```ts
  * import { toDiagnosticReport } from 'application-exception';
- *
- * try {
- *   throw new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
- * } catch (caught: unknown) {
- *   const report = toDiagnosticReport(caught, {
- *     context: { runId: 'run-1', tool: 'search' },
- *   });
- *   console.error(JSON.stringify(report));
- *   // { "reference": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
- *   //   "v": "corj/v0.12", "context": { "runId": "run-1", "tool": "search" } }
- * }
+ * const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
+ * const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
+ * // { "v": "corj/v0.12", "reference": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }] }
+ * console.error(JSON.stringify(report));
  * ```
  */
 export function toDiagnosticReport(
@@ -219,28 +211,22 @@ function selectPublicDetails(
 }
 
 /**
- * Report a failure to an agent or user: the kind's `public` policy rendered
- * into `code`, `message`, and `as_json`, with the same `reference` as the
- * diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
- * generic message. Nothing is read from the error except its policy inputs.
+ * Report a failure to an agent or user: the kind's `public` policy rendered into `code`, `message`, and `as_json`,
+ * with the same `reference` as the diagnostic report. Values without a policy get `INTERNAL_ERROR` and a generic
+ * message. Nothing is read from the error except its policy inputs.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
  * @example
  * ```ts
  * import { defineException, toPublicReport } from 'application-exception';
- *
  * const ToolUnavailable = defineException({
- *   tag: 'tools/Unavailable',
- *   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+ *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
  *   public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
  * });
- *
  * const report = toPublicReport(new ToolUnavailable({ details: { tool: 'search' } }));
- * // { v: 'appex/public/v3', reference: 'AE_…', code: 'TOOL_UNAVAILABLE',
- * //   message: 'Something went wrong', as_json: { tool: 'search' } }
- * const generic = toPublicReport(new Error('secret'));
- * // { v: 'appex/public/v3', reference: 'AE_…', code: 'INTERNAL_ERROR', message: 'Something went wrong' }
- * console.log(report.code, generic.code);
+ * // { v: 'appex/public/v3', reference: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
+ * //   as_json: { tool: 'search' } }
+ * console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
  * ```
  */
 export function toPublicReport(
@@ -347,16 +333,10 @@ function boundedText(
  * @example
  * ```ts
  * import { decodePublicReport } from 'application-exception';
- *
- * const received: unknown = JSON.parse(
- *   '{"v":"appex/public/v3","reference":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}',
- * );
- * const decoded = decodePublicReport(received);
- * if (decoded.ok) {
- *   console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
- * } else {
- *   console.log(decoded.reason, decoded.path);
- * }
+ * const json = '{"v":"appex/public/v3","reference":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
+ * const decoded = decodePublicReport(JSON.parse(json) as unknown);
+ * if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
+ * else console.log(decoded.reason, decoded.path);
  * ```
  */
 export function decodePublicReport(value: unknown): DecodePublicReportResult {

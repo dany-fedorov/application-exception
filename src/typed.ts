@@ -46,9 +46,8 @@ export type DetailsRecord<Details extends object> = [Details] extends [never]
 /**
  * What `toPublicReport` discloses for occurrences of a kind.
  *
- * `code` is the value an agent branches on. `message` is display text, constant
- * or rendered from the details. `details` selects the JSON that becomes
- * `as_json`; return only what the audience may see.
+ * `code` is the value an agent branches on. `message` is display text, constant or rendered from the details.
+ * `details` selects the JSON that becomes `as_json`; return only what the audience may see.
  */
 export type PublicPolicy<Details extends object = never> = {
   readonly code: string;
@@ -235,30 +234,19 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
  * Define an error kind: a native `Error` subclass with a stable `_tag`, typed
  * `details`, an occurrence `id`, and an optional `public` disclosure policy.
  *
- * Annotate the message renderer's parameter to declare the details type. A
- * string message defines a kind without details. Details must be a data-only
- * record: no arrays, functions, accessors, or methods.
+ * Annotate the message renderer's parameter to declare the details type. A string message defines a kind without
+ * details. Details must be a data-only record: no arrays, functions, accessors, or methods.
  *
  * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`
  * @example
  * ```ts
  * import { defineException } from 'application-exception';
- *
  * const ToolUnavailable = defineException({
- *   tag: 'tools/Unavailable',
- *   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
- *   public: {
- *     code: 'TOOL_UNAVAILABLE',
- *     message: 'The requested tool is temporarily unavailable.',
- *     details: ({ tool }) => ({ tool }),
- *   },
+ *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+ *   public: { code: 'TOOL_UNAVAILABLE', message: 'The tool is unavailable.', details: ({ tool }) => ({ tool }) },
  * });
- *
- * const error = new ToolUnavailable({
- *   details: { tool: 'search' },
- *   cause: new Error('connection refused'),
- * });
- * console.log(error instanceof Error, error._tag, error.details.tool);
+ * const error = new ToolUnavailable({ details: { tool: 'search' }, cause: new Error('refused') });
+ * console.log(error._tag, error.details.tool); // 'tools/Unavailable' 'search'
  * ```
  */
 export function defineException<Tag extends string>(
@@ -371,7 +359,6 @@ export function defineException(definition: {
  * @example
  * ```ts
  * import { defineException, isTypedException } from 'application-exception';
- *
  * const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
  * const caught: unknown = new Unavailable();
  * if (isTypedException(caught)) console.log(caught._tag, caught.id);
