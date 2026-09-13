@@ -77,7 +77,8 @@ A caught value without a policy, including a plain `Error`, produces
 
 `reference` is the occurrence `id` of a typed exception. Any other object gets
 one generated id, remembered for the object, so both functions agree in either
-order. Pass `options.reference` to force one, for example for thrown strings.
+order. A thrown primitive gets a fresh reference on each call; pass the same
+`options.reference` to both calls to correlate them.
 
 ### Diagnostic report
 
@@ -88,8 +89,8 @@ the whole report (100,000 bytes by default). This package adds:
 | Field | Meaning |
 | --- | --- |
 | `reference` | the occurrence reference, always present |
-| `context` | `options.context` normalized by corj's serializer with a 16,384-byte budget; `null` if it could not be serialized |
-| `reporting_errors` | up to 8 problems corj met while inspecting the value: `{ stage, path, key?, prop?, error }` |
+| `context` | optional, present only when `options.context` is given: that value normalized by corj's serializer with a 16,384-byte budget; `null` if it could not be serialized |
+| `reporting_errors` | optional, present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, key?, prop?, error }` |
 
 Options `maxReportSize`, `maxDepth`, `maxChildren`, and `stackFormat` pass
 through to corj. Use `restoreExpectedValues(report)` to fill omitted fields.
@@ -114,7 +115,8 @@ The public report keeps corj's field names and meanings for `message`,
 `as_json`, and `truncated`, and nothing else from the error. Limits: `message`
 4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set `truncated: true`.
 Per-call `options` override the policy: `code`, `message`, `details`, and
-`reference`.
+`reference`. A policy without `message` yields the generic message, and
+`details: null` suppresses the policy's selection, yielding `as_json: null`.
 
 `decodePublicReport(value)` validates JSON received from another process and
 returns `{ ok: true, report }` or `{ ok: false, reason, path }`:
@@ -156,10 +158,12 @@ if (caught instanceof InvalidBudget) console.log(explain(caught));
 console.log(isTypedException(caught), new Unavailable().id.startsWith('AE_'));
 ```
 
-Each occurrence is a native `Error` with `_tag`, `id`, `timestamp`, frozen
-`details`, and an optional `cause` (`causes` becomes an ordered
-`AggregateError`). Details are copied once and must be data only. A message
-renderer that throws yields `<tag> [message rendering failed: …]`.
+Each occurrence is a native `Error` with `_tag`, `id`, `timestamp`,
+shallow-frozen `details` (nested objects stay shared), and an optional `cause`
+(two or more `causes` become an ordered `AggregateError`; one is installed
+directly; an empty list installs nothing). Details are copied once and must be
+data only. A message renderer that throws yields
+`<tag> [message rendering failed: …]`.
 
 Errors thrown by this package carry an `APPEX_*` code and a link to
 [docs/agent/errors.md](docs/agent/errors.md).
