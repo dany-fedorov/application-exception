@@ -19,10 +19,12 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
 3. Give every kind an agent or user may see a `public` policy: `code`, display
    `message`, and a `details` selector that returns only what the audience may
    see. Without a policy the public report is `INTERNAL_ERROR` /
-   `Something went wrong`; that default is the safe one.
+   `Something went wrong`; a policy without `message` also yields the generic
+   message. That default is the safe one.
 4. At a boundary, call both report functions on the same caught value:
    `toDiagnosticReport(caught, { context })` for the trusted sink, then
-   `toPublicReport(caught)` for the response. They share `reference`.
+   `toPublicReport(caught)` for the response. They share `reference`; for a
+   thrown primitive, pass the same `reference` option to both calls.
 5. The diagnostic report holds stacks, messages, and every enumerable property
    of the error graph, including `details`. Never return it to an agent or user.
 6. When you receive a public report, run `decodePublicReport`, branch on

@@ -71,7 +71,8 @@ new Failed({ details: { tool: `job-${instance.toISOString()}` } });
 
 When: a kind is constructed with both `cause` and `causes`, or with a `causes` that is not an array.
 Cause: mixing the single and multiple forms.
-Fix: pass one of them. Several causes become an `AggregateError`.
+Fix: pass one of them. Two or more causes become an `AggregateError`; a
+single-element list is installed directly; an empty list installs nothing.
 
 ```ts
 import { defineException } from 'application-exception';
@@ -81,7 +82,7 @@ new Failed({ causes: [new Error('primary down'), new Error('fallback down')] });
 
 ## APPEX_INVALID_OPTIONS
 
-When: `toDiagnosticReport` or `toPublicReport` receives options that are not a plain object, or that contain an unknown key. The message lists the known keys.
+When: `toDiagnosticReport` or `toPublicReport` receives options that are not an object (or an array), or that contain an unknown key. The message lists the known keys.
 Cause: a typo such as `maxDepht`, or an option from an older version such as `redactKeys`, `limits`, or `includeStack`.
 Fix: use only the listed keys.
 

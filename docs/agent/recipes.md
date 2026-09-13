@@ -53,8 +53,9 @@ export function handleSearch(runId: string, query: string): { ok: true; value: s
 }
 ```
 
-Both calls take the same `caught`; the reports share `reference`. Unknown
-failures produce `INTERNAL_ERROR` with the same correlation.
+Both calls take the same `caught`; the reports share `reference`. For a thrown
+primitive, pass the same `reference` option to both calls. Unknown failures
+produce `INTERNAL_ERROR` with the same correlation.
 
 ## Translate a lower-level failure
 
@@ -93,17 +94,18 @@ import { toDiagnosticReport } from 'application-exception';
 export function record(caught: unknown, runId: string, attempt: number): string {
   const report = toDiagnosticReport(caught, {
     context: { runId, attempt, host: process.env['HOSTNAME'] ?? 'unknown' },
-    maxReportSize: 16_384,
+    maxReportSize: 32_768,
     maxDepth: 3,
   });
   return JSON.stringify(report);
 }
 ```
 
-`context` is normalized by corj's serializer with a 16,384-byte budget and
-appears as `report.context`; a value it cannot serialize becomes `null` with an
-entry in `report.reporting_errors`. `maxReportSize`, `maxDepth`, `maxChildren`,
-and `stackFormat` are corj options.
+`context` is normalized by corj's serializer with a fixed 16,384-byte budget
+and appears as `report.context`; that budget is independent of `maxReportSize`,
+which bounds the report as a whole. A value the serializer cannot handle
+becomes `null` with an entry in `report.reporting_errors`. `maxReportSize`,
+`maxDepth`, `maxChildren`, and `stackFormat` are corj options.
 
 ## Recover from a public report
 
