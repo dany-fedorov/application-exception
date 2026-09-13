@@ -1,14 +1,11 @@
 # application-exception
 
-Typed failures and deliberate disclosure for agentic development, LLM harnesses,
-and agent graphs.
+Typed failures with two reports for TypeScript services and agent harnesses: a
+[caught-object-report-json](https://www.npmjs.com/package/caught-object-report-json)
+diagnostic report for operators and a selected public report for agents and
+users, both carrying the same `reference`.
 
-Define native errors with typed details and stable kinds. Handle known failures
-by type, keep bounded diagnostics for operators, and give the agent a separately
-selected report linked to the same occurrence.
-
-Use it at tool, service, HTTP, or CLI boundaries where recovery code and
-diagnostic disclosure need explicit contracts.
+[Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Changelog](CHANGELOG.md)
 
 ## Install
 
@@ -16,250 +13,173 @@ diagnostic disclosure need explicit contracts.
 npm install application-exception
 ```
 
-Requires Node.js 18 or newer. TypeScript declarations are included; CommonJS and
-ESM imports are supported.
+Node.js 18 or newer. CommonJS with TypeScript declarations. Runtime
+dependencies: `caught-object-report-json` and `nanoid`.
 
 ## Quick start
 
-This example defines a tool error, handles it by constructor, and produces two
-reports. The diagnostic contains the backend cause. The report returned to the
-agent contains a selected code, message, and tool name, plus a reference for
-support.
+Define a kind with typed details and a public policy. At the boundary, report
+the caught value twice: once for the trusted sink, once for the response.
 
 ```ts
-import {
-  defineException,
-  toDiagnosticReport,
-  toPublicReport,
-} from 'application-exception';
+import { defineException, toDiagnosticReport, toPublicReport } from 'application-exception';
 
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
-  message: ({ tool }: { tool: string }) =>
-    `Tool ${tool} is unavailable`,
+  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+  public: {
+    code: 'TOOL_UNAVAILABLE',
+    message: 'The requested tool is temporarily unavailable.',
+    details: ({ tool }) => ({ tool }),
+  },
 });
 
 function runSearch(): never {
-  const cause = new Error('Search backend connection refused');
-  throw new ToolUnavailable({ details: { tool: 'search' }, cause });
+  throw new ToolUnavailable({
+    details: { tool: 'search' },
+    cause: new Error('connect ECONNREFUSED 10.0.0.7:5432'),
+  });
 }
 
 try {
   runSearch();
 } catch (caught: unknown) {
-  const diagnostic = toDiagnosticReport(caught, {
-    context: { runId: 'run-123', operation: 'search' },
-  });
-  // Send this JSON to your trusted diagnostic destination.
-  console.error(JSON.stringify(diagnostic));
-
-  const body = caught instanceof ToolUnavailable
-    ? toPublicReport(diagnostic.reference, {
-        code: 'TOOL_UNAVAILABLE',
-        message: 'Search is temporarily unavailable.',
-        details: { tool: caught.details.tool },
-      })
-    : toPublicReport(diagnostic.reference);
-
-  console.log(JSON.stringify(body));
+  const diagnostic = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
+  console.error(JSON.stringify(diagnostic)); // trusted sink only
+  const response = toPublicReport(caught);
+  console.log(JSON.stringify(response)); // safe for the agent
+  console.log(response.reference === diagnostic.reference); // true
 }
 ```
 
-A default public report has code `INTERNAL_ERROR` and message
-`Something went wrong`. Public presentation accepts a reference string and
-explicitly selected fields; it never reads the error or its diagnostic graph.
-The example deliberately throws to exercise the failure boundary. Replace
-`runSearch` with your executor; the package does not execute tools.
+The response is:
 
-## Agent integration contract
-
-| Boundary | Contract |
-| --- | --- |
-| Local tool failure | Construct an error kind with complete typed details and its cause |
-| Host catch | Narrow known kinds by constructor; give unexpected failures a generic public code |
-| Operational logging | Send the diagnostic report to a trusted sink |
-| Agent-visible response | Select the public code, message, and remediation fields explicitly |
-| Recovery | Validate external JSON, branch on code, and apply host-owned retry policy |
-
-Use `_tag` to distinguish local error kinds and `code` as the application
-protocol for public handling. Use `reference` to correlate a response with
-diagnostics. Free-form `message` text must not select tools, authorize actions,
-or decide retry safety. A valid report is data, not an instruction.
-
-The [agent recovery guide](docs/agent-recovery.md) includes an executable
-validation and retry-budget example. Unknown codes and malformed reports
-escalate; the host owns authorization, idempotency, and backoff.
-
-## Define error kinds
-
-Annotate the message renderer's details parameter to infer the constructor's
-required details type. A string message defines a kind with no required details.
-
-```ts
-import { defineException } from 'application-exception';
-
-const InvalidBudget = defineException({
-  tag: 'tools/InvalidBudget',
-  idPrefix: 'TOOL',
-  message: ({ attempts }: { attempts: number }) =>
-    `Attempt budget must be positive; received ${attempts}`,
-});
-const Unavailable = defineException({
-  tag: 'service/Unavailable',
-  message: 'Service unavailable',
-});
-
-const invalid = new InvalidBudget({ details: { attempts: -1 } });
-const unavailable = new Unavailable();
-
-console.log(invalid instanceof Error); // true
-console.log(invalid._tag); // 'tools/InvalidBudget'
-console.log(invalid.details.attempts); // -1
-console.log(unavailable.message); // 'Service unavailable'
+```json
+{
+  "v": "appex/public/v3",
+  "reference": "AE_01J8Z3C4V5X6Y7Z8A9B0C1D2E3",
+  "code": "TOOL_UNAVAILABLE",
+  "message": "The requested tool is temporarily unavailable.",
+  "as_json": { "tool": "search" }
+}
 ```
 
-Each occurrence has a readonly `_tag`, `id`, `timestamp`, and `details`.
-The definition is captured when `defineException` runs. Each occurrence's
-details are copied and shallow-frozen at construction. Nested objects remain
-shared. The message is rendered
-once. If rendering throws, the tag becomes the message and diagnostics can
-include the rendering failure.
+A caught value without a policy, including a plain `Error`, produces
+`code: "INTERNAL_ERROR"` and `message: "Something went wrong"` with the same
+`reference` as its diagnostic report. Nothing is disclosed by accident.
 
-Supply either `cause: unknown` or `causes: readonly unknown[]`. Multiple causes
-become an ordered `AggregateError`. An explicit `cause: undefined` creates a
-native cause property; an empty causes list does not.
+## Two reports, one reference
 
-## Handle known failures
+| Report | Function | Audience | Content |
+| --- | --- | --- | --- |
+| Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `reference`, `context`, `reporting_errors` |
+| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `reference` |
 
-Use `instanceof YourError` to narrow an unknown catch to that error's details.
-For a known union, the literal `_tag` supports exhaustive handling:
+`reference` is the occurrence `id` of a typed exception. Any other object gets
+one generated id, remembered for the object, so both functions agree in either
+order. Pass `options.reference` to force one, for example for thrown strings.
+
+### Diagnostic report
+
+The diagnostic report is a corj report object (`v: "corj/v0.12"`). corj
+documents every field, omits fields that hold their expected value, and bounds
+the whole report (100,000 bytes by default). This package adds:
+
+| Field | Meaning |
+| --- | --- |
+| `reference` | the occurrence reference, always present |
+| `context` | `options.context` normalized by corj's serializer with a 16,384-byte budget; `null` if it could not be serialized |
+| `reporting_errors` | up to 8 problems corj met while inspecting the value: `{ stage, path, key?, prop?, error }` |
+
+Options `maxReportSize`, `maxDepth`, `maxChildren`, and `stackFormat` pass
+through to corj. Use `restoreExpectedValues(report)` to fill omitted fields.
 
 ```ts
-import { defineException } from 'application-exception';
+import { restoreExpectedValues, toDiagnosticReport } from 'application-exception';
+
+const report = toDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
+  maxDepth: 2,
+});
+const full = restoreExpectedValues(report);
+console.log(full.message, report.children?.[0]?.path); // 'outer' '$.cause'
+```
+
+corj runs `toString`, `toJSON`, and getters of the reported objects and records
+failures instead of throwing. The report is for trusted sinks: it contains
+messages, stacks, and `details`.
+
+### Public report
+
+The public report keeps corj's field names and meanings for `message`,
+`as_json`, and `truncated`, and nothing else from the error. Limits: `message`
+4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set `truncated: true`.
+Per-call `options` override the policy: `code`, `message`, `details`, and
+`reference`.
+
+`decodePublicReport(value)` validates JSON received from another process and
+returns `{ ok: true, report }` or `{ ok: false, reason, path }`:
+
+```ts
+import { decodePublicReport } from 'application-exception';
+
+const decoded = decodePublicReport(JSON.parse('{"v":"appex/public/v3","reference":"AE_1","code":"TOOL_UNAVAILABLE","message":"Retry later."}'));
+if (decoded.ok && decoded.report.code === 'TOOL_UNAVAILABLE') {
+  console.log('retry', decoded.report.reference);
+}
+```
+
+## Define and handle kinds
+
+```ts
+import { defineException, isTypedException } from 'application-exception';
 
 const InvalidBudget = defineException({
   tag: 'tools/InvalidBudget',
-  message: ({ attempts }: { attempts: number }) => `Invalid budget: ${attempts}`,
+  idPrefix: 'TOOL_',
+  message: ({ attempts }: { attempts: number }) => `Attempt budget must be positive; received ${attempts}`,
 });
-const Unavailable = defineException({
-  tag: 'service/Unavailable',
-  message: 'Service unavailable',
-});
+const Unavailable = defineException({ tag: 'service/Unavailable', message: 'Service unavailable' });
 
-type ToolFailure =
-  | InstanceType<typeof InvalidBudget>
-  | InstanceType<typeof Unavailable>;
+type ToolFailure = InstanceType<typeof InvalidBudget> | InstanceType<typeof Unavailable>;
 
 function explain(error: ToolFailure): string {
   switch (error._tag) {
     case 'tools/InvalidBudget':
-      return `Choose a positive attempt budget; received ${error.details.attempts}`;
+      return `Choose a positive budget; received ${error.details.attempts}`;
     case 'service/Unavailable':
       return 'Try again later';
-    default: {
-      const exhaustive: never = error;
-      return exhaustive;
-    }
   }
 }
 
-console.log(explain(new Unavailable())); // 'Try again later'
+const caught: unknown = new InvalidBudget({ details: { attempts: -1 } });
+if (caught instanceof InvalidBudget) console.log(explain(caught));
+console.log(isTypedException(caught), new Unavailable().id.startsWith('AE_'));
 ```
 
-`isTypedException(value)` recognizes occurrences created by the loaded module.
-It establishes the general error shape, not membership in a particular catalog.
-A tag on an arbitrary object or another package copy does not prove its details
-type; validate external domain data with an application decoder.
+Each occurrence is a native `Error` with `_tag`, `id`, `timestamp`, frozen
+`details`, and an optional `cause` (`causes` becomes an ordered
+`AggregateError`). Details are copied once and must be data only. A message
+renderer that throws yields `<tag> [message rendering failed: …]`.
 
-## Report and disclose
+Errors thrown by this package carry an `APPEX_*` code and a link to
+[docs/agent/errors.md](docs/agent/errors.md).
 
-`toDiagnosticReport(caught, options?)` accepts native errors, typed occurrences,
-and arbitrary thrown values. It returns JSON using `appex/diagnostic/v2`.
-Options select context, stack inclusion, redacted keys, and traversal limits.
+## Schemas
 
-`toPublicReport(reference, presentation?)` returns `appex/public/v2` with
-`reference`, `code`, `message`, and optional `details`. Select every public
-field for its intended audience. Diagnostic messages, causes, and context may
-contain secrets even after key-based redaction.
-
-```ts
-import {
-  toDiagnosticReport,
-  toPublicReport,
-  decodeDiagnosticReport,
-} from 'application-exception';
-
-const diagnostic = toDiagnosticReport(new Error('Search backend unavailable'), {
-  context: { operation: 'search', apiKey: 'private-key' },
-  limits: { maxBytes: 16_384 },
-});
-const response = toPublicReport(diagnostic.reference, {
-  code: 'SEARCH_UNAVAILABLE',
-  message: 'Search is temporarily unavailable.',
-  details: { retryAfterSeconds: 30 },
-});
-
-const incoming: unknown = JSON.parse(JSON.stringify(diagnostic));
-const decoded = decodeDiagnosticReport(incoming);
-if (decoded.success) {
-  console.log(decoded.value.reference === response.reference); // true
-} else {
-  console.error(decoded.error.code, decoded.error.message);
-}
-```
-
-The decoder validates and detaches a diagnostic value into plain JSON. It
-rejects unsupported wire versions, returns a `success`-discriminated result,
-and does not revive an error or validate domain-specific details.
-
-Stacks are omitted by default. `includeStack: true` skips user-defined stack
-accessors, but native stack formatting may run `Error.prepareStackTrace`.
-Normalization avoids getters, custom `toJSON`, and custom coercion. It records
-cycles, redactions, unreadable values, unsupported objects, and truncation with
-explicit `$appex` markers.
-
-### Diagnostic limits
-
-| Option under `limits` | Default | Supported range |
-| --- | ---: | ---: |
-| `maxDepth` | 8 | 0–32 |
-| `maxValues` | 1,000 | 0–10,000 |
-| `maxEntries` | 50 | 0–1,000 |
-| `maxStringLength` (UTF-16 units) | 4,096 | 0–65,536 |
-| `maxBytes` (serialized UTF-8) | 65,536 | 4,096–1,048,576 |
-
-Enumerating an object's keys can still cost time proportional to its width;
-proxy traps have no hard execution-time bound. Project large live inputs into
-small owned summaries. See the [API reference](docs/api.md) for construction,
-decoding, redaction, and public presentation limits.
-
-## Schemas and integrations
-
-The package includes JSON Schemas for
-[diagnostic reports](schemas/diagnostic-report-v2.json) and
-[public reports](schemas/public-report-v2.json). Import them through
-`application-exception/schemas/diagnostic-report-v2.json` and
-`application-exception/schemas/public-report-v2.json`. Schemas validate wire
-structure; procedural work limits and domain details require separate checks.
-
-The [agent recovery guide](docs/agent-recovery.md) provides a complete example
-that validates public JSON, branches on stable codes, and applies an
-operation-owned retry budget.
-
-Typed occurrences work with ordinary throw/catch, rejected Promises, and
-libraries that dispatch on `_tag`, including Effect. No effect runtime or
-dependency container is required. For capturing arbitrary caught values without
-defining application error kinds, see
-[caught-object-report-json](https://www.npmjs.com/package/caught-object-report-json).
+`application-exception/schemas/diagnostic-report-v3.json` embeds corj v0.12's
+report definitions and adds the extension fields;
+`application-exception/schemas/public-report-v3.json` is closed. Both are JSON
+Schema 2020-12.
 
 ## Validate a change
 
 ```sh
 npm ci
 npm run test:all
-npm run review:probe
-npm run benchmark
 ```
 
-The benchmark prints local measurements. [Release notes](CHANGELOG.md) ·
-[npm package](https://www.npmjs.com/package/application-exception)
+`test:all` runs Jest with a 100% coverage gate, the type tests, the build, the
+packed-package smoke test, and the documentation checks. Run
+`npm run docs:generate` after editing JSDoc in `src/`.
+
+[npm package](https://www.npmjs.com/package/application-exception) · [MIT](LICENSE)
