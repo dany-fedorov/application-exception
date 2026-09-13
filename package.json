@@ -1,7 +1,7 @@
 {
   "name": "application-exception",
   "version": "0.2.2",
-  "description": "Typed agent tool failures, bounded diagnostics, and explicit public reports for TypeScript",
+  "description": "Typed failures and deliberate disclosure for TypeScript services and LLM harnesses.",
   "main": "./index.js",
   "types": "./index.d.ts",
   "exports": {
