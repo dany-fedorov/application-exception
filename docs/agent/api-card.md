@@ -79,7 +79,8 @@ Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`; corj option errors p
 import { toDiagnosticReport } from 'application-exception';
 const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
 const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
-// { "v": "corj/v0.12", "reference": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }] }
+// { "v": "corj/v0.12", "reference": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
+//   "context": { "runId": "run-1" } }
 console.error(JSON.stringify(report));
 ```
 
@@ -168,7 +169,7 @@ Every code an error thrown by this package can carry. Each has a section in docs
 export type AppexErrorCode = (typeof APPEX_ERROR_CODES)[number];
 ```
 
-One of {@link APPEX_ERROR_CODES}.
+One of the codes in `APPEX_ERROR_CODES`.
 
 ### `AppexTypeError`
 

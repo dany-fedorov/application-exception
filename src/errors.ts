@@ -12,7 +12,7 @@ export const APPEX_ERROR_CODES = [
   'APPEX_INVALID_PUBLIC_MESSAGE',
 ] as const;
 
-/** One of {@link APPEX_ERROR_CODES}. */
+/** One of the codes in `APPEX_ERROR_CODES`. */
 export type AppexErrorCode = (typeof APPEX_ERROR_CODES)[number];
 
 /** Where every error message points; the fragment is the code in lower case. */

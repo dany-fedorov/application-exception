@@ -52,7 +52,8 @@ function describeExport(symbol, checker) {
   const declaration = (target.declarations || [])[0];
   if (!declaration) throw new Error(`No declaration for export ${symbol.name}`);
   const file = declaration.getSourceFile().fileName;
-  const foreign = file.includes(`${path.sep}node_modules${path.sep}`);
+  // TypeScript normalizes SourceFile.fileName to forward slashes on every platform.
+  const foreign = file.includes('/node_modules/');
   // JSDoc written on the export specifier itself (used to document re-exports whose
   // upstream declaration carries no comment) wins over the declaration's own comment.
   const ownSummary = ts.displayPartsToString(symbol.getDocumentationComment(checker)).trim();
@@ -114,7 +115,12 @@ function render() {
     if (entry.runtime && !entry.foreign && entry.examples.length === 0 && !/^[A-Z_]+$/.test(entry.name))
       throw new Error(`Runtime export ${entry.name} has no @example`);
   }
-  const runtime = entries.filter((entry) => entry.runtime).sort((a, b) => RUNTIME_ORDER.indexOf(a.name) - RUNTIME_ORDER.indexOf(b.name));
+  const runtime = entries.filter((entry) => entry.runtime);
+  for (const entry of runtime) {
+    if (!RUNTIME_ORDER.includes(entry.name))
+      throw new Error(`Runtime export ${entry.name} is missing from RUNTIME_ORDER in ${path.relative(ROOT, __filename)}`);
+  }
+  runtime.sort((a, b) => RUNTIME_ORDER.indexOf(a.name) - RUNTIME_ORDER.indexOf(b.name));
   const types = entries.filter((entry) => !entry.runtime && !entry.foreign).sort((a, b) => a.name.localeCompare(b.name));
   const foreignTypes = entries.filter((entry) => !entry.runtime && entry.foreign).sort((a, b) => a.name.localeCompare(b.name));
   const out = [
