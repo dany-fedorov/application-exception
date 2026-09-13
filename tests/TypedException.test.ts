@@ -285,6 +285,39 @@ describe('defineException', () => {
     expect(
       () => new UserAlreadyExists({ details: uninspectable } as never),
     ).toThrow(invalidDetails);
+    const revokedDetails = Proxy.revocable({}, {});
+    revokedDetails.revoke();
+    expect(
+      () => new UserAlreadyExists({ details: revokedDetails.proxy } as never),
+    ).toThrow(invalidDetails);
+    const revokedInput = Proxy.revocable({}, {});
+    revokedInput.revoke();
+    expect(() => new UserAlreadyExists(revokedInput.proxy as never)).toThrow(
+      invalidDetails,
+    );
+    const unreadableInput = new Proxy(
+      {},
+      {
+        get() {
+          throw new TypeError('native-like');
+        },
+      },
+    );
+    expect(() => new UserAlreadyExists(unreadableInput as never)).toThrow(
+      invalidDetails,
+    );
+    const nativeThrowingPrototype = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new TypeError('native-like');
+        },
+      },
+    );
+    expect(
+      () =>
+        new UserAlreadyExists({ details: nativeThrowingPrototype } as never),
+    ).toThrow(invalidDetails);
   });
 
   test('copies enumerable data from a data-only class without its prototype', () => {

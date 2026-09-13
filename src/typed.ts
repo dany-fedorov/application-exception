@@ -111,6 +111,24 @@ function describe(value: unknown): string {
   }
 }
 
+function isNonArrayObject<Value>(value: Value): value is Value & object {
+  try {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  } catch {
+    return false;
+  }
+}
+
+function readDetailsOption(options: {
+  readonly details?: object;
+}): object | undefined {
+  try {
+    return options.details;
+  } catch {
+    throw invalid('APPEX_INVALID_DETAILS', 'details could not be inspected');
+  }
+}
+
 function copyRecordDetails(
   value: object,
 ): Readonly<Record<PropertyKey, unknown>> {
@@ -158,7 +176,7 @@ function copyRecordDetails(
     }
     return Object.freeze(output);
   } catch (failure: unknown) {
-    if (failure instanceof TypeError) throw failure;
+    if (failure instanceof TypeError && 'code' in failure) throw failure;
     throw invalid('APPEX_INVALID_DETAILS', 'details could not be inspected');
   }
 }
@@ -302,18 +320,16 @@ export function defineException(definition: {
     }) {
       const options =
         input === undefined && typeof message === 'string' ? {} : input;
+      if (!isNonArrayObject(options)) {
+        throw invalid(
+          'APPEX_INVALID_DETAILS',
+          'details must be a non-array object',
+        );
+      }
+      const provided = readDetailsOption(options);
       const suppliedDetails =
-        options?.details === undefined && typeof message === 'string'
-          ? {}
-          : options?.details;
-      if (
-        typeof options !== 'object' ||
-        options === null ||
-        Array.isArray(options) ||
-        typeof suppliedDetails !== 'object' ||
-        suppliedDetails === null ||
-        Array.isArray(suppliedDetails)
-      ) {
+        provided === undefined && typeof message === 'string' ? {} : provided;
+      if (!isNonArrayObject(suppliedDetails)) {
         throw invalid(
           'APPEX_INVALID_DETAILS',
           'details must be a non-array object',
