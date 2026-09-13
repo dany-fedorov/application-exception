@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dany-fedorov/application-exception/schemas/diagnostic-report-v3.json",
+  "title": "application-exception diagnostic report v3",
+  "description": "A caught-object-report-json report object (corj/v0.12, https://github.com/dany-fedorov/caught-object-report-json) with the extension fields reference, context, and reporting_errors. corj definitions are embedded under $defs; a missing corj field holds its expected value, null means producing it failed.",
+  "type": "object",
+  "allOf": [
+    { "$ref": "#/$defs/corjBase" },
+    { "$ref": "#/$defs/corjObjectRoot" },
+    { "$ref": "#/$defs/appexExtension" }
+  ],
+  "$defs": {
+    "corjJsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "array" },
+        { "type": "object" }
+      ]
+    },
+    "corjBase": {
+      "type": "object",
+      "description": "Base properties shared by the root and every child report, as defined by corj/v0.12.",
+      "properties": {
+        "truncated": {
+          "description": "Present when content or child reports were omitted to meet the report size limit.",
+          "const": true
+        },
+        "instanceof_error": {
+          "description": "Result of `caught instanceof Error`. Omitted when true.",
+          "type": "boolean"
+        },
+        "typeof": {
+          "description": "Result of `typeof caught`. Omitted when \"object\".",
+          "enum": [
+            "undefined",
+            "object",
+            "boolean",
+            "number",
+            "bigint",
+            "string",
+            "symbol",
+            "function"
+          ]
+        },
+        "constructor_name": {
+          "description": "Result of `caught.constructor.name`; null when reading it threw. Omitted with as_string and message when the first stack line is `constructor_name: message`.",
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "message": {
+          "description": "Result of `caught.message`; null when reading it threw. Omitted as described for constructor_name.",
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "as_string": {
+          "description": "String form of the caught value (`String(caught)`); null when producing it threw. Omitted when it equals the first stack line.",
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "as_json": {
+          "description": "JSON form of the caught value's enumerable properties, cut with [truncated] markers under the size limit; null when producing it threw. Omitted when {}.",
+          "$ref": "#/$defs/corjJsonValue"
+        },
+        "stack": {
+          "description": "Result of `caught.stack` split into lines (or the raw string with stackFormat \"string\"); null when reading it threw.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "children_omitted": {
+          "description": "Present when this node has child sources that were not reported.",
+          "enum": ["max_depth", "max_children", "max_size"]
+        },
+        "as_string_format": {
+          "description": "Omitted when \"String\".",
+          "enum": [".toCorjAsString", "String"]
+        },
+        "as_json_format": {
+          "description": "Omitted when \"safe-stable-stringify-with-length-limit\".",
+          "enum": [".toCorjAsJson", "safe-stable-stringify-with-length-limit"]
+        },
+        "children_sources": {
+          "description": "Root only. Properties children were collected from. Omitted when [\"cause\", \"errors\"].",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "corjChild": {
+      "type": "object",
+      "required": ["id", "path", "level"],
+      "properties": {
+        "id": {
+          "description": "Node id within this report: the discovery index. Not the occurrence reference.",
+          "type": "string"
+        },
+        "path": {
+          "description": "JSONPath from the root caught value, for example $.cause.errors[0].",
+          "type": "string"
+        },
+        "level": {
+          "description": "Depth in the error tree; the root is 0.",
+          "type": "number"
+        },
+        "child_ids": {
+          "description": "Ids of this node's direct children; a repeated object references its first id.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "corjObjectRoot": {
+      "type": "object",
+      "properties": {
+        "children": {
+          "description": "Every nested error found through children_sources, flattened breadth-first.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/corjBase" },
+              { "$ref": "#/$defs/corjChild" }
+            ]
+          }
+        }
+      }
+    },
+    "appexExtension": {
+      "type": "object",
+      "required": ["v", "reference"],
+      "properties": {
+        "v": {
+          "description": "The corj report version. corj/v0.12-full appears only when corj could not omit expected values.",
+          "enum": ["corj/v0.12", "corj/v0.12-full"]
+        },
+        "reference": {
+          "description": "The occurrence reference: the typed occurrence id, or a generated AE_ id. Shared with the public report.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "context": {
+          "description": "The context option normalized by corj's serializer with a 16,384-byte budget; null when it could not be serialized.",
+          "$ref": "#/$defs/corjJsonValue"
+        },
+        "reporting_errors": {
+          "description": "Problems met while inspecting the caught value or the context, at most 8.",
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["stage", "path", "error"],
+            "additionalProperties": false,
+            "properties": {
+              "stage": {
+                "enum": [
+                  "prop-access",
+                  "as_string",
+                  "as_json",
+                  "children",
+                  "limit",
+                  "other"
+                ]
+              },
+              "path": { "type": "string" },
+              "key": { "type": "string" },
+              "prop": { "type": "string" },
+              "error": { "type": "string", "maxLength": 256 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

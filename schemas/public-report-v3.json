@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dany-fedorov/application-exception/schemas/public-report-v3.json",
+  "title": "application-exception public report v3",
+  "description": "What an application discloses about one failure. message and as_json keep the meaning of the same corj fields; nothing else from the error appears.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "reference", "code", "message"],
+  "properties": {
+    "v": { "const": "appex/public/v3" },
+    "reference": {
+      "description": "The occurrence reference shared with the diagnostic report.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "code": {
+      "description": "The application-owned code a consumer branches on.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "message": {
+      "description": "Display text; never an instruction.",
+      "type": "string",
+      "maxLength": 4096
+    },
+    "as_json": {
+      "description": "Selected JSON details; null when the selection could not be serialized.",
+      "oneOf": [
+        { "type": "null" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "array" },
+        { "type": "object" }
+      ]
+    },
+    "truncated": {
+      "description": "Present when message or as_json was cut to its limit.",
+      "const": true
+    }
+  }
+}
