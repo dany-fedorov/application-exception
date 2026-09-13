@@ -35,9 +35,15 @@ function checkErrorSections() {
   const sections = new Set((read('docs/agent/errors.md').match(/^## (APPEX_[A-Z_]+)$/gm) || []).map((line) => line.slice(3)));
   for (const code of codes) if (!sections.has(code)) finding(`docs/agent/errors.md lacks a section for ${code}`);
   for (const code of sections) if (!codes.has(code)) finding(`docs/agent/errors.md documents unknown code ${code}`);
+  // Docs may also name the exported APPEX_* identifiers themselves (APPEX_ERROR_CODES); derive
+  // those from the same source so the scan never has to repeat the list of codes.
+  const exported = new Set(
+    [...source.matchAll(/^export\s+(?:const|type|enum|function)\s+(APPEX_[A-Z_]+)\b/gm)].map((match) => match[1]),
+  );
+  const allowed = new Set([...codes, ...exported]);
   for (const relative of ['README.md', 'AGENTS.md', 'docs/agent/recipes.md']) {
     for (const code of read(relative).match(/APPEX_[A-Z_]+/g) || []) {
-      if (!codes.has(code)) finding(`${relative} mentions unknown code ${code}`);
+      if (!allowed.has(code)) finding(`${relative} mentions unknown code ${code}`);
     }
   }
 }
@@ -53,6 +59,10 @@ function checkLinks() {
     }
   }
 }
+
+// AGENTS.md is prose and a table only; every other snippet source must carry examples.
+const SNIPPET_SOURCES_WITHOUT_BLOCKS = new Set(['AGENTS.md']);
+const SNIPPET_FLOOR = 20;
 
 function extractSnippets() {
   const snippets = [];
@@ -71,6 +81,12 @@ function extractSnippets() {
       }
     }
     if (open !== null) finding(`${relative}: unterminated ts block starting at line ${open.start}`);
+    if (!SNIPPET_SOURCES_WITHOUT_BLOCKS.has(relative) && !snippets.some((snippet) => snippet.relative === relative)) {
+      finding(`${relative} yields no \`\`\`ts blocks; the extractor or the document is broken`);
+    }
+  }
+  if (snippets.length < SNIPPET_FLOOR) {
+    finding(`only ${snippets.length} ts snippets extracted; expected at least ${SNIPPET_FLOOR}`);
   }
   return snippets;
 }
@@ -79,10 +95,20 @@ function checkSnippets() {
   const snippets = extractSnippets();
   fs.rmSync(SNIPPET_DIR, { recursive: true, force: true });
   fs.mkdirSync(SNIPPET_DIR, { recursive: true });
+  try {
+    return typeCheckSnippets(snippets);
+  } finally {
+    fs.rmSync(SNIPPET_DIR, { recursive: true, force: true });
+  }
+}
+
+function typeCheckSnippets(snippets) {
   const files = snippets.map((snippet, index) => {
     const file = path.join(SNIPPET_DIR, `snippet-${index}.ts`);
     fs.writeFileSync(file, `${snippet.body}\nexport {};\n`);
-    const expectation = /^\/\/ expect-error: (.+)$/m.exec(snippet.body);
+    // The marker is only honored as the block's very first line, so a stray comment deeper in a
+    // snippet can never turn a real failure into an expectation.
+    const expectation = /^\/\/ expect-error: (.+)$/.exec(snippet.body.split('\n')[0] || '');
     return { ...snippet, file, expectError: expectation ? expectation[1].trim() : null };
   });
   const options = {
@@ -112,21 +138,33 @@ function checkSnippets() {
     const where = `${entry.relative}:${entry.line}`;
     if (entry.expectError === null) {
       for (const message of messages) finding(`${where} snippet: ${message}`);
-    } else if (!messages.some((message) => message.includes(entry.expectError))) {
+      continue;
+    }
+    const matched = messages.findIndex((message) => message.includes(entry.expectError));
+    if (matched === -1) {
       finding(`${where} snippet expected a diagnostic containing "${entry.expectError}"; got ${messages.length ? messages.join('; ') : 'none'}`);
+    }
+    // One diagnostic satisfies the marker; every other one is still a real failure.
+    for (const [index, message] of messages.entries()) {
+      if (index !== matched) finding(`${where} snippet: ${message}`);
     }
   }
   const global = diagnostics.filter((diagnostic) => !diagnostic.file);
   for (const diagnostic of global) finding(`snippets: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, ' ')}`);
-  fs.rmSync(SNIPPET_DIR, { recursive: true, force: true });
   return files.length;
 }
 
-checkCard();
-checkBudgets();
-checkErrorSections();
-checkLinks();
-const count = checkSnippets();
+let count = 0;
+try {
+  checkCard();
+  checkBudgets();
+  checkErrorSections();
+  checkLinks();
+  count = checkSnippets();
+} catch (error) {
+  // A missing document or a generator that throws is a documentation finding, not a crash.
+  finding(`unexpected error: ${error && error.message ? error.message : String(error)}`);
+}
 if (findings.length > 0) {
   process.stderr.write(`${findings.map((text) => `- ${text}`).join('\n')}\n`);
   process.exit(1);
