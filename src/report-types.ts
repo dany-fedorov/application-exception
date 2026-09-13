@@ -1,93 +1,78 @@
-export const DIAGNOSTIC_REPORT_VERSION = 'appex/diagnostic/v2' as const;
-export const PUBLIC_REPORT_VERSION = 'appex/public/v2' as const;
+import { CORJ_VERSION } from 'caught-object-report-json';
+import type {
+  CorjErrorStage,
+  CorjJsonValue,
+  CorjReport,
+  CorjVersion,
+} from 'caught-object-report-json';
 
-export type DiagnosticPrimitive = string | number | boolean | null;
+/** The `v` of every diagnostic report: corj's report version. */
+export const DIAGNOSTIC_REPORT_VERSION: typeof CORJ_VERSION = CORJ_VERSION;
 
-export type DiagnosticMarker = {
-  readonly $appex:
-    | 'bigint'
-    | 'cycle'
-    | 'function'
-    | 'invalid-date'
-    | 'non-finite-number'
-    | 'redacted'
-    | 'symbol'
-    | 'truncated'
-    | 'undefined'
-    | 'unreadable'
-    | 'unsupported';
-  readonly reason?: string;
-  readonly value?: string;
-  readonly omitted?: number;
+/** The `v` of every public report. */
+export const PUBLIC_REPORT_VERSION = 'appex/public/v3' as const;
+
+/** A problem corj met while inspecting the caught value; `message: null` and friends mark where. */
+export interface ReportingError {
+  readonly stage: CorjErrorStage;
+  readonly path: string;
+  readonly key?: string;
+  readonly prop?: string;
+  readonly error: string;
+}
+
+/**
+ * A corj report object (see caught-object-report-json) with three extension
+ * fields. `reference` is the occurrence reference shared with the public
+ * report. `context` is the normalized `options.context`. `reporting_errors`
+ * lists inspection failures (at most 8).
+ */
+export type DiagnosticReport = Omit<CorjReport, 'v'> & {
+  readonly v: CorjVersion;
+  readonly reference: string;
+  readonly context?: CorjJsonValue | null;
+  readonly reporting_errors?: readonly ReportingError[];
 };
 
-export type DiagnosticValue =
-  | DiagnosticPrimitive
-  | DiagnosticMarker
-  | readonly DiagnosticValue[]
-  | { readonly [key: string]: DiagnosticValue };
-
-export interface DiagnosticLimits {
-  readonly maxDepth: number;
-  readonly maxValues: number;
-  readonly maxEntries: number;
-  readonly maxStringLength: number;
-  readonly maxBytes: number;
-}
-
+/**
+ * Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
+ * and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
+ * 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
+ * the report budget. `reference` overrides the occurrence reference.
+ */
 export interface DiagnosticReportOptions {
-  readonly context?: object;
-  readonly includeStack?: boolean;
-  readonly limits?: Partial<DiagnosticLimits>;
-  readonly redactKeys?: readonly string[];
+  readonly reference?: string;
+  readonly context?: unknown;
+  readonly maxReportSize?: number | null;
+  readonly maxDepth?: number;
+  readonly maxChildren?: number;
+  readonly stackFormat?: 'lines' | 'string';
 }
 
-export interface DiagnosticReport {
-  readonly v: typeof DIAGNOSTIC_REPORT_VERSION;
-  readonly reference: string;
-  readonly kind?: string;
-  readonly name: string;
-  readonly message: string;
-  readonly truncation?: {
-    readonly messageOmitted?: number;
-    readonly nameOmitted?: number;
-    readonly diagnosticsOmitted?: true;
-  };
-  readonly code?: string | number;
-  readonly status?: string | number;
-  readonly timestamp?: string;
-  readonly stack?: DiagnosticValue;
-  readonly details?: DiagnosticValue;
-  readonly context?: DiagnosticValue;
-  readonly cause?: DiagnosticValue;
-  readonly thrown?: DiagnosticValue;
-  readonly messageRenderingError?: DiagnosticValue;
-}
-
-export interface PublicPresentation {
-  readonly code?: string;
-  readonly message?: string;
-  readonly details?: unknown;
-}
-
+/**
+ * What an application discloses about one failure. `code` is the branching
+ * protocol, `reference` correlates with the diagnostic report, `message` is
+ * display text, `as_json` is the selected JSON. `truncated` marks a cut
+ * message or `as_json`.
+ */
 export interface PublicReport {
   readonly v: typeof PUBLIC_REPORT_VERSION;
   readonly reference: string;
   readonly code: string;
   readonly message: string;
-  readonly details?: DiagnosticValue;
-  readonly truncation?: {
-    readonly messageOmitted?: number;
-    readonly detailsOmitted?: true;
-  };
+  readonly as_json?: CorjJsonValue | null;
+  readonly truncated?: true;
 }
 
-export type DecodeDiagnosticReportError = {
-  readonly code: 'INVALID_REPORT' | 'UNSUPPORTED_VERSION';
-  readonly message: string;
-  readonly path?: string;
-};
+/** Per-call overrides of the kind's public policy; `details: null` suppresses the policy's selection. */
+export interface PublicReportOptions {
+  readonly reference?: string;
+  readonly code?: string;
+  readonly message?: string;
+  readonly details?: unknown;
+}
 
-export type DecodeDiagnosticReportResult =
-  | { readonly success: true; readonly value: DiagnosticReport }
-  | { readonly success: false; readonly error: DecodeDiagnosticReportError };
+/** Result of `decodePublicReport`: a detached report, or the first reason it was rejected and where. */
+export type DecodePublicReportResult =
+  | { readonly ok: true; readonly report: PublicReport }
+  | { readonly ok: false; readonly reason: string; readonly path: string };

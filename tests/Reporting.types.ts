@@ -1,51 +1,58 @@
 import {
-  DecodeDiagnosticReportResult,
+  DecodePublicReportResult,
   DiagnosticReport,
   PublicReport,
+  restoreExpectedValues,
   toDiagnosticReport,
   toPublicReport,
-} from '../src/reporting';
+} from '../src';
 import { defineException } from '../src/typed';
 
 const Failure = defineException({
   tag: 'agent/Failure',
   message: ({ operation }: { operation: string }) => `${operation} failed`,
+  public: { code: 'FAILED', details: ({ operation }) => ({ operation }) },
 });
 const error = new Failure({ details: { operation: 'search' } });
 
-const diagnostic: DiagnosticReport = toDiagnosticReport(error);
-const publicReport: PublicReport = toPublicReport(diagnostic.reference);
+const diagnostic: DiagnosticReport = toDiagnosticReport(error, {
+  context: { requestId: 'req' },
+  maxDepth: 2,
+  maxChildren: 10,
+  maxReportSize: 4096,
+  stackFormat: 'string',
+});
+const version: 'corj/v0.12' | 'corj/v0.12-full' = diagnostic.v;
+const stack: string | string[] | null | undefined = diagnostic.stack;
+const restored: DiagnosticReport = restoreExpectedValues(diagnostic);
+void version;
+void stack;
+void restored;
+
+const publicReport: PublicReport = toPublicReport(error, {
+  code: 'X',
+  message: 'x',
+  details: { a: 1 },
+  reference: diagnostic.reference,
+});
 const reference: string = publicReport.reference;
 void reference;
 
-// Diagnostic fields are absent from the public contract.
 // @ts-expect-error public reports never expose a stack.
 publicReport.stack;
-// @ts-expect-error public reports never expose causes.
-publicReport.cause;
+// @ts-expect-error public reports never expose children.
+publicReport.children;
+// @ts-expect-error diagnostic options do not include redaction.
+toDiagnosticReport(error, { redactKeys: [] });
+// @ts-expect-error public options do not include a stack switch.
+toPublicReport(error, { includeStack: true });
 
-function consume(
-  result: DecodeDiagnosticReportResult,
-): DiagnosticReport | null {
-  if (result.success) {
-    return result.value;
-  }
-  const code: 'INVALID_REPORT' | 'UNSUPPORTED_VERSION' = result.error.code;
-  void code;
+function consume(result: DecodePublicReportResult): PublicReport | null {
+  if (result.ok) return result.report;
+  const reason: string = result.reason;
+  const path: string = result.path;
+  void reason;
+  void path;
   return null;
 }
 void consume;
-
-interface RequestContext {
-  requestId: string;
-}
-const context: RequestContext = { requestId: 'req' };
-toDiagnosticReport(error, {
-  context,
-  includeStack: false,
-  limits: { maxBytes: 4096 },
-});
-// @ts-expect-error public projection accepts only an explicit reference.
-toPublicReport(error);
-// @ts-expect-error diagnostic objects must be projected by reference.
-toPublicReport(diagnostic);

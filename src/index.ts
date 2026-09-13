@@ -1,26 +1,34 @@
 export { defineException, isTypedException } from './typed';
 export type {
-  ExceptionInput,
+  DetailsRecord,
   ExceptionDefinition,
+  ExceptionInput,
+  PublicPolicy,
   TypedException,
   TypedExceptionClass,
 } from './typed';
 export {
-  DIAGNOSTIC_REPORT_VERSION,
-  PUBLIC_REPORT_VERSION,
+  decodePublicReport,
   toDiagnosticReport,
   toPublicReport,
-  decodeDiagnosticReport,
 } from './reporting';
+export {
+  DIAGNOSTIC_REPORT_VERSION,
+  PUBLIC_REPORT_VERSION,
+} from './report-types';
 export type {
-  DiagnosticPrimitive,
-  DiagnosticMarker,
-  DiagnosticValue,
-  DiagnosticLimits,
-  DiagnosticReportOptions,
+  DecodePublicReportResult,
   DiagnosticReport,
-  PublicPresentation,
+  DiagnosticReportOptions,
   PublicReport,
-  DecodeDiagnosticReportError,
-  DecodeDiagnosticReportResult,
-} from './reporting';
+  PublicReportOptions,
+  ReportingError,
+} from './report-types';
+export { APPEX_ERROR_CODES } from './errors';
+export type { AppexErrorCode, AppexTypeError } from './errors';
+export { restoreExpectedValues } from 'caught-object-report-json';
+export type {
+  CorjJsonValue,
+  CorjReport,
+  CorjReportChild,
+} from 'caught-object-report-json';
