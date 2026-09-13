@@ -90,7 +90,12 @@ function describeExport(symbol, checker) {
 }
 
 function section(entry) {
-  const lines = [`### \`${entry.name}\``, '', '```ts', entry.code, '```', ''];
+  // "```ts signature" keeps GitHub's TypeScript highlighting while marking the block as
+  // a signature, not a standalone program: the snippet type-check reads plain ```ts only.
+  const lines = [`### \`${entry.name}\``, ''];
+  // A re-exported type is described by its summary and the upstream link, not by its
+  // declaration text, which names symbols this package does not export.
+  if (!(entry.foreign && !entry.runtime)) lines.push('```ts signature', entry.code, '```', '');
   if (entry.summary) lines.push(entry.summary, '');
   for (const text of entry.throws) lines.push(`Throws: ${text}`, '');
   for (const example of entry.examples) lines.push(example, '');

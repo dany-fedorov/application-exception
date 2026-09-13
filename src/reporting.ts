@@ -136,8 +136,9 @@ function jsonView(
 }
 
 /**
- * Report any caught value for operators: a corj report with `reference`, optional `context`, and `reporting_errors`.
- * Send it to a trusted sink; it contains messages, stacks, and every enumerable property of the error graph.
+ * Report any caught value for operators: a corj report with `reference`,
+ * optional `context`, and `reporting_errors`. Send it to a trusted sink; it
+ * contains messages, stacks, and every enumerable property of the error graph.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`; corj option errors propagate.
  * @example
@@ -211,9 +212,10 @@ function selectPublicDetails(
 }
 
 /**
- * Report a failure to an agent or user: the kind's `public` policy rendered into `code`, `message`, and `as_json`,
- * with the same `reference` as the diagnostic report. Values without a policy get `INTERNAL_ERROR` and a generic
- * message. Nothing is read from the error except its policy inputs.
+ * Report a failure to an agent or user: the kind's `public` policy rendered
+ * into `code`, `message`, and `as_json`, with the same `reference` as the
+ * diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
+ * generic message. Nothing is read from the error except its policy inputs.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
  * @example

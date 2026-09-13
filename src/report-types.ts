@@ -22,9 +22,10 @@ export interface ReportingError {
 }
 
 /**
- * A corj report object (see caught-object-report-json) with three extension fields. `reference` is the occurrence
- * reference shared with the public report. `context` is the normalized `options.context`. `reporting_errors` lists
- * inspection failures (at most 8).
+ * A corj report object (see caught-object-report-json) with three extension
+ * fields. `reference` is the occurrence reference shared with the public
+ * report. `context` is the normalized `options.context`. `reporting_errors`
+ * lists inspection failures (at most 8).
  */
 export type DiagnosticReport = Omit<CorjReport, 'v'> & {
   readonly v: CorjVersion;
@@ -34,9 +35,10 @@ export type DiagnosticReport = Omit<CorjReport, 'v'> & {
 };
 
 /**
- * Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`, and `stackFormat` are corj options with
- * corj's defaults (100,000 bytes, 5, 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside the
- * report budget. `reference` overrides the occurrence reference.
+ * Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
+ * and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
+ * 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
+ * the report budget. `reference` overrides the occurrence reference.
  */
 export interface DiagnosticReportOptions {
   readonly reference?: string;
@@ -48,9 +50,10 @@ export interface DiagnosticReportOptions {
 }
 
 /**
- * What an application discloses about one failure. `code` is the branching protocol, `reference` correlates with the
- * diagnostic report, `message` is display text, `as_json` is the selected JSON. `truncated` marks a cut message or
- * `as_json`.
+ * What an application discloses about one failure. `code` is the branching
+ * protocol, `reference` correlates with the diagnostic report, `message` is
+ * display text, `as_json` is the selected JSON. `truncated` marks a cut
+ * message or `as_json`.
  */
 export interface PublicReport {
   readonly v: typeof PUBLIC_REPORT_VERSION;

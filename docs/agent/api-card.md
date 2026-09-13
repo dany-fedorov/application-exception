@@ -22,7 +22,7 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 
 ### `defineException`
 
-```ts
+```ts signature
 function defineException<Tag extends string>(definition: ExceptionDefinition<Tag>): TypedExceptionClass<Tag>;
 function defineException<Tag extends string, Details extends object>(definition: { readonly tag: Tag; readonly message: (details: Details) => string; readonly idPrefix?: string; readonly public?: PublicPolicy<Details>; } & ([RecordDetails<Details>] extends [never] ? never : unknown)): TypedExceptionClass<Tag, Details>;
 ```
@@ -30,8 +30,9 @@ function defineException<Tag extends string, Details extends object>(definition:
 Define an error kind: a native `Error` subclass with a stable `_tag`, typed
 `details`, an occurrence `id`, and an optional `public` disclosure policy.
 
-Annotate the message renderer's parameter to declare the details type. A string message defines a kind without
-details. Details must be a data-only record: no arrays, functions, accessors, or methods.
+Annotate the message renderer's parameter to declare the details type. A
+string message defines a kind without details. Details must be a data-only
+record: no arrays, functions, accessors, or methods.
 
 Throws: `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`
 
@@ -47,7 +48,7 @@ console.log(error._tag, error.details.tool); // 'tools/Unavailable' 'search'
 
 ### `isTypedException`
 
-```ts
+```ts signature
 function isTypedException(value: unknown): value is TypedException;
 ```
 
@@ -64,12 +65,13 @@ if (caught instanceof Unavailable) console.log(caught.details);
 
 ### `toDiagnosticReport`
 
-```ts
+```ts signature
 function toDiagnosticReport(caught: unknown, options?: DiagnosticReportOptions): DiagnosticReport;
 ```
 
-Report any caught value for operators: a corj report with `reference`, optional `context`, and `reporting_errors`.
-Send it to a trusted sink; it contains messages, stacks, and every enumerable property of the error graph.
+Report any caught value for operators: a corj report with `reference`,
+optional `context`, and `reporting_errors`. Send it to a trusted sink; it
+contains messages, stacks, and every enumerable property of the error graph.
 
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`; corj option errors propagate.
 
@@ -83,13 +85,14 @@ console.error(JSON.stringify(report));
 
 ### `toPublicReport`
 
-```ts
+```ts signature
 function toPublicReport(caught: unknown, options?: PublicReportOptions): PublicReport;
 ```
 
-Report a failure to an agent or user: the kind's `public` policy rendered into `code`, `message`, and `as_json`,
-with the same `reference` as the diagnostic report. Values without a policy get `INTERNAL_ERROR` and a generic
-message. Nothing is read from the error except its policy inputs.
+Report a failure to an agent or user: the kind's `public` policy rendered
+into `code`, `message`, and `as_json`, with the same `reference` as the
+diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
+generic message. Nothing is read from the error except its policy inputs.
 
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
 
@@ -107,7 +110,7 @@ console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTE
 
 ### `decodePublicReport`
 
-```ts
+```ts signature
 function decodePublicReport(value: unknown): DecodePublicReportResult;
 ```
 
@@ -125,7 +128,7 @@ else console.log(decoded.reason, decoded.path);
 
 ### `restoreExpectedValues`
 
-```ts
+```ts signature
 function restoreExpectedValues<T extends Report>(report: T): T;
 ```
 
@@ -135,7 +138,7 @@ Re-exported from caught-object-report-json; field meanings: https://github.com/d
 
 ### `DIAGNOSTIC_REPORT_VERSION`
 
-```ts
+```ts signature
 const DIAGNOSTIC_REPORT_VERSION: "corj/v0.12";
 ```
 
@@ -143,7 +146,7 @@ The `v` of every diagnostic report: corj's report version.
 
 ### `PUBLIC_REPORT_VERSION`
 
-```ts
+```ts signature
 const PUBLIC_REPORT_VERSION: "appex/public/v3";
 ```
 
@@ -151,7 +154,7 @@ The `v` of every public report.
 
 ### `APPEX_ERROR_CODES`
 
-```ts
+```ts signature
 const APPEX_ERROR_CODES: readonly ["APPEX_INVALID_TAG", "APPEX_INVALID_MESSAGE", "APPEX_INVALID_ID_PREFIX", "APPEX_INVALID_PUBLIC_POLICY", "APPEX_INVALID_DETAILS", "APPEX_INVALID_CAUSES", "APPEX_INVALID_OPTIONS", "APPEX_INVALID_REFERENCE", "APPEX_INVALID_PUBLIC_CODE", "APPEX_INVALID_PUBLIC_MESSAGE"];
 ```
 
@@ -161,7 +164,7 @@ Every code an error thrown by this package can carry. Each has a section in docs
 
 ### `AppexErrorCode`
 
-```ts
+```ts signature
 export type AppexErrorCode = (typeof APPEX_ERROR_CODES)[number];
 ```
 
@@ -169,7 +172,7 @@ One of {@link APPEX_ERROR_CODES}.
 
 ### `AppexTypeError`
 
-```ts
+```ts signature
 export type AppexTypeError = TypeError & { readonly code: AppexErrorCode };
 ```
 
@@ -177,7 +180,7 @@ A `TypeError` thrown by this package: `message` is `<code>: <text>; see <url>#<c
 
 ### `DecodePublicReportResult`
 
-```ts
+```ts signature
 export type DecodePublicReportResult =
   | { readonly ok: true; readonly report: PublicReport }
   | { readonly ok: false; readonly reason: string; readonly path: string };
@@ -187,7 +190,7 @@ Result of `decodePublicReport`: a detached report, or the first reason it was re
 
 ### `DetailsRecord`
 
-```ts
+```ts signature
 export type DetailsRecord<Details extends object> = [Details] extends [never]
   ? Readonly<Record<string, never>>
   : Readonly<RecordDetails<Details>>;
@@ -197,7 +200,7 @@ The frozen details record an occurrence exposes. `never` selects the empty recor
 
 ### `DiagnosticReport`
 
-```ts
+```ts signature
 export type DiagnosticReport = Omit<CorjReport, 'v'> & {
   readonly v: CorjVersion;
   readonly reference: string;
@@ -206,13 +209,14 @@ export type DiagnosticReport = Omit<CorjReport, 'v'> & {
 };
 ```
 
-A corj report object (see caught-object-report-json) with three extension fields. `reference` is the occurrence
-reference shared with the public report. `context` is the normalized `options.context`. `reporting_errors` lists
-inspection failures (at most 8).
+A corj report object (see caught-object-report-json) with three extension
+fields. `reference` is the occurrence reference shared with the public
+report. `context` is the normalized `options.context`. `reporting_errors`
+lists inspection failures (at most 8).
 
 ### `DiagnosticReportOptions`
 
-```ts
+```ts signature
 export interface DiagnosticReportOptions {
   readonly reference?: string;
   readonly context?: unknown;
@@ -223,13 +227,14 @@ export interface DiagnosticReportOptions {
 }
 ```
 
-Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`, and `stackFormat` are corj options with
-corj's defaults (100,000 bytes, 5, 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside the
-report budget. `reference` overrides the occurrence reference.
+Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
+and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
+100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
+the report budget. `reference` overrides the occurrence reference.
 
 ### `ExceptionDefinition`
 
-```ts
+```ts signature
 export type ExceptionDefinition<
   Tag extends string,
   Details extends object = never,
@@ -247,7 +252,7 @@ Input of `defineException`. A string `message` defines a kind without details.
 
 ### `ExceptionInput`
 
-```ts
+```ts signature
 export type ExceptionInput<Details extends object = never> = ([
   Details,
 ] extends [never]
@@ -260,7 +265,7 @@ Constructor input. Omitting `Details` selects the constant-message form, whose i
 
 ### `PublicPolicy`
 
-```ts
+```ts signature
 export type PublicPolicy<Details extends object = never> = {
   readonly code: string;
   readonly message?: string | ((details: DetailsRecord<Details>) => string);
@@ -270,12 +275,13 @@ export type PublicPolicy<Details extends object = never> = {
 
 What `toPublicReport` discloses for occurrences of a kind.
 
-`code` is the value an agent branches on. `message` is display text, constant or rendered from the details.
-`details` selects the JSON that becomes `as_json`; return only what the audience may see.
+`code` is the value an agent branches on. `message` is display text, constant
+or rendered from the details. `details` selects the JSON that becomes
+`as_json`; return only what the audience may see.
 
 ### `PublicReport`
 
-```ts
+```ts signature
 export interface PublicReport {
   readonly v: typeof PUBLIC_REPORT_VERSION;
   readonly reference: string;
@@ -286,13 +292,14 @@ export interface PublicReport {
 }
 ```
 
-What an application discloses about one failure. `code` is the branching protocol, `reference` correlates with the
-diagnostic report, `message` is display text, `as_json` is the selected JSON. `truncated` marks a cut message or
-`as_json`.
+What an application discloses about one failure. `code` is the branching
+protocol, `reference` correlates with the diagnostic report, `message` is
+display text, `as_json` is the selected JSON. `truncated` marks a cut
+message or `as_json`.
 
 ### `PublicReportOptions`
 
-```ts
+```ts signature
 export interface PublicReportOptions {
   readonly reference?: string;
   readonly code?: string;
@@ -305,7 +312,7 @@ Per-call overrides of the kind's public policy; `details: null` suppresses the p
 
 ### `ReportingError`
 
-```ts
+```ts signature
 export interface ReportingError {
   readonly stage: CorjErrorStage;
   readonly path: string;
@@ -319,7 +326,7 @@ A problem corj met while inspecting the caught value; `message: null` and friend
 
 ### `TypedException`
 
-```ts
+```ts signature
 export interface TypedException<
   Tag extends string = string,
   Details extends object = object,
@@ -337,7 +344,7 @@ One occurrence: a native `Error` with a stable `_tag`, an `id` used as the repor
 
 ### `TypedExceptionClass`
 
-```ts
+```ts signature
 export type TypedExceptionClass<
   Tag extends string,
   Details extends object = never,
@@ -357,41 +364,17 @@ The constructor `defineException` returns. `tag` is the kind's tag.
 
 ### `CorjJsonValue`
 
-```ts
-export type CorjJsonValue = CorjJsonPrimitive | CorjJsonObject | CorjJsonArray;
-```
-
 Any value that survives `JSON.stringify`: a string, number, boolean, `null`, or an array or object of those.
 
 Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
 
 ### `CorjReport`
 
-```ts
-export type CorjReport = CorjReportBase & {
-    /** Every nested error found through `children_sources`, flattened breadth-first. Absent when there are none. */
-    children?: CorjReportChild[];
-};
-```
-
 The corj report object a `DiagnosticReport` extends: the root node plus its flattened `children`.
 
 Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
 
 ### `CorjReportChild`
-
-```ts
-export type CorjReportChild = CorjReportBase & {
-    /** From `makeReportId`; `"root"` for the root and the discovery index otherwise by default. */
-    id: string;
-    /** JSONPath from the root caught object, e.g. `$.cause.errors[0]`. */
-    path: string;
-    /** Depth in the error tree; the root is `0`. */
-    level: number;
-    /** IDs of this node's direct children. An object seen before is not reported twice: its first ID is referenced instead. */
-    child_ids?: string[];
-};
-```
 
 One node of the flattened error tree in `children`, with its `id`, `path`, `level` and `child_ids`.
 

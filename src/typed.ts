@@ -46,8 +46,9 @@ export type DetailsRecord<Details extends object> = [Details] extends [never]
 /**
  * What `toPublicReport` discloses for occurrences of a kind.
  *
- * `code` is the value an agent branches on. `message` is display text, constant or rendered from the details.
- * `details` selects the JSON that becomes `as_json`; return only what the audience may see.
+ * `code` is the value an agent branches on. `message` is display text, constant
+ * or rendered from the details. `details` selects the JSON that becomes
+ * `as_json`; return only what the audience may see.
  */
 export type PublicPolicy<Details extends object = never> = {
   readonly code: string;
@@ -234,8 +235,9 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
  * Define an error kind: a native `Error` subclass with a stable `_tag`, typed
  * `details`, an occurrence `id`, and an optional `public` disclosure policy.
  *
- * Annotate the message renderer's parameter to declare the details type. A string message defines a kind without
- * details. Details must be a data-only record: no arrays, functions, accessors, or methods.
+ * Annotate the message renderer's parameter to declare the details type. A
+ * string message defines a kind without details. Details must be a data-only
+ * record: no arrays, functions, accessors, or methods.
  *
  * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`
  * @example
