@@ -1,21 +1,6 @@
-import Ajv from 'ajv';
-import { PublicReport, toPublicReport } from '../src';
+import { decodePublicReport } from '../src';
 
-const publicReportSchema: object = require('../schemas/public-report-v2.json');
-const validatePublicReport = new Ajv({ strict: true }).compile<PublicReport>(
-  publicReportSchema,
-);
-const MAX_TOOL_IDENTIFIER_LENGTH = 128;
-
-function isToolIdentifier(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= MAX_TOOL_IDENTIFIER_LENGTH
-  );
-}
-
-export interface OperationRetryPolicy {
+export interface RetryPolicy {
   readonly operation: string;
   readonly retryableCodes: readonly string[];
   readonly remainingAttempts: number;
@@ -36,78 +21,67 @@ export type RecoveryAction =
         | 'invalid-report'
         | 'unknown-code'
         | 'retry-budget-exhausted';
+      readonly detail?: string;
     };
 
-export function selectToolFailureReport(
-  reference: string,
-  tool: string,
-): PublicReport {
-  if (!isToolIdentifier(tool)) {
-    throw new TypeError(
-      'tool must be a nonempty string of at most 128 UTF-16 code units',
-    );
-  }
-  return toPublicReport(reference, {
-    code: 'TOOL_UNAVAILABLE',
-    message: 'The requested tool is temporarily unavailable.',
-    details: { tool },
-  });
-}
-
-function selectedTool(report: PublicReport): string | undefined {
-  const details = report.details;
-  if (typeof details !== 'object' || details === null || Array.isArray(details))
+function selectedTool(asJson: unknown): string | undefined {
+  if (typeof asJson !== 'object' || asJson === null || Array.isArray(asJson))
     return undefined;
-  const tool = details['tool'];
-  return isToolIdentifier(tool) ? tool : undefined;
+  const tool = (asJson as Record<string, unknown>)['tool'];
+  return typeof tool === 'string' && tool.length > 0 && tool.length <= 128
+    ? tool
+    : undefined;
 }
 
+/** Decide what to do with a public report received from a tool: retry on a known code within the budget, else escalate. */
 export function chooseRecoveryAction(
   externalValue: unknown,
-  policy: OperationRetryPolicy,
+  policy: RetryPolicy,
 ): RecoveryAction {
-  if (!validatePublicReport(externalValue)) {
+  const decoded = decodePublicReport(externalValue);
+  if (!decoded.ok) {
     return {
       action: 'escalate',
       reference: 'unavailable',
       reason: 'invalid-report',
+      detail: `${decoded.reason} at ${decoded.path}`,
     };
   }
-
-  // The free-form message is display data. It never selects an action.
-  if (!policy.retryableCodes.includes(externalValue.code)) {
-    return {
-      action: 'escalate',
-      reference: externalValue.reference,
-      reason: 'unknown-code',
-    };
+  const { reference, code, as_json } = decoded.report;
+  // The message is display text. Only the code selects an action.
+  if (!policy.retryableCodes.includes(code)) {
+    return { action: 'escalate', reference, reason: 'unknown-code' };
   }
   if (
     !Number.isSafeInteger(policy.remainingAttempts) ||
     policy.remainingAttempts <= 0
   ) {
-    return {
-      action: 'escalate',
-      reference: externalValue.reference,
-      reason: 'retry-budget-exhausted',
-    };
+    return { action: 'escalate', reference, reason: 'retry-budget-exhausted' };
   }
-  const tool = selectedTool(externalValue);
+  const tool = selectedTool(as_json);
   return {
     action: 'retry',
-    reference: externalValue.reference,
+    reference,
     operation: policy.operation,
     remainingAttempts: policy.remainingAttempts - 1,
-    ...(tool !== undefined ? { tool } : {}),
+    ...(tool === undefined ? {} : { tool }),
   };
 }
 
 if (require.main === module) {
-  const report = selectToolFailureReport('AE_example', 'search');
-  const action = chooseRecoveryAction(report, {
-    operation: 'read-only-search',
-    retryableCodes: ['TOOL_UNAVAILABLE'],
-    remainingAttempts: 1,
-  });
+  const action = chooseRecoveryAction(
+    {
+      v: 'appex/public/v3',
+      reference: 'AE_example',
+      code: 'TOOL_UNAVAILABLE',
+      message: 'The requested tool is temporarily unavailable.',
+      as_json: { tool: 'search' },
+    },
+    {
+      operation: 'read-only-search',
+      retryableCodes: ['TOOL_UNAVAILABLE'],
+      remainingAttempts: 1,
+    },
+  );
   process.stdout.write(`${JSON.stringify(action)}\n`);
 }

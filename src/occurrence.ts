@@ -1,4 +1,5 @@
 import { customAlphabet } from 'nanoid';
+import { invalid } from './errors';
 
 const makeOccurrenceIdBody = customAlphabet(
   '0123456789ABCDEFGHJKMNPQRSTVWXYZ',
@@ -21,18 +22,31 @@ export function installCause(
   target: Error,
   input: { readonly cause?: unknown; readonly causes?: readonly unknown[] },
 ): void {
-  const hasCause = Object.prototype.hasOwnProperty.call(input, 'cause');
-  const hasCauses = Object.prototype.hasOwnProperty.call(input, 'causes');
+  let hasCause: boolean;
+  let hasCauses: boolean;
+  let rawCause: unknown;
+  let rawCauses: unknown;
+  try {
+    hasCause = Object.prototype.hasOwnProperty.call(input, 'cause');
+    hasCauses = Object.prototype.hasOwnProperty.call(input, 'causes');
+    rawCause = hasCause ? input.cause : undefined;
+    rawCauses = hasCauses ? input.causes : undefined;
+  } catch {
+    throw invalid('APPEX_INVALID_CAUSES', 'cause could not be inspected');
+  }
   if (hasCause && hasCauses) {
-    throw new TypeError('Provide either cause or causes, not both');
+    throw invalid(
+      'APPEX_INVALID_CAUSES',
+      'provide either cause or causes, not both',
+    );
   }
 
   let shouldInstall = hasCause;
-  let value = input.cause;
+  let value = rawCause;
   if (hasCauses) {
-    const causes = input.causes;
+    const causes = rawCauses;
     if (!Array.isArray(causes))
-      throw new TypeError('Exception causes must be an array');
+      throw invalid('APPEX_INVALID_CAUSES', 'causes must be an array');
     if (causes.length === 1) {
       shouldInstall = true;
       value = causes[0];

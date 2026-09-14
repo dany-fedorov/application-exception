@@ -68,7 +68,10 @@ try {
     'application-exception/package.json',
   );
   assert.equal(installedPackage.version, require('../package.json').version);
-  assert.deepEqual(installedPackage.dependencies, { nanoid: '^3.3.19' });
+  assert.deepEqual(Object.keys(installedPackage.dependencies).sort(), [
+    'caught-object-report-json',
+    'nanoid',
+  ]);
   assert.deepEqual(installedPackage.exports, {
     '.': {
       types: './index.d.ts',
@@ -76,44 +79,36 @@ try {
       default: './index.js',
     },
     './package.json': './package.json',
-    './schemas/diagnostic-report-v2.json':
-      './schemas/diagnostic-report-v2.json',
-    './schemas/public-report-v2.json': './schemas/public-report-v2.json',
+    './schemas/diagnostic-report-v3.json':
+      './schemas/diagnostic-report-v3.json',
+    './schemas/public-report-v3.json': './schemas/public-report-v3.json',
   });
-
-  for (const relativePath of [
-    'README.md',
-    'CHANGELOG.md',
-    'docs/api.md',
-    'docs/agent-recovery.md',
-    'schemas/diagnostic-report-v2.json',
-    'schemas/public-report-v2.json',
-  ]) {
-    assert.equal(
-      fs.existsSync(
-        path.join(
-          consumer,
-          'node_modules',
-          'application-exception',
-          relativePath,
-        ),
-      ),
-      true,
-      `${relativePath} must be included in the tarball`,
-    );
-  }
 
   const installedRoot = path.join(
     consumer,
     'node_modules',
     'application-exception',
   );
-  for (const relativePath of [
+  const packagedMarkdown = [
     'README.md',
     'CHANGELOG.md',
-    'docs/api.md',
-    'docs/agent-recovery.md',
+    'AGENTS.md',
+    'docs/agent/api-card.md',
+    'docs/agent/recipes.md',
+    'docs/agent/errors.md',
+  ];
+  for (const relativePath of [
+    ...packagedMarkdown,
+    'schemas/diagnostic-report-v3.json',
+    'schemas/public-report-v3.json',
   ]) {
+    assert.equal(
+      fs.existsSync(path.join(installedRoot, relativePath)),
+      true,
+      `${relativePath} must be included in the tarball`,
+    );
+  }
+  for (const relativePath of packagedMarkdown) {
     const markdownPath = path.join(installedRoot, relativePath);
     const markdown = fs.readFileSync(markdownPath, 'utf8');
     for (const match of markdown.matchAll(/\]\(([^)]+)\)/g)) {
@@ -127,29 +122,18 @@ try {
     }
   }
 
-  const before = new Set(Object.keys(require.cache));
   const api = consumerRequire('application-exception');
-  const loadedByRoot = Object.keys(require.cache).filter(
-    (modulePath) => !before.has(modulePath),
-  );
   assert.deepEqual(Object.keys(api).sort(), [
+    'APPEX_ERROR_CODES',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
-    'decodeDiagnosticReport',
+    'decodePublicReport',
     'defineException',
     'isTypedException',
+    'restoreExpectedValues',
     'toDiagnosticReport',
     'toPublicReport',
   ]);
-  assert.equal(
-    loadedByRoot.some((modulePath) =>
-      ['handlebars', 'pojo-constructor', 'caught-object-report-json'].some(
-        (dependency) =>
-          modulePath.includes(`${path.sep}${dependency}${path.sep}`),
-      ),
-    ),
-    false,
-  );
   assert.throws(
     () => consumerRequire('application-exception/typed'),
     /not defined|not exported/i,
@@ -158,68 +142,60 @@ try {
   const Failure = api.defineException({
     tag: 'agent/ToolFailure',
     message: ({ tool }) => `${tool} failed`,
-  });
-  const Unavailable = api.defineException({
-    tag: 'agent/Unavailable',
-    message: 'Unavailable',
+    public: { code: 'TOOL_FAILED', details: ({ tool }) => ({ tool }) },
   });
   const cause = new Error('connection refused');
   const error = new Failure({ details: { tool: 'search' }, cause });
-  const unavailable = new Unavailable();
   assert.equal(error instanceof Error, true);
   assert.equal(error instanceof Failure, true);
   assert.equal(error._tag, 'agent/ToolFailure');
+  assert.equal(error.name, 'agent/ToolFailure');
   assert.equal(error.message, 'search failed');
   assert.equal(error.cause, cause);
-  assert.equal(unavailable instanceof Error, true);
-  assert.deepEqual(unavailable.details, {});
 
-  let stackPreparations = 0;
-  const originalPrepare = Error.prepareStackTrace;
-  try {
-    Error.prepareStackTrace = () => {
-      stackPreparations++;
-      return 'package-smoke-stack';
-    };
-    const stackError = new Failure({ details: { tool: 'index' } });
-    const withoutStack = api.toDiagnosticReport(stackError);
-    assert.equal(withoutStack.stack, undefined);
-    assert.equal(stackPreparations, 0);
-    const withStack = api.toDiagnosticReport(stackError, {
-      includeStack: true,
-    });
-    assert.equal(withStack.stack, 'package-smoke-stack');
-    assert.equal(stackPreparations, 1);
-  } finally {
-    Error.prepareStackTrace = originalPrepare;
-  }
-
-  const diagnostic = api.toDiagnosticReport(error);
-  const decoded = api.decodeDiagnosticReport(diagnostic);
-  assert.equal(decoded.success, true);
-  assert.deepEqual(decoded.success && decoded.value, diagnostic);
-  const publicReport = api.toPublicReport(diagnostic.reference, {
-    code: 'TOOL_UNAVAILABLE',
-    details: { tool: error.details.tool },
+  const diagnostic = api.toDiagnosticReport(error, { context: { runId: 'r' } });
+  const publicReport = api.toPublicReport(error);
+  assert.equal(diagnostic.v, 'corj/v0.12');
+  assert.equal(diagnostic.reference, error.id);
+  assert.equal(publicReport.reference, error.id);
+  assert.deepEqual(publicReport, {
+    v: 'appex/public/v3',
+    reference: error.id,
+    code: 'TOOL_FAILED',
+    message: 'Something went wrong',
+    as_json: { tool: 'search' },
   });
-  assert.equal(publicReport.reference, diagnostic.reference);
-  assert.equal(publicReport.message, 'Something went wrong');
-
-  const Ajv = require('ajv');
-  const diagnosticSchema = consumerRequire(
-    'application-exception/schemas/diagnostic-report-v2.json',
-  );
-  const publicSchema = consumerRequire(
-    'application-exception/schemas/public-report-v2.json',
-  );
-  const ajv = new Ajv({ strict: true });
+  assert.equal(api.restoreExpectedValues(diagnostic).message, 'search failed');
   assert.equal(
-    ajv.validate(diagnosticSchema, diagnostic),
+    api.decodePublicReport(JSON.parse(JSON.stringify(publicReport))).ok,
+    true,
+  );
+  assert.equal(api.toPublicReport(new Error('x')).code, 'INTERNAL_ERROR');
+  assert.throws(
+    () => api.toPublicReport(error, { code: '' }),
+    (thrown) =>
+      thrown instanceof TypeError &&
+      thrown.code === 'APPEX_INVALID_PUBLIC_CODE' &&
+      /docs\/agent\/errors\.md#appex_invalid_public_code/.test(thrown.message),
+  );
+
+  const Ajv2020 = require('ajv/dist/2020');
+  const ajv = new Ajv2020({ strict: true });
+  assert.equal(
+    ajv.validate(
+      consumerRequire(
+        'application-exception/schemas/diagnostic-report-v3.json',
+      ),
+      JSON.parse(JSON.stringify(diagnostic)),
+    ),
     true,
     ajv.errorsText(),
   );
   assert.equal(
-    ajv.validate(publicSchema, publicReport),
+    ajv.validate(
+      consumerRequire('application-exception/schemas/public-report-v3.json'),
+      publicReport,
+    ),
     true,
     ajv.errorsText(),
   );
@@ -227,37 +203,32 @@ try {
   fs.writeFileSync(
     path.join(consumer, 'consumer.ts'),
     [
-      "import { defineException, toDiagnosticReport, toPublicReport } from 'application-exception';",
+      "import { defineException, toDiagnosticReport, toPublicReport, decodePublicReport } from 'application-exception';",
+      "import type { DiagnosticReport, PublicReport } from 'application-exception';",
       '// @ts-expect-error legacy root API was removed',
-      "import { AppEx } from 'application-exception';",
-      '// @ts-expect-error the typed subpath was removed',
-      "import { defineException as oldDefineException } from 'application-exception/typed';",
+      "import { decodeDiagnosticReport } from 'application-exception';",
       '',
       'const Failure = defineException({',
       "  tag: 'agent/Failure',",
       '  message: ({ tool }: { tool: string }) => `${tool} failed`,',
+      "  public: { code: 'TOOL_FAILED', details: ({ tool }) => ({ tool }) },",
       '});',
       "const error = new Failure({ details: { tool: 'search' } });",
       "const tag: 'agent/Failure' = error._tag;",
-      'const reference: string = toDiagnosticReport(error).reference;',
-      "toPublicReport(reference, { code: 'TOOL_FAILED' });",
+      'const diagnostic: DiagnosticReport = toDiagnosticReport(error);',
+      'const response: PublicReport = toPublicReport(error);',
+      'const decoded = decodePublicReport(response);',
+      'if (decoded.ok) void decoded.report.code;',
       '// @ts-expect-error details are required',
       'new Failure();',
-      '// @ts-expect-error inferred details reject missing fields',
-      'new Failure({ details: {} });',
       '// @ts-expect-error inferred details reject excess fields',
       "new Failure({ details: { tool: 'search', extra: true } });",
-      '// @ts-expect-error cause and causes are mutually exclusive',
-      "new Failure({ details: { tool: 'search' }, cause: new Error(), causes: [] });",
-      'const Unavailable = defineException({',
-      "  tag: 'agent/Unavailable',",
-      "  message: 'Unavailable',",
-      '});',
-      'new Unavailable();',
-      'new Unavailable({ cause: undefined });',
+      '// @ts-expect-error diagnostic reports are not public reports',
+      'const wrong: PublicReport = diagnostic;',
       'void tag;',
-      'void AppEx;',
-      'void oldDefineException;',
+      'void response;',
+      'void wrong;',
+      'void decodeDiagnosticReport;',
       '',
     ].join('\n'),
   );

@@ -1,103 +1,76 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import Ajv from 'ajv';
-import {
-  decodeDiagnosticReport,
-  toDiagnosticReport,
-  toPublicReport,
-} from '../src';
+import Ajv2020 from 'ajv/dist/2020';
+import { CORJ_VERSION } from 'caught-object-report-json';
+import { toDiagnosticReport, toPublicReport } from '../src/reporting';
+import { defineException } from '../src/typed';
 
-const loadSchema = (name: string): object =>
-  JSON.parse(
-    fs.readFileSync(path.join(__dirname, '..', 'schemas', name), 'utf8'),
-  ) as object;
+const diagnosticSchema = require('../schemas/diagnostic-report-v3.json') as {
+  $defs: { appexExtension: { properties: { v: { enum: string[] } } } };
+};
+const publicSchema: object = require('../schemas/public-report-v3.json');
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+const validateDiagnostic = ajv.compile(diagnosticSchema);
+const validatePublic = ajv.compile(publicSchema);
 
-describe('v2 report schemas', () => {
-  const ajv = new Ajv({ allErrors: true, strict: true });
-  const diagnosticSchema = loadSchema('diagnostic-report-v2.json');
-  const publicSchema = loadSchema('public-report-v2.json');
-  const validateDiagnostic = ajv.compile(diagnosticSchema);
-  const validatePublic = ajv.compile(publicSchema);
+const ToolUnavailable = defineException({
+  tag: 'tools/Unavailable',
+  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+  public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
+});
 
-  test('accepts producer reports including non-BMP and marker-shaped data', () => {
-    const diagnostic = toDiagnosticReport('failure 😀', {
-      context: { glyph: '😀', applicationData: { $appex: 'custom-value' } },
-    });
-    const publicReport = toPublicReport(diagnostic.reference, {
-      code: 'FAILURE',
-      details: { glyph: '😀', applicationData: { $appex: 'custom-value' } },
-    });
-
-    expect(validateDiagnostic(diagnostic)).toBe(true);
-    expect(validatePublic(publicReport)).toBe(true);
-    expect(decodeDiagnosticReport(diagnostic)).toEqual({
-      success: true,
-      value: diagnostic,
-    });
+describe('shipped schemas', () => {
+  test('embed the installed corj version', () => {
+    expect(diagnosticSchema.$defs.appexExtension.properties.v.enum).toContain(
+      CORJ_VERSION,
+    );
   });
 
-  test.each([
-    {
-      v: 'appex/diagnostic/v1',
-      reference: 'AE_old',
-      name: 'Error',
-      message: 'old',
-    },
-    {
-      v: 'appex/diagnostic/v2',
-      reference: 'AE_unknown',
-      name: 'Error',
-      message: 'failed',
-      unknown: true,
-    },
-    {
-      v: 'appex/diagnostic/v2',
-      reference: 'AE_bad_truncation',
-      name: 'Error',
-      message: 'failed',
-      truncation: { codeOmitted: 1 },
-    },
-    {
-      v: 'appex/diagnostic/v2',
-      reference: 'AE_empty_truncation',
-      name: 'Error',
-      message: 'failed',
-      truncation: {},
-    },
-  ])('rejects malformed diagnostic envelope %#', (value) => {
-    expect(validateDiagnostic(value)).toBe(false);
-    expect(decodeDiagnosticReport(value).success).toBe(false);
+  test('accept generated diagnostic reports', () => {
+    const error = new ToolUnavailable({
+      details: { tool: 'search' },
+      causes: [new Error('a'), Object.assign(new Error('b'), { code: 1 })],
+    });
+    Object.defineProperty(error, 'stack', {
+      get() {
+        throw new Error('stack boom');
+      },
+    });
+    const report = JSON.parse(
+      JSON.stringify(
+        toDiagnosticReport(error, {
+          context: { runId: 'run-1' },
+          maxReportSize: 2048,
+        }),
+      ),
+    ) as unknown;
+    expect(validateDiagnostic(report)).toBe(true);
+    for (const caught of ['text', 42, null, undefined, { plain: true }]) {
+      expect(
+        validateDiagnostic(
+          JSON.parse(JSON.stringify(toDiagnosticReport(caught))),
+        ),
+      ).toBe(true);
+    }
   });
 
-  test.each([
-    {
-      v: 'appex/public/v1',
-      reference: 'AE_old',
-      code: 'FAILURE',
-      message: 'old',
-    },
-    {
-      v: 'appex/public/v2',
-      reference: 'AE_unknown',
-      code: 'FAILURE',
-      message: 'failed',
-      unknown: true,
-    },
-    {
-      v: 'appex/public/v2',
-      reference: 'AE_bad_truncation',
-      code: 'FAILURE',
-      message: 'failed',
-      truncation: { diagnosticsOmitted: true },
-    },
-    {
-      v: 'appex/public/v2',
-      reference: 'AE_empty_truncation',
-      code: 'FAILURE',
-      message: 'failed',
-      truncation: {},
-    },
-  ])('rejects malformed public envelope %#', (value) => {
-    expect(validatePublic(value)).toBe(false);
+  test('reject diagnostic reports without the extension contract', () => {
+    const report = toDiagnosticReport(new Error('x'));
+    expect(validateDiagnostic({ ...report, reference: undefined })).toBe(false);
+    expect(validateDiagnostic({ ...report, reference: '' })).toBe(false);
+    expect(validateDiagnostic({ ...report, v: 'corj/v0.11' })).toBe(false);
+    expect(validateDiagnostic({ ...report, reporting_errors: [{}] })).toBe(
+      false,
+    );
+    expect(validateDiagnostic({ ...report, context: undefined })).toBe(true);
+  });
+
+  test('accept generated public reports and reject additions', () => {
+    const error = new ToolUnavailable({ details: { tool: 'search' } });
+    const report = toPublicReport(error, { message: 'm'.repeat(5000) });
+    expect(validatePublic(JSON.parse(JSON.stringify(report)))).toBe(true);
+    expect(validatePublic(toPublicReport('x'))).toBe(true);
+    expect(validatePublic({ ...report, stack: [] })).toBe(false);
+    expect(validatePublic({ ...report, truncated: false })).toBe(false);
+    expect(validatePublic({ ...report, code: '' })).toBe(false);
+    expect(validatePublic({ ...report, v: 'appex/public/v2' })).toBe(false);
   });
 });

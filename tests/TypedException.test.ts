@@ -1,8 +1,7 @@
 import { defineException, isTypedException } from '../src/typed';
-import {
-  getMessageRenderingFailure,
-  getTypedExceptionView,
-} from '../src/typed-internals';
+import { publicPolicyOf } from '../src/typed-internals';
+
+const code = (value: string) => expect.objectContaining({ code: value });
 
 describe('defineException', () => {
   const UserAlreadyExists = defineException({
@@ -22,6 +21,8 @@ describe('defineException', () => {
     expect(error).toBeInstanceOf(UserAlreadyExists);
     expect(error._tag).toBe('UserAlreadyExists');
     expect(error.name).toBe('UserAlreadyExists');
+    expect(UserAlreadyExists.name).toBe('UserAlreadyExists');
+    expect(UserAlreadyExists.tag).toBe('UserAlreadyExists');
     expect(error.message).toBe(
       'An account already exists for ada@example.test',
     );
@@ -30,6 +31,26 @@ describe('defineException', () => {
     expect(Date.parse(error.timestamp)).toBeLessThanOrEqual(after);
     expect(isTypedException(error)).toBe(true);
     expect(isTypedException({ _tag: 'UserAlreadyExists' })).toBe(false);
+  });
+
+  test('exposes only occurrence data as enumerable own properties', () => {
+    const error = new UserAlreadyExists({
+      details: { email: 'ada@example.test' },
+      cause: new Error('unique constraint'),
+    });
+    expect(Object.keys(error).sort()).toEqual([
+      '_tag',
+      'details',
+      'id',
+      'timestamp',
+    ]);
+    expect(Object.prototype.hasOwnProperty.call(error, 'name')).toBe(false);
+    expect(String(error)).toBe(
+      'UserAlreadyExists: An account already exists for ada@example.test',
+    );
+    expect(error.stack?.split('\n')[0]).toBe(
+      'UserAlreadyExists: An account already exists for ada@example.test',
+    );
   });
 
   test('copies and shallow-freezes details while preserving nested identity', () => {
@@ -96,23 +117,14 @@ describe('defineException', () => {
       causes: [first, second],
     });
 
-    expect((error.cause as Error).constructor.name).toBe('AggregateError');
-    expect((error.cause as Error & { errors: unknown[] }).errors).toEqual([
-      first,
-      second,
-    ]);
+    expect(error.cause).toBeInstanceOf(AggregateError);
+    expect((error.cause as AggregateError).errors).toEqual([first, second]);
+    expect((error.cause as AggregateError).message).toBe(
+      'UserAlreadyExists has multiple causes',
+    );
   });
 
-  test('treats an empty cause list as no cause', () => {
-    const error = new UserAlreadyExists({
-      details: { email: 'ada@example.test' },
-      causes: [],
-    });
-
-    expect(Object.prototype.hasOwnProperty.call(error, 'cause')).toBe(false);
-  });
-
-  test('rejects simultaneous cause forms at runtime', () => {
+  test('rejects simultaneous cause forms with a coded error', () => {
     expect(
       () =>
         new UserAlreadyExists({
@@ -120,30 +132,58 @@ describe('defineException', () => {
           cause: new Error('first'),
           causes: [new Error('second')],
         } as never),
-    ).toThrow('Provide either cause or causes, not both');
+    ).toThrow(code('APPEX_INVALID_CAUSES'));
   });
 
-  test('keeps the occurrence when message rendering fails', () => {
-    const renderingFailure = new Error('renderer failed');
-    const consoleWarn = jest
-      .spyOn(console, 'warn')
-      .mockImplementation(() => undefined);
+  test('keeps the occurrence and explains the failure when rendering throws', () => {
     const BrokenMessage = defineException({
       tag: 'agent/BrokenMessage',
       message: (_details: { operation: string }) => {
-        throw renderingFailure;
+        throw new Error('renderer failed');
+      },
+    });
+    const ReturnsNumber = defineException({
+      tag: 'agent/ReturnsNumber',
+      message: (_details: { operation: string }) => 42 as unknown as string,
+    });
+    const ThrowsUnprintable = defineException({
+      tag: 'agent/ThrowsUnprintable',
+      message: (_details: { operation: string }) => {
+        throw {
+          toString() {
+            throw new Error('no string form');
+          },
+        };
       },
     });
 
-    const error = new BrokenMessage({ details: { operation: 'search' } });
+    expect(
+      new BrokenMessage({ details: { operation: 'search' } }).message,
+    ).toBe(
+      'agent/BrokenMessage [message rendering failed: Error: renderer failed]',
+    );
+    expect(
+      new ReturnsNumber({ details: { operation: 'search' } }).message,
+    ).toBe(
+      'agent/ReturnsNumber [message rendering failed: renderer returned number]',
+    );
+    expect(
+      new ThrowsUnprintable({ details: { operation: 'search' } }).message,
+    ).toBe(
+      'agent/ThrowsUnprintable [message rendering failed: [unprintable value]]',
+    );
+  });
 
-    expect(error.message).toBe('agent/BrokenMessage');
-    expect(getMessageRenderingFailure(error)).toEqual({
-      present: true,
-      value: renderingFailure,
+  test('bounds the rendering failure description', () => {
+    const Long = defineException({
+      tag: 'Long',
+      message: (_details: {}) => {
+        throw 'x'.repeat(1000);
+      },
     });
-    expect(consoleWarn).not.toHaveBeenCalled();
-    consoleWarn.mockRestore();
+    expect(new Long({ details: {} }).message).toHaveLength(
+      'Long [message rendering failed: ]'.length + 256,
+    );
   });
 
   test('rejects hostile proxies without throwing during narrowing', () => {
@@ -166,34 +206,31 @@ describe('defineException', () => {
     expect(isTypedException(forged)).toBe(false);
   });
 
-  test('rejects invalid runtime definitions', () => {
+  test('rejects invalid runtime definitions with coded errors', () => {
     expect(() =>
       defineException({
         tag: '',
         message: (_details: Record<string, never>) => 'failed',
       }),
-    ).toThrow('Exception tag must be a non-empty string');
+    ).toThrow(code('APPEX_INVALID_TAG'));
     expect(() =>
-      defineException({
-        tag: 'ValidTag',
-        message: 123,
-      } as never),
-    ).toThrow('Exception message must be a string or function');
+      defineException({ tag: 'ValidTag', message: 123 } as never),
+    ).toThrow(code('APPEX_INVALID_MESSAGE'));
   });
 
   test('rejects non-record details from JavaScript callers', () => {
+    const invalidDetails = code('APPEX_INVALID_DETAILS');
     expect(() => new UserAlreadyExists({ details: null } as never)).toThrow(
-      'Exception details must be a non-array object',
+      invalidDetails,
     );
     expect(() => new UserAlreadyExists({ details: [] } as never)).toThrow(
-      'Exception details must be a non-array object',
+      invalidDetails,
     );
+    expect(() => new UserAlreadyExists(null as never)).toThrow(invalidDetails);
+    expect(() => new UserAlreadyExists([] as never)).toThrow(invalidDetails);
     expect(
       () => new UserAlreadyExists({ details: new Date() } as never),
-    ).toThrow('Exception details must have a data-only object prototype');
-    expect(
-      () => new UserAlreadyExists({ details: new ArrayBuffer(8) } as never),
-    ).toThrow('Exception details must have a data-only object prototype');
+    ).toThrow(invalidDetails);
     class DetailsWithMethod {
       describe(): string {
         return 'not copied';
@@ -202,7 +239,7 @@ describe('defineException', () => {
     expect(
       () =>
         new UserAlreadyExists({ details: new DetailsWithMethod() } as never),
-    ).toThrow('Exception details must have a data-only object prototype');
+    ).toThrow(invalidDetails);
     class DetailsWithFunctionField {
       readonly operation = 'search';
       readonly describe = () => this.operation;
@@ -212,7 +249,109 @@ describe('defineException', () => {
         new UserAlreadyExists({
           details: new DetailsWithFunctionField(),
         } as never),
-    ).toThrow('Exception details must contain enumerable data properties');
+    ).toThrow(invalidDetails);
+    const withAccessor = Object.defineProperty({}, 'email', {
+      get: () => 'ada',
+      enumerable: true,
+    });
+    expect(
+      () => new UserAlreadyExists({ details: withAccessor } as never),
+    ).toThrow(invalidDetails);
+    const hidden = Object.defineProperty({}, 'email', {
+      value: 'ada',
+      enumerable: false,
+    });
+    expect(() => new UserAlreadyExists({ details: hidden } as never)).toThrow(
+      invalidDetails,
+    );
+    const lying = new Proxy(
+      {},
+      {
+        ownKeys: () => ['email'],
+        getOwnPropertyDescriptor: () => undefined,
+      },
+    );
+    expect(() => new UserAlreadyExists({ details: lying } as never)).toThrow(
+      invalidDetails,
+    );
+    const uninspectable = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error('no keys for you');
+        },
+      },
+    );
+    expect(
+      () => new UserAlreadyExists({ details: uninspectable } as never),
+    ).toThrow(invalidDetails);
+    const revokedDetails = Proxy.revocable({}, {});
+    revokedDetails.revoke();
+    expect(
+      () => new UserAlreadyExists({ details: revokedDetails.proxy } as never),
+    ).toThrow(invalidDetails);
+    const revokedInput = Proxy.revocable({}, {});
+    revokedInput.revoke();
+    expect(() => new UserAlreadyExists(revokedInput.proxy as never)).toThrow(
+      invalidDetails,
+    );
+    const unreadableInput = new Proxy(
+      {},
+      {
+        get() {
+          throw new TypeError('native-like');
+        },
+      },
+    );
+    expect(() => new UserAlreadyExists(unreadableInput as never)).toThrow(
+      invalidDetails,
+    );
+    const nativeThrowingPrototype = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new TypeError('native-like');
+        },
+      },
+    );
+    expect(
+      () =>
+        new UserAlreadyExists({ details: nativeThrowingPrototype } as never),
+    ).toThrow(invalidDetails);
+  });
+
+  test('does not let a hostile trap forge an APPEX code', () => {
+    const forging = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw Object.assign(new TypeError('fake'), {
+            code: 'APPEX_INVALID_TAG',
+          });
+        },
+      },
+    );
+    expect(() => new UserAlreadyExists({ details: forging } as never)).toThrow(
+      code('APPEX_INVALID_DETAILS'),
+    );
+    const uninspectableFailure = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Proxy(
+            {},
+            {
+              getPrototypeOf() {
+                throw new TypeError('no prototype for you');
+              },
+            },
+          );
+        },
+      },
+    );
+    expect(
+      () => new UserAlreadyExists({ details: uninspectableFailure } as never),
+    ).toThrow(code('APPEX_INVALID_DETAILS'));
   });
 
   test('copies enumerable data from a data-only class without its prototype', () => {
@@ -228,6 +367,63 @@ describe('defineException', () => {
 
     expect(error.details).toEqual({ operation: 'search' });
     expect(error.details).not.toBeInstanceOf(DataOnlyDetails);
+  });
+});
+
+describe('public policy', () => {
+  test('validates and stores the policy on each instance', () => {
+    const ToolUnavailable = defineException({
+      tag: 'tools/Unavailable',
+      message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+      public: {
+        code: 'TOOL_UNAVAILABLE',
+        message: ({ tool }) => `${tool} is unavailable`,
+        details: ({ tool }) => ({ tool }),
+      },
+    });
+    const error = new ToolUnavailable({ details: { tool: 'search' } });
+    const policy = publicPolicyOf(error);
+    expect(policy?.code).toBe('TOOL_UNAVAILABLE');
+    expect(typeof policy?.message).toBe('function');
+    expect(policy?.details?.(error.details)).toEqual({ tool: 'search' });
+  });
+
+  test('accepts a constant public message and no details selector', () => {
+    const Unavailable = defineException({
+      tag: 'Unavailable',
+      message: 'Unavailable',
+      public: { code: 'UNAVAILABLE', message: 'Try again later.' },
+    });
+    expect(publicPolicyOf(new Unavailable())).toEqual({
+      code: 'UNAVAILABLE',
+      message: 'Try again later.',
+    });
+    const CodeOnly = defineException({
+      tag: 'CodeOnly',
+      message: 'code only',
+      public: { code: 'CODE_ONLY' },
+    });
+    expect(publicPolicyOf(new CodeOnly())).toEqual({ code: 'CODE_ONLY' });
+  });
+
+  test.each([
+    ['not an object', 'public'],
+    ['an array', []],
+    ['null', null],
+    ['missing code', {}],
+    ['empty code', { code: '' }],
+    ['long code', { code: 'x'.repeat(129) }],
+    ['non-string code', { code: 42 }],
+    ['non-string message', { code: 'X', message: 42 }],
+    ['non-function details', { code: 'X', details: {} }],
+  ])('rejects %s public policies', (_label, policy) => {
+    expect(() =>
+      defineException({
+        tag: 'Failure',
+        message: 'failure',
+        public: policy as never,
+      }),
+    ).toThrow(code('APPEX_INVALID_PUBLIC_POLICY'));
   });
 });
 
@@ -262,9 +458,9 @@ describe('typed construction boundaries', () => {
     expect(error.message).toBe('first');
     expect(error.id).toMatch(/^FIRST_/);
   });
-  test.each(['', ' ', 'x'.repeat(129)])('rejects invalid tag %p', (tag) => {
-    expect(() => defineException({ tag, message: 'failure' })).toThrow(
-      TypeError,
+  test.each(['', ' ', 'x'.repeat(129), 42])('rejects invalid tag %p', (tag) => {
+    expect(() => defineException({ tag, message: 'failure' } as never)).toThrow(
+      code('APPEX_INVALID_TAG'),
     );
   });
   test.each(['', ' ', 'x'.repeat(33), 42])(
@@ -276,7 +472,7 @@ describe('typed construction boundaries', () => {
           message: 'failure',
           idPrefix,
         } as never),
-      ).toThrow(TypeError);
+      ).toThrow(code('APPEX_INVALID_ID_PREFIX'));
     },
   );
   test('accepts identifier limits', () => {
@@ -291,7 +487,9 @@ describe('typed construction boundaries', () => {
     'rejects non-array causes %p',
     (causes) => {
       const Kind = defineException({ tag: 'Failure', message: 'failure' });
-      expect(() => new Kind({ causes } as never)).toThrow(TypeError);
+      expect(() => new Kind({ causes } as never)).toThrow(
+        code('APPEX_INVALID_CAUSES'),
+      );
     },
   );
   test('collapses a single-element causes array without wrapping', () => {
@@ -314,7 +512,9 @@ describe('typed construction boundaries', () => {
         return Reflect.getOwnPropertyDescriptor(target, key);
       },
     });
-    expect(() => new Kind({ details: proxy })).toThrow(TypeError);
+    expect(() => new Kind({ details: proxy })).toThrow(
+      code('APPEX_INVALID_DETAILS'),
+    );
     expect(reads).toBe(0);
     delete wide['1000'];
     expect(Object.keys(new Kind({ details: wide }).details)).toHaveLength(1000);
@@ -328,7 +528,7 @@ describe('typed construction boundaries', () => {
     for (let i = 0; i < 32; i++) value = Object.create(value) as object;
     expect(() => new Kind({ details: value })).not.toThrow();
     expect(() => new Kind({ details: Object.create(value) as object })).toThrow(
-      TypeError,
+      code('APPEX_INVALID_DETAILS'),
     );
     let reads = 0;
     const cyclic: object = new Proxy(
@@ -341,7 +541,9 @@ describe('typed construction boundaries', () => {
         },
       },
     );
-    expect(() => new Kind({ details: cyclic })).toThrow(TypeError);
+    expect(() => new Kind({ details: cyclic })).toThrow(
+      code('APPEX_INVALID_DETAILS'),
+    );
     expect(reads).toBeLessThanOrEqual(33);
   });
   test('does not format a native stack during construction', () => {
@@ -361,21 +563,7 @@ describe('typed construction boundaries', () => {
       Error.prepareStackTrace = original;
     }
   });
-  test('records thrown undefined separately from successful rendering', () => {
-    const Broken = defineException({
-      tag: 'Broken',
-      message: (_details: {}) => {
-        throw undefined;
-      },
-    });
-    const Good = defineException({ tag: 'Good', message: 'good' });
-    expect(getMessageRenderingFailure(new Broken({ details: {} }))).toEqual({
-      present: true,
-      value: undefined,
-    });
-    expect(getMessageRenderingFailure(new Good())).toEqual({ present: false });
-  });
-  test('provides a descriptor-only foreign-copy view without granting local trust', () => {
+  test('does not grant local trust to another copy of the module', () => {
     let foreign: unknown;
     jest.isolateModules(() => {
       const copy = require('../src/typed') as typeof import('../src/typed');
@@ -383,20 +571,6 @@ describe('typed construction boundaries', () => {
       foreign = new Kind();
     });
     expect(isTypedException(foreign)).toBe(false);
-    expect(getTypedExceptionView(foreign)).toMatchObject({
-      tag: 'Foreign',
-      details: {},
-      id: expect.stringMatching(/^AE_/),
-    });
-    let reads = 0;
-    const hostile = {
-      [Symbol.for('application-exception/TypedException')]: true,
-      get _tag() {
-        reads++;
-        return 'Forged';
-      },
-    };
-    expect(getTypedExceptionView(hostile)).toBeUndefined();
-    expect(reads).toBe(0);
+    expect((foreign as { _tag: string })._tag).toBe('Foreign');
   });
 });

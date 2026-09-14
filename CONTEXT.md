@@ -1,42 +1,54 @@
 # Application Exception
 
-Application failures have a kind, an occurrence, and information selected for
-diagnostic or public reporting.
+Application failures have a kind, an occurrence, and two reports selected for
+different audiences.
 
 ## Language
 
 **Error kind**:
-A stable category of failure that callers can distinguish and handle. The kind
-does not change when wording, diagnostic details, or a transport changes.
+A stable category of failure that callers distinguish with `instanceof` or the
+literal `_tag`. The kind does not change when wording, details, or a transport
+changes. Defined once with `defineException`.
 _Avoid_: Message, class name, status
 
 **Error occurrence**:
-One particular failure, with its own identity and creation time. Two occurrences
-can have the same kind and details without being the same occurrence.
+One particular failure: an instance of a kind with its own `id` and
+`timestamp`. Two occurrences can share a kind and details.
 
-**Diagnostic details**:
-Facts explaining an occurrence to developers and operators. Their presence on an
-error does not authorize exposing them to an end user.
+**Details**:
+The data-only record a kind declares through its message renderer's parameter
+type. Present on every occurrence, frozen, and included in the diagnostic
+report's `as_json`. Their presence never authorizes disclosure.
 _Avoid_: Public payload
 
-**Display message**:
-Text intentionally written for an end user. Whether it is appropriate to reveal
-still depends on the audience and operation.
+**Occurrence reference**:
+The string that correlates the diagnostic and public reports of one failure:
+the occurrence `id` for typed exceptions, a generated `AE_` id remembered per
+object otherwise. Appears as `reference` on both reports.
 
 **Diagnostic report**:
-A bounded, serializable account of an occurrence and its causes for operational
-use. It is a representation of a failure, not a live failure to execute or throw.
+A caught-object-report-json report of the occurrence and its causes, plus
+`reference`, `context`, and `reporting_errors`. Bounded, serializable, meant for
+trusted sinks. A representation of a failure, not a failure to throw.
+
+**Public policy**:
+The `public` part of a kind definition: the `code` an audience branches on, the
+display `message`, and a `details` selector that returns the JSON to disclose.
+Declared where the details type is known.
 
 **Public report**:
-The information an application chooses to disclose about a failure to a specific
-audience, potentially including a reference to its diagnostic report.
+What the application discloses about one occurrence: `code`, `message`,
+`as_json`, `reference`, `truncated`. Rendered from the public policy or the
+generic default; never read from the error graph.
 
-**Context annotation**:
-Information about where an existing occurrence was observed. Adding context does
-not by itself establish that a different failure occurred.
+**Context**:
+Host facts about where an occurrence was observed (run id, tool, attempt),
+passed to `toDiagnosticReport` and normalized into `report.context`. Adding
+context does not create a different failure.
 _Avoid_: Root cause
 
 **Failure translation**:
-Expressing a lower-level failure as a different error kind meaningful to a caller.
-The original failure remains a cause of the new occurrence.
+Throwing a kind meaningful to the caller with the lower-level failure as its
+`cause`. The original stays reachable and appears under `children` in the
+diagnostic report.
 _Avoid_: Mere wrapper

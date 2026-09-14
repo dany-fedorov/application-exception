@@ -163,6 +163,41 @@ const noDetailsError: TypedException<'app/Unavailable'> = new noDetailsClass(
 );
 void noDetailsDefinition;
 void noDetailsError;
-// @ts-expect-error internal rendering state is not a public API.
-import { getMessageRenderingError } from '../src';
-void getMessageRenderingError;
+
+import type { PublicPolicy } from '../src';
+
+const WithPolicy = defineException({
+  tag: 'tools/Unavailable',
+  message: ({ tool }: { tool: string }) => tool,
+  public: {
+    code: 'TOOL_UNAVAILABLE',
+    message: ({ tool }) => `${tool} is unavailable`,
+    details: ({ tool }) => ({ tool }),
+  },
+});
+new WithPolicy({ details: { tool: 'search' } });
+
+defineException({
+  tag: 'tools/Unavailable',
+  message: ({ tool }: { tool: string }) => tool,
+  public: {
+    code: 'TOOL_UNAVAILABLE',
+    // @ts-expect-error the policy only sees the declared details.
+    details: ({ missing }) => ({ missing }),
+  },
+});
+
+defineException({
+  tag: 'app/Unavailable',
+  message: 'Unavailable',
+  // @ts-expect-error a policy needs a code.
+  public: { message: 'Try later.' },
+});
+
+const constantPolicy: PublicPolicy = { code: 'X', message: 'constant' };
+defineException({ tag: 'X', message: 'x', public: constantPolicy });
+const detailedPolicy: PublicPolicy<{ tool: string }> = {
+  code: 'X',
+  details: ({ tool }) => ({ tool }),
+};
+void detailedPolicy;
