@@ -74,3 +74,4 @@ jobs:
           package: ./npm-module-build/package.json
           strategy: upgrade
           provenance: true
+          token: ${{ secrets.NPM_TOKEN }}
