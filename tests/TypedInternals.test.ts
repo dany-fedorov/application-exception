@@ -37,11 +37,18 @@ describe('typed internals', () => {
     };
     expect(brandedOccurrenceId(branded)).toBe('AE_branded');
     expect(reads).toBe(0);
-    expect(brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: '' })).toBeUndefined();
     expect(
-      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: 'x'.repeat(129) }),
+      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: '' }),
     ).toBeUndefined();
-    expect(brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: 42 })).toBeUndefined();
+    expect(
+      brandedOccurrenceId({
+        [TYPED_EXCEPTION_BRAND]: true,
+        id: 'x'.repeat(129),
+      }),
+    ).toBeUndefined();
+    expect(
+      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: 42 }),
+    ).toBeUndefined();
     expect(brandedOccurrenceId({ id: 'AE_unbranded' })).toBeUndefined();
     expect(brandedOccurrenceId(null)).toBeUndefined();
     expect(brandedOccurrenceId('AE_string')).toBeUndefined();

@@ -34,7 +34,9 @@ describe('toDiagnosticReport', () => {
       details: { tool: 'search', input: { query: 'Ada' } },
     });
     expect(Array.isArray(report.stack)).toBe(true);
-    expect((report.stack as string[])[0]).toBe('agent/ToolFailure: search failed');
+    expect((report.stack as string[])[0]).toBe(
+      'agent/ToolFailure: search failed',
+    );
     expect(report.children).toHaveLength(1);
     expect(report.children?.[0]).toMatchObject({
       id: '0',
@@ -87,17 +89,17 @@ describe('toDiagnosticReport', () => {
   });
 
   test('honors and validates an explicit reference', () => {
-    expect(
-      toDiagnosticReport('x', { reference: 'trace-1' }).reference,
-    ).toBe('trace-1');
+    expect(toDiagnosticReport('x', { reference: 'trace-1' }).reference).toBe(
+      'trace-1',
+    );
     const error = new ToolFailure({ details: { tool: 'a', input: {} } });
     expect(toDiagnosticReport(error, { reference: 'override' }).reference).toBe(
       'override',
     );
     for (const reference of ['', 'x'.repeat(129), 42, null]) {
-      expect(() =>
-        toDiagnosticReport('x', { reference } as never),
-      ).toThrow(code('APPEX_INVALID_REFERENCE'));
+      expect(() => toDiagnosticReport('x', { reference } as never)).toThrow(
+        code('APPEX_INVALID_REFERENCE'),
+      );
     }
   });
 
@@ -118,9 +120,9 @@ describe('toDiagnosticReport', () => {
     expect(toDiagnosticReport(new Error('x'), { context: {} }).context).toEqual(
       {},
     );
-    expect(toDiagnosticReport(new Error('x'), { context: 'run-1' }).context).toBe(
-      'run-1',
-    );
+    expect(
+      toDiagnosticReport(new Error('x'), { context: 'run-1' }).context,
+    ).toBe('run-1');
     expect(
       toDiagnosticReport(new Error('x'), { context: undefined }),
     ).not.toHaveProperty('context');
@@ -151,7 +153,9 @@ describe('toDiagnosticReport', () => {
   });
 
   test('records inspection failures instead of warning to the console', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     const error = new Error('base');
     Object.defineProperty(error, 'message', {
       get() {
@@ -212,10 +216,9 @@ describe('toDiagnosticReport', () => {
     expect(
       typeof toDiagnosticReport(nested, { stackFormat: 'string' }).stack,
     ).toBe('string');
-    const small = toDiagnosticReport(
-      new Error('x'.repeat(2000)),
-      { maxReportSize: 512 },
-    );
+    const small = toDiagnosticReport(new Error('x'.repeat(2000)), {
+      maxReportSize: 512,
+    });
     expect(small.truncated).toBe(true);
     expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThan(700);
     expect(() => toDiagnosticReport('x', { maxDepth: -1 })).toThrow(RangeError);
@@ -227,9 +230,7 @@ describe('toDiagnosticReport', () => {
         code('APPEX_INVALID_OPTIONS'),
       );
     }
-    expect(() =>
-      toDiagnosticReport('x', { maxDepht: 1 } as never),
-    ).toThrow(
+    expect(() => toDiagnosticReport('x', { maxDepht: 1 } as never)).toThrow(
       /APPEX_INVALID_OPTIONS: unknown option "maxDepht"; known options: reference, context, maxReportSize, maxDepth, maxChildren, stackFormat/,
     );
   });

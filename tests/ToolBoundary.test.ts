@@ -26,8 +26,13 @@ describe('tool boundary example', () => {
     });
     expect(JSON.stringify(outcome.response)).not.toContain('10.0.0.7');
     expect(JSON.stringify(outcome.diagnostic)).toContain('10.0.0.7');
-    expect(outcome.diagnostic.context).toEqual({ runId: 'run-1', tool: 'search' });
-    expect(decodePublicReport(JSON.parse(JSON.stringify(outcome.response)))).toEqual({
+    expect(outcome.diagnostic.context).toEqual({
+      runId: 'run-1',
+      tool: 'search',
+    });
+    expect(
+      decodePublicReport(JSON.parse(JSON.stringify(outcome.response))),
+    ).toEqual({
       ok: true,
       report: outcome.response,
     });

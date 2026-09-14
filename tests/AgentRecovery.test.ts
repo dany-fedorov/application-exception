@@ -40,7 +40,11 @@ describe('agent recovery example', () => {
   test('escalates unknown codes and invalid reports', () => {
     expect(
       chooseRecoveryAction({ ...report, code: 'NEW_STATE' }, policy),
-    ).toEqual({ action: 'escalate', reference: 'AE_retry', reason: 'unknown-code' });
+    ).toEqual({
+      action: 'escalate',
+      reference: 'AE_retry',
+      reason: 'unknown-code',
+    });
     expect(chooseRecoveryAction({ v: 'appex/public/v2' }, policy)).toEqual({
       action: 'escalate',
       reference: 'unavailable',
@@ -58,9 +62,7 @@ describe('agent recovery example', () => {
       null,
       undefined,
     ]) {
-      expect(
-        chooseRecoveryAction({ ...report, as_json }, policy),
-      ).toEqual({
+      expect(chooseRecoveryAction({ ...report, as_json }, policy)).toEqual({
         action: 'retry',
         reference: 'AE_retry',
         operation: 'read-only-search',

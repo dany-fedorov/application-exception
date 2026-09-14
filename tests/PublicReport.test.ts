@@ -149,7 +149,9 @@ describe('toPublicReport', () => {
   });
 
   test('discloses nothing and stays silent when details cannot be serialized', () => {
-    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const warn = jest
+      .spyOn(console, 'warn')
+      .mockImplementation(() => undefined);
     const error = new ToolUnavailable({
       details: { tool: 'search', secret: 's' },
     });
@@ -239,7 +241,12 @@ describe('decodePublicReport', () => {
     ['a primitive', 'x', 'Expected an object', '$'],
     ['an array', [], 'Expected an object', '$'],
     ['a class instance', new Date(), 'Expected an object', '$'],
-    ['an unknown field', { ...valid, stack: [] }, 'Unexpected field', '$.stack'],
+    [
+      'an unknown field',
+      { ...valid, stack: [] },
+      'Unexpected field',
+      '$.stack',
+    ],
     [
       'another version',
       { ...valid, v: 'appex/public/v2' },
@@ -270,7 +277,12 @@ describe('decodePublicReport', () => {
       'Expected 0 to 4096 characters',
       '$.message',
     ],
-    ['a false truncated', { ...valid, truncated: false }, 'Expected true', '$.truncated'],
+    [
+      'a false truncated',
+      { ...valid, truncated: false },
+      'Expected true',
+      '$.truncated',
+    ],
     [
       'a non-finite number',
       { ...valid, as_json: { n: Number.NaN } },

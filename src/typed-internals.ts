@@ -59,7 +59,8 @@ export function memoizedReference(
   create: () => string,
 ): string {
   const keyable =
-    (typeof value === 'object' && value !== null) || typeof value === 'function';
+    (typeof value === 'object' && value !== null) ||
+    typeof value === 'function';
   if (!keyable) return create();
   const existing = references.get(value);
   if (existing !== undefined) return existing;

@@ -190,7 +190,8 @@ function ownDetails(caught: unknown): object {
       caught as object,
       'details',
     );
-    const value = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    const value =
+      descriptor && 'value' in descriptor ? descriptor.value : undefined;
     return typeof value === 'object' && value !== null ? (value as object) : {};
   } catch {
     return {};
@@ -300,7 +301,10 @@ function detachJson(
   budget: { values: number },
 ): CorjJsonValue {
   if (++budget.values > DECODE_MAX_VALUES)
-    reject(`as_json exceeds ${DECODE_MAX_VALUES.toLocaleString('en-US')} values`, path);
+    reject(
+      `as_json exceeds ${DECODE_MAX_VALUES.toLocaleString('en-US')} values`,
+      path,
+    );
   if (depth > DECODE_MAX_DEPTH)
     reject(`as_json exceeds depth ${DECODE_MAX_DEPTH}`, path);
   if (value === null || typeof value === 'string' || typeof value === 'boolean')
@@ -372,7 +376,11 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
         PUBLIC_MESSAGE_MAX_LENGTH,
       ),
       ...(value['as_json'] !== undefined
-        ? { as_json: detachJson(value['as_json'], '$.as_json', 0, { values: 0 }) }
+        ? {
+            as_json: detachJson(value['as_json'], '$.as_json', 0, {
+              values: 0,
+            }),
+          }
         : {}),
     };
     if (value['truncated'] !== undefined && value['truncated'] !== true)

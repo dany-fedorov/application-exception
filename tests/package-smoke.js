@@ -166,7 +166,10 @@ try {
     as_json: { tool: 'search' },
   });
   assert.equal(api.restoreExpectedValues(diagnostic).message, 'search failed');
-  assert.equal(api.decodePublicReport(JSON.parse(JSON.stringify(publicReport))).ok, true);
+  assert.equal(
+    api.decodePublicReport(JSON.parse(JSON.stringify(publicReport))).ok,
+    true,
+  );
   assert.equal(api.toPublicReport(new Error('x')).code, 'INTERNAL_ERROR');
   assert.throws(
     () => api.toPublicReport(error, { code: '' }),
@@ -180,7 +183,9 @@ try {
   const ajv = new Ajv2020({ strict: true });
   assert.equal(
     ajv.validate(
-      consumerRequire('application-exception/schemas/diagnostic-report-v3.json'),
+      consumerRequire(
+        'application-exception/schemas/diagnostic-report-v3.json',
+      ),
       JSON.parse(JSON.stringify(diagnostic)),
     ),
     true,

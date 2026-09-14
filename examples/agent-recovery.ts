@@ -17,7 +17,10 @@ export type RecoveryAction =
   | {
       readonly action: 'escalate';
       readonly reference: string;
-      readonly reason: 'invalid-report' | 'unknown-code' | 'retry-budget-exhausted';
+      readonly reason:
+        | 'invalid-report'
+        | 'unknown-code'
+        | 'retry-budget-exhausted';
       readonly detail?: string;
     };
 
@@ -74,7 +77,11 @@ if (require.main === module) {
       message: 'The requested tool is temporarily unavailable.',
       as_json: { tool: 'search' },
     },
-    { operation: 'read-only-search', retryableCodes: ['TOOL_UNAVAILABLE'], remainingAttempts: 1 },
+    {
+      operation: 'read-only-search',
+      retryableCodes: ['TOOL_UNAVAILABLE'],
+      remainingAttempts: 1,
+    },
   );
   process.stdout.write(`${JSON.stringify(action)}\n`);
 }

@@ -166,7 +166,7 @@ Every code an error thrown by this package can carry. Each has a section in docs
 ### `AppexErrorCode`
 
 ```ts signature
-export type AppexErrorCode = (typeof APPEX_ERROR_CODES)[number];
+export type AppexErrorCode = typeof APPEX_ERROR_CODES[number];
 ```
 
 One of the codes in `APPEX_ERROR_CODES`.
