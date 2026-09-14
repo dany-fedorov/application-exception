@@ -3,7 +3,7 @@ import type {
   CorjErrorContext,
   CorjJsonValue,
 } from 'caught-object-report-json';
-import { invalid } from './errors';
+import { describeValue, invalid } from './errors';
 import { createOccurrence } from './occurrence';
 import { PUBLIC_REPORT_VERSION } from './report-types';
 import type {
@@ -34,8 +34,13 @@ const DIAGNOSTIC_OPTION_KEYS = [
   'maxDepth',
   'maxChildren',
   'stackFormat',
-];
-const PUBLIC_OPTION_KEYS = ['reference', 'code', 'message', 'details'];
+] satisfies readonly (keyof DiagnosticReportOptions)[];
+const PUBLIC_OPTION_KEYS = [
+  'reference',
+  'code',
+  'message',
+  'details',
+] satisfies readonly (keyof PublicReportOptions)[];
 const PUBLIC_FIELDS = new Set([
   'v',
   'reference',
@@ -49,14 +54,6 @@ const DECODE_MAX_VALUES = 10_000;
 
 type Compacted<T> = { [K in keyof T]?: Exclude<T[K], undefined> };
 type OnError = (caught: unknown, context: CorjErrorContext) => void;
-
-function describe(value: unknown): string {
-  try {
-    return String(value).slice(0, 256);
-  } catch {
-    return '[unprintable value]';
-  }
-}
 
 function compact<T extends object>(value: T): Compacted<T> {
   return Object.fromEntries(
@@ -110,7 +107,7 @@ function recorder(errors: ReportingError[], prefix: string): OnError {
         path: prefix + context.path.slice(1),
         key: context.key,
         prop: context.prop,
-        error: describe(caught),
+        error: describeValue(caught),
       }) as ReportingError,
     );
   };
@@ -186,6 +183,20 @@ export function toDiagnosticReport(
   } as DiagnosticReport;
 }
 
+/** The `details` data property of a caught value, never running an accessor and never throwing. */
+function ownDetails(caught: unknown): object {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      caught as object,
+      'details',
+    );
+    const value = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof value === 'object' && value !== null ? (value as object) : {};
+  } catch {
+    return {};
+  }
+}
+
 function renderPublicMessage(
   policy: PublicPolicyRecord | undefined,
   details: object,
@@ -241,8 +252,7 @@ export function toPublicReport(
   if (options.message !== undefined && typeof options.message !== 'string')
     throw invalid('APPEX_INVALID_PUBLIC_MESSAGE', 'message must be a string');
   const policy = publicPolicyOf(caught);
-  const details =
-    policy === undefined ? {} : (caught as { readonly details: object }).details;
+  const details = policy === undefined ? {} : ownDetails(caught);
   const code =
     options.code === undefined
       ? policy?.code ?? GENERIC_CODE

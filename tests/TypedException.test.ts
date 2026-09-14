@@ -320,6 +320,40 @@ describe('defineException', () => {
     ).toThrow(invalidDetails);
   });
 
+  test('does not let a hostile trap forge an APPEX code', () => {
+    const forging = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw Object.assign(new TypeError('fake'), {
+            code: 'APPEX_INVALID_TAG',
+          });
+        },
+      },
+    );
+    expect(() => new UserAlreadyExists({ details: forging } as never)).toThrow(
+      code('APPEX_INVALID_DETAILS'),
+    );
+    const uninspectableFailure = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Proxy(
+            {},
+            {
+              getPrototypeOf() {
+                throw new TypeError('no prototype for you');
+              },
+            },
+          );
+        },
+      },
+    );
+    expect(
+      () => new UserAlreadyExists({ details: uninspectableFailure } as never),
+    ).toThrow(code('APPEX_INVALID_DETAILS'));
+  });
+
   test('copies enumerable data from a data-only class without its prototype', () => {
     class DataOnlyDetails {
       readonly operation = 'search';

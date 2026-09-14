@@ -22,6 +22,9 @@ export const ERRORS_GUIDE_URL =
 /** A `TypeError` thrown by this package: `message` is `<code>: <text>; see <url>#<code>` and `code` is enumerable. */
 export type AppexTypeError = TypeError & { readonly code: AppexErrorCode };
 
+/** Module-private mark on errors this package created; a hostile value cannot forge it. */
+const APPEX_ERROR_BRAND = Symbol('application-exception/AppexTypeError');
+
 export function invalid(code: AppexErrorCode, text: string): AppexTypeError {
   const error = new TypeError(
     `${code}: ${text}; see ${ERRORS_GUIDE_URL}#${code.toLowerCase()}`,
@@ -32,5 +35,32 @@ export function invalid(code: AppexErrorCode, text: string): AppexTypeError {
     writable: false,
     configurable: true,
   });
+  Object.defineProperty(error, APPEX_ERROR_BRAND, {
+    value: true,
+    enumerable: false,
+    writable: false,
+    configurable: false,
+  });
   return error as AppexTypeError;
+}
+
+/** Whether a caught value is an error this package created with `invalid`. */
+export function isAppexError(value: unknown): value is AppexTypeError {
+  try {
+    return (
+      value instanceof TypeError &&
+      (value as { [APPEX_ERROR_BRAND]?: unknown })[APPEX_ERROR_BRAND] === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** A short, never-throwing rendering of any value, for error text. */
+export function describeValue(value: unknown): string {
+  try {
+    return String(value).slice(0, 256);
+  } catch {
+    return '[unprintable value]';
+  }
 }

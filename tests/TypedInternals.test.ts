@@ -1,4 +1,6 @@
+import { APPEX_ERROR_CODES } from '../src/errors';
 import { installCause } from '../src/occurrence';
+import { defineException } from '../src/typed';
 import {
   TYPED_EXCEPTION_BRAND,
   brandedOccurrenceId,
@@ -87,5 +89,35 @@ describe('installCause', () => {
     expect(Object.prototype.hasOwnProperty.call(none, 'cause')).toBe(false);
     installCause(none, {});
     expect(Object.prototype.hasOwnProperty.call(none, 'cause')).toBe(false);
+  });
+});
+
+describe('hostile constructor input', () => {
+  test('turns an uninspectable cause into a coded error', () => {
+    const Unavailable = defineException({
+      tag: 'app/Unavailable',
+      message: 'Unavailable',
+    });
+    const trapped = new Proxy(
+      {},
+      {
+        has() {
+          throw new TypeError('trap');
+        },
+        getOwnPropertyDescriptor() {
+          throw new TypeError('trap');
+        },
+      },
+    );
+    let thrown: unknown;
+    try {
+      new Unavailable(trapped as never);
+    } catch (failure: unknown) {
+      thrown = failure;
+    }
+    expect(thrown).toBeInstanceOf(TypeError);
+    expect(APPEX_ERROR_CODES).toContain((thrown as { code: string }).code);
+    expect((thrown as { code: string }).code).toBe('APPEX_INVALID_CAUSES');
+    expect((thrown as Error).message).toContain('docs/agent/errors.md');
   });
 });

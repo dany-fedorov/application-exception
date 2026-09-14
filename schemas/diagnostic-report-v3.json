@@ -131,7 +131,7 @@
       "required": ["v", "reference"],
       "properties": {
         "v": {
-          "description": "The corj report version. corj/v0.12-full appears only when corj could not omit expected values.",
+          "description": "The corj report version. corj/v0.12-full marks a complete report, as produced by restoreExpectedValues or when corj could not omit expected values.",
           "enum": ["corj/v0.12", "corj/v0.12-full"]
         },
         "reference": {

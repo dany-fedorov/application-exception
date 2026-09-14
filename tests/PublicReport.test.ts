@@ -5,6 +5,7 @@ import {
 } from '../src/reporting';
 import { PUBLIC_REPORT_VERSION } from '../src/report-types';
 import { defineException } from '../src/typed';
+import { registerTypedException } from '../src/typed-internals';
 
 const code = (value: string) => expect.objectContaining({ code: value });
 
@@ -324,5 +325,57 @@ describe('decodePublicReport', () => {
       reason: 'Could not inspect value',
       path: '$',
     });
+  });
+});
+
+describe('toPublicReport reads details defensively', () => {
+  test('never throws when details is a throwing accessor', () => {
+    const error = new ToolUnavailable({
+      details: { tool: 'search', secret: 'hunter2' },
+    });
+    Object.defineProperty(error, 'details', {
+      get() {
+        throw new Error('boom');
+      },
+      configurable: true,
+    });
+    const report = toPublicReport(error);
+    expect(report.code).toBe('TOOL_UNAVAILABLE');
+    expect(JSON.stringify(report)).not.toContain('hunter2');
+    expect(JSON.stringify(report)).not.toContain('search');
+  });
+
+  test('falls back to an empty record for absent or non-object details', () => {
+    const missing = { id: 'AE_missing' };
+    registerTypedException(missing, { code: 'MISSING' });
+    expect(toPublicReport(missing).code).toBe('MISSING');
+
+    const primitive = { id: 'AE_primitive', details: 7 };
+    registerTypedException(primitive, { code: 'PRIMITIVE' });
+    expect(toPublicReport(primitive).code).toBe('PRIMITIVE');
+
+    const empty = { id: 'AE_null', details: null };
+    registerTypedException(empty, { code: 'NULL' });
+    expect(toPublicReport(empty).code).toBe('NULL');
+  });
+
+  test('never throws when the value itself cannot be inspected', () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error('no descriptors for you');
+        },
+      },
+    );
+    registerTypedException(hostile, {
+      code: 'HOSTILE',
+      message: () => 'Hostile.',
+      details: () => ({ ok: true }),
+    });
+    const report = toPublicReport(hostile);
+    expect(report.code).toBe('HOSTILE');
+    expect(report.message).toBe('Hostile.');
+    expect(report.as_json).toEqual({ ok: true });
   });
 });

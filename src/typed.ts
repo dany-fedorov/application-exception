@@ -1,4 +1,4 @@
-import { invalid } from './errors';
+import { describeValue, invalid, isAppexError } from './errors';
 import { createOccurrence, installCause } from './occurrence';
 import {
   TYPED_EXCEPTION_BRAND,
@@ -103,14 +103,6 @@ export type TypedExceptionClass<
   readonly tag: Tag;
 };
 
-function describe(value: unknown): string {
-  try {
-    return String(value).slice(0, 256);
-  } catch {
-    return '[unprintable value]';
-  }
-}
-
 function isNonArrayObject<Value>(value: Value): value is Value & object {
   try {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -176,7 +168,7 @@ function copyRecordDetails(
     }
     return Object.freeze(output);
   } catch (failure: unknown) {
-    if (failure instanceof TypeError && 'code' in failure) throw failure;
+    if (isAppexError(failure)) throw failure;
     throw invalid('APPEX_INVALID_DETAILS', 'details could not be inspected');
   }
 }
@@ -191,7 +183,7 @@ function renderMessage(
     if (typeof rendered === 'string') return rendered;
     return `${tag} [message rendering failed: renderer returned ${typeof rendered}]`;
   } catch (failure: unknown) {
-    return `${tag} [message rendering failed: ${describe(failure)}]`;
+    return `${tag} [message rendering failed: ${describeValue(failure)}]`;
   }
 }
 
