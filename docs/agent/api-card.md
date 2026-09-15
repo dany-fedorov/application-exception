@@ -14,7 +14,7 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 | Recognize any occurrence of this package copy | `isTypedException(caught)` |
 | Record a failure for operators | `toDiagnosticReport(caught, { context })` |
 | Answer an agent or user about a failure | `toPublicReport(caught)` |
-| Correlate the two reports | `report.reference`, equal on both for any object; pass `reference` for thrown primitives |
+| Correlate the two reports | `report.occurrence_id`, equal on both for any object; pass `occurrenceId` for thrown primitives |
 | Read a public report received as JSON | `decodePublicReport(value)` |
 | Read omitted corj fields of a diagnostic report | `restoreExpectedValues(report)` |
 
@@ -28,7 +28,7 @@ function defineException<Tag extends string, Details extends object>(definition:
 ```
 
 Define an error kind: a native `Error` subclass with a stable `_tag`, typed
-`details`, an occurrence `id`, and an optional `public` disclosure policy.
+`details`, an `occurrenceId`, and an optional `public` disclosure policy.
 
 Annotate the message renderer's parameter to declare the details type. A
 string message defines a kind without details. Details must be a data-only
@@ -59,7 +59,7 @@ Narrow a specific kind with `instanceof` before reading its details.
 import { defineException, isTypedException } from 'application-exception';
 const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
 const caught: unknown = new Unavailable();
-if (isTypedException(caught)) console.log(caught._tag, caught.id);
+if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId);
 if (caught instanceof Unavailable) console.log(caught.details);
 ```
 
@@ -69,17 +69,17 @@ if (caught instanceof Unavailable) console.log(caught.details);
 function toDiagnosticReport(caught: unknown, options?: DiagnosticReportOptions): DiagnosticReport;
 ```
 
-Report any caught value for operators: a corj report with `reference`,
+Report any caught value for operators: a corj report with `occurrence_id`,
 optional `context`, and `reporting_errors`. Send it to a trusted sink; it
 contains messages, stacks, and every enumerable property of the error graph.
 
-Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`; corj option errors propagate.
+Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`; corj option errors propagate.
 
 ```ts
 import { toDiagnosticReport } from 'application-exception';
 const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
 const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
-// { "v": "corj/v0.12", "reference": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
+// { "v": "corj/v0.12", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
 //   "context": { "runId": "run-1" } }
 console.error(JSON.stringify(report));
 ```
@@ -91,11 +91,11 @@ function toPublicReport(caught: unknown, options?: PublicReportOptions): PublicR
 ```
 
 Report a failure to an agent or user: the kind's `public` policy rendered
-into `code`, `message`, and `as_json`, with the same `reference` as the
+into `code`, `message`, and `as_json`, with the same `occurrence_id` as the
 diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
 generic message. Nothing is read from the error except its policy inputs.
 
-Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
+Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
 
 ```ts
 import { defineException, toPublicReport } from 'application-exception';
@@ -104,7 +104,7 @@ const ToolUnavailable = defineException({
   public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
 });
 const report = toPublicReport(new ToolUnavailable({ details: { tool: 'search' } }));
-// { v: 'appex/public/v3', reference: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
+// { v: 'appex/public/v3', occurrence_id: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
 //   as_json: { tool: 'search' } }
 console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
 ```
@@ -121,7 +121,7 @@ the first reason it is not a public report. Branch on `report.code` after
 
 ```ts
 import { decodePublicReport } from 'application-exception';
-const json = '{"v":"appex/public/v3","reference":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
+const json = '{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
 const decoded = decodePublicReport(JSON.parse(json) as unknown);
 if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
 else console.log(decoded.reason, decoded.path);
@@ -156,7 +156,7 @@ The `v` of every public report.
 ### `APPEX_ERROR_CODES`
 
 ```ts signature
-const APPEX_ERROR_CODES: readonly ["APPEX_INVALID_TAG", "APPEX_INVALID_MESSAGE", "APPEX_INVALID_ID_PREFIX", "APPEX_INVALID_PUBLIC_POLICY", "APPEX_INVALID_DETAILS", "APPEX_INVALID_CAUSES", "APPEX_INVALID_OPTIONS", "APPEX_INVALID_REFERENCE", "APPEX_INVALID_PUBLIC_CODE", "APPEX_INVALID_PUBLIC_MESSAGE"];
+const APPEX_ERROR_CODES: readonly ["APPEX_INVALID_TAG", "APPEX_INVALID_MESSAGE", "APPEX_INVALID_ID_PREFIX", "APPEX_INVALID_PUBLIC_POLICY", "APPEX_INVALID_DETAILS", "APPEX_INVALID_CAUSES", "APPEX_INVALID_OPTIONS", "APPEX_INVALID_OCCURRENCE_ID", "APPEX_INVALID_PUBLIC_CODE", "APPEX_INVALID_PUBLIC_MESSAGE"];
 ```
 
 Every code an error thrown by this package can carry. Each has a section in docs/agent/errors.md.
@@ -204,14 +204,14 @@ The frozen details record an occurrence exposes. `never` selects the empty recor
 ```ts signature
 export type DiagnosticReport = Omit<CorjReport, 'v'> & {
   readonly v: CorjVersion;
-  readonly reference: string;
+  readonly occurrence_id: string;
   readonly context?: CorjJsonValue | null;
   readonly reporting_errors?: readonly ReportingError[];
 };
 ```
 
 A corj report object (see caught-object-report-json) with three extension
-fields. `reference` is the occurrence reference shared with the public
+fields. `occurrence_id` is the occurrence id shared with the public
 report. `context` is the normalized `options.context`. `reporting_errors`
 lists inspection failures (at most 8).
 
@@ -219,7 +219,7 @@ lists inspection failures (at most 8).
 
 ```ts signature
 export interface DiagnosticReportOptions {
-  readonly reference?: string;
+  readonly occurrenceId?: string;
   readonly context?: unknown;
   readonly maxReportSize?: number | null;
   readonly maxDepth?: number;
@@ -231,7 +231,7 @@ export interface DiagnosticReportOptions {
 Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
 and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
-the report budget. `reference` overrides the occurrence reference.
+the report budget. `occurrenceId` overrides the occurrence id.
 
 ### `ExceptionDefinition`
 
@@ -285,7 +285,7 @@ or rendered from the details. `details` selects the JSON that becomes
 ```ts signature
 export interface PublicReport {
   readonly v: typeof PUBLIC_REPORT_VERSION;
-  readonly reference: string;
+  readonly occurrence_id: string;
   readonly code: string;
   readonly message: string;
   readonly as_json?: CorjJsonValue | null;
@@ -294,15 +294,15 @@ export interface PublicReport {
 ```
 
 What an application discloses about one failure. `code` is the branching
-protocol, `reference` correlates with the diagnostic report, `message` is
-display text, `as_json` is the selected JSON. `truncated` marks a cut
+protocol, `occurrence_id` correlates with the diagnostic report, `message`
+is display text, `as_json` is the selected JSON. `truncated` marks a cut
 message or `as_json`.
 
 ### `PublicReportOptions`
 
 ```ts signature
 export interface PublicReportOptions {
-  readonly reference?: string;
+  readonly occurrenceId?: string;
   readonly code?: string;
   readonly message?: string;
   readonly details?: unknown;
@@ -333,7 +333,7 @@ export interface TypedException<
   Details extends object = object,
 > extends Error {
   readonly _tag: Tag;
-  readonly id: string;
+  readonly occurrenceId: string;
   readonly timestamp: string;
   readonly details: DetailsRecord<Details>;
   readonly cause?: unknown;
@@ -341,7 +341,7 @@ export interface TypedException<
 }
 ```
 
-One occurrence: a native `Error` with a stable `_tag`, an `id` used as the report `reference`, and frozen `details`.
+One occurrence: a native `Error` with a stable `_tag`, an `occurrenceId` used as the report `occurrence_id`, and frozen `details`.
 
 ### `TypedExceptionClass`
 

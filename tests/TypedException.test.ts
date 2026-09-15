@@ -26,7 +26,7 @@ describe('defineException', () => {
     expect(error.message).toBe(
       'An account already exists for ada@example.test',
     );
-    expect(error.id).toMatch(/^AE_[0-9A-HJKMNP-TV-Z]{26}$/);
+    expect(error.occurrenceId).toMatch(/^AE_[0-9A-HJKMNP-TV-Z]{26}$/);
     expect(Date.parse(error.timestamp)).toBeGreaterThanOrEqual(before);
     expect(Date.parse(error.timestamp)).toBeLessThanOrEqual(after);
     expect(isTypedException(error)).toBe(true);
@@ -41,7 +41,7 @@ describe('defineException', () => {
     expect(Object.keys(error).sort()).toEqual([
       '_tag',
       'details',
-      'id',
+      'occurrenceId',
       'timestamp',
     ]);
     expect(Object.prototype.hasOwnProperty.call(error, 'name')).toBe(false);
@@ -81,8 +81,8 @@ describe('defineException', () => {
     const first = new AgentFailure({ details: {} });
     const second = new AgentFailure({ details: {} });
 
-    expect(first.id).toMatch(/^ERR_/);
-    expect(second.id).not.toBe(first.id);
+    expect(first.occurrenceId).toMatch(/^ERR_/);
+    expect(second.occurrenceId).not.toBe(first.occurrenceId);
   });
 
   test('preserves a single cause by identity and makes it non-enumerable', () => {
@@ -198,7 +198,7 @@ describe('defineException', () => {
     const forged = {
       [Symbol.for('application-exception/TypedException')]: true,
       _tag: 'Forged',
-      id: 'AE_forged',
+      occurrenceId: 'AE_forged',
       timestamp: new Date().toISOString(),
       details: {},
     };
@@ -456,7 +456,7 @@ describe('typed construction boundaries', () => {
     expect(error._tag).toBe('Original');
     expect(error.name).toBe('Original');
     expect(error.message).toBe('first');
-    expect(error.id).toMatch(/^FIRST_/);
+    expect(error.occurrenceId).toMatch(/^FIRST_/);
   });
   test.each(['', ' ', 'x'.repeat(129), 42])('rejects invalid tag %p', (tag) => {
     expect(() => defineException({ tag, message: 'failure' } as never)).toThrow(
@@ -481,7 +481,7 @@ describe('typed construction boundaries', () => {
       idPrefix: 'p'.repeat(32),
       message: 'failure',
     });
-    expect(new Kind().id).toHaveLength(58);
+    expect(new Kind().occurrenceId).toHaveLength(58);
   });
   test.each([undefined, null, 'cause', { length: 2 }])(
     'rejects non-array causes %p',

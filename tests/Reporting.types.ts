@@ -33,10 +33,10 @@ const publicReport: PublicReport = toPublicReport(error, {
   code: 'X',
   message: 'x',
   details: { a: 1 },
-  reference: diagnostic.reference,
+  occurrenceId: diagnostic.occurrence_id,
 });
-const reference: string = publicReport.reference;
-void reference;
+const occurrenceId: string = publicReport.occurrence_id;
+void occurrenceId;
 
 // @ts-expect-error public reports never expose a stack.
 publicReport.stack;

@@ -12,7 +12,7 @@ export type PublicPolicyRecord = {
 
 const instances = new WeakSet<object>();
 const policies = new WeakMap<object, PublicPolicyRecord>();
-const references = new WeakMap<object, string>();
+const occurrenceIds = new WeakMap<object, string>();
 
 export function registerTypedException(
   error: object,
@@ -35,7 +35,7 @@ function ownData(value: object, key: PropertyKey): unknown {
   return descriptor && 'value' in descriptor ? descriptor.value : undefined;
 }
 
-/** The `id` of a branded occurrence (local or from another package copy), read from data properties only. */
+/** The `occurrenceId` of a branded occurrence (local or from another package copy), read from data properties only. */
 export function brandedOccurrenceId(value: unknown): string | undefined {
   try {
     if (
@@ -44,7 +44,7 @@ export function brandedOccurrenceId(value: unknown): string | undefined {
       ownData(value, TYPED_EXCEPTION_BRAND) !== true
     )
       return undefined;
-    const id = ownData(value, 'id');
+    const id = ownData(value, 'occurrenceId');
     return typeof id === 'string' && id.length > 0 && id.length <= 128
       ? id
       : undefined;
@@ -53,8 +53,8 @@ export function brandedOccurrenceId(value: unknown): string | undefined {
   }
 }
 
-/** One reference per object or function for the life of the process; primitives get a new one each time. */
-export function memoizedReference(
+/** One occurrence id per object or function for the life of the process; primitives get a new one each time. */
+export function memoizedOccurrenceId(
   value: unknown,
   create: () => string,
 ): string {
@@ -62,9 +62,9 @@ export function memoizedReference(
     (typeof value === 'object' && value !== null) ||
     typeof value === 'function';
   if (!keyable) return create();
-  const existing = references.get(value);
+  const existing = occurrenceIds.get(value);
   if (existing !== undefined) return existing;
   const created = create();
-  references.set(value, created);
+  occurrenceIds.set(value, created);
   return created;
 }

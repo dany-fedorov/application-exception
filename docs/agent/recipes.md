@@ -20,7 +20,7 @@ export const RateLimited = defineException({
 });
 
 const error = new RateLimited({ details: { model: 'gpt', retryAfterSeconds: 30 } });
-console.log(error._tag, error.details.retryAfterSeconds, error.id);
+console.log(error._tag, error.details.retryAfterSeconds, error.occurrenceId);
 ```
 
 The renderer's parameter type is the details type. `public.details` sees the
@@ -53,8 +53,9 @@ export function handleSearch(runId: string, query: string): { ok: true; value: s
 }
 ```
 
-Both calls take the same `caught`; the reports share `reference`. For a thrown
-primitive, pass the same `reference` option to both calls. Unknown failures
+Both calls take the same `caught`; the reports share `occurrence_id`. For a
+thrown primitive, pass the same `occurrenceId` option to both calls. Unknown
+failures
 produce `INTERNAL_ERROR` with the same correlation.
 
 ## Translate a lower-level failure
@@ -112,14 +113,14 @@ becomes `null` with an entry in `report.reporting_errors`. `maxReportSize`,
 ```ts
 import { decodePublicReport } from 'application-exception';
 
-type Action = { action: 'retry'; remaining: number } | { action: 'escalate'; reference: string; reason: string };
+type Action = { action: 'retry'; remaining: number } | { action: 'escalate'; occurrenceId: string; reason: string };
 
 export function decide(received: unknown, retryable: readonly string[], remaining: number): Action {
   const decoded = decodePublicReport(received);
-  if (!decoded.ok) return { action: 'escalate', reference: 'unavailable', reason: `${decoded.reason} at ${decoded.path}` };
-  const { code, reference } = decoded.report;
-  if (!retryable.includes(code)) return { action: 'escalate', reference, reason: `unknown code ${code}` };
-  if (remaining <= 0) return { action: 'escalate', reference, reason: 'retry budget exhausted' };
+  if (!decoded.ok) return { action: 'escalate', occurrenceId: 'unavailable', reason: `${decoded.reason} at ${decoded.path}` };
+  const { code, occurrence_id: occurrenceId } = decoded.report;
+  if (!retryable.includes(code)) return { action: 'escalate', occurrenceId, reason: `unknown code ${code}` };
+  if (remaining <= 0) return { action: 'escalate', occurrenceId, reason: 'retry budget exhausted' };
   return { action: 'retry', remaining: remaining - 1 };
 }
 ```
@@ -145,11 +146,11 @@ const response = toPublicReport(error);
 
 assert.equal(response.code, 'TIMEOUT');
 assert.deepEqual(response.as_json, { ms: 500 });
-assert.equal(response.reference, diagnostic.reference);
+assert.equal(response.occurrence_id, diagnostic.occurrence_id);
 assert.equal(restoreExpectedValues(diagnostic).message, 'Timed out after 500ms');
 assert.equal(diagnostic.children?.[0]?.path, '$.cause');
 assert.ok(!JSON.stringify(response).includes('socket hang up'));
 ```
 
-Assert on `code`, `reference`, `as_json`, and `children`; do not assert on
+Assert on `code`, `occurrence_id`, `as_json`, and `children`; do not assert on
 stack lines. Use `restoreExpectedValues` when you need omitted corj fields.

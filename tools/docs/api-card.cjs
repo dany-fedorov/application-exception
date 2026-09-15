@@ -32,7 +32,7 @@ const TASKS = [
   ['Answer an agent or user about a failure', '`toPublicReport(caught)`'],
   [
     'Correlate the two reports',
-    '`report.reference`, equal on both for any object; pass `reference` for thrown primitives',
+    '`report.occurrence_id`, equal on both for any object; pass `occurrenceId` for thrown primitives',
   ],
   ['Read a public report received as JSON', '`decodePublicReport(value)`'],
   [

@@ -92,15 +92,15 @@ toDiagnosticReport(new Error('x'), { context: { runId: 'r' }, maxDepth: 2 });
 toPublicReport(new Error('x'), { code: 'X', message: 'x', details: { a: 1 } });
 ```
 
-## APPEX_INVALID_REFERENCE
+## APPEX_INVALID_OCCURRENCE_ID
 
-When: `options.reference` is not a nonempty string of at most 128 UTF-16 units.
+When: `options.occurrenceId` is not a nonempty string of at most 128 UTF-16 units.
 Cause: passing an empty string or a non-string identifier.
-Fix: omit `reference` (the occurrence id or a memoized `AE_` id is used) or pass a bounded string.
+Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded string.
 
 ```ts
 import { toPublicReport } from 'application-exception';
-toPublicReport('thrown text', { reference: 'trace-42' });
+toPublicReport('thrown text', { occurrenceId: 'trace-42' });
 ```
 
 ## APPEX_INVALID_PUBLIC_CODE

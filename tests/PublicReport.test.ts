@@ -25,7 +25,7 @@ const NoPolicy = defineException({
 });
 
 describe('toPublicReport', () => {
-  test('renders the kind policy and shares the occurrence reference', () => {
+  test('renders the kind policy and shares the occurrence id', () => {
     const error = new ToolUnavailable({
       details: { tool: 'search', secret: 'hunter2' },
       cause: new Error('postgres://user:hunter2@db'),
@@ -33,14 +33,14 @@ describe('toPublicReport', () => {
     const report = toPublicReport(error);
     expect(report).toEqual({
       v: 'appex/public/v3',
-      reference: error.id,
+      occurrence_id: error.occurrenceId,
       code: 'TOOL_UNAVAILABLE',
       message: 'search is temporarily unavailable.',
       as_json: { tool: 'search' },
     });
     expect(PUBLIC_REPORT_VERSION).toBe('appex/public/v3');
     expect(JSON.stringify(report)).not.toContain('hunter2');
-    expect(toDiagnosticReport(error).reference).toBe(report.reference);
+    expect(toDiagnosticReport(error).occurrence_id).toBe(report.occurrence_id);
   });
 
   test('discloses nothing for values without a policy', () => {
@@ -51,18 +51,18 @@ describe('toPublicReport', () => {
     };
     expect(toPublicReport(new NoPolicy({ details: { tool: 'x' } }))).toEqual({
       ...generic,
-      reference: expect.stringMatching(/^AE_/),
+      occurrence_id: expect.stringMatching(/^AE_/),
     });
     expect(toPublicReport(new Error('secret path'))).toEqual({
       ...generic,
-      reference: expect.stringMatching(/^AE_/),
+      occurrence_id: expect.stringMatching(/^AE_/),
     });
     expect(toPublicReport(undefined)).toEqual({
       ...generic,
-      reference: expect.stringMatching(/^AE_/),
+      occurrence_id: expect.stringMatching(/^AE_/),
     });
-    expect(toPublicReport('AE_looks_like_a_reference')).toMatchObject({
-      reference: expect.stringMatching(/^AE_[0-9A-Z]{26}$/),
+    expect(toPublicReport('AE_looks_like_an_occurrence_id')).toMatchObject({
+      occurrence_id: expect.stringMatching(/^AE_[0-9A-Z]{26}$/),
     });
   });
 
@@ -75,11 +75,11 @@ describe('toPublicReport', () => {
         code: 'SEARCH_DOWN',
         message: 'Search is down.',
         details: { retryAfterSeconds: 30 },
-        reference: 'trace-9',
+        occurrenceId: 'trace-9',
       }),
     ).toEqual({
       v: 'appex/public/v3',
-      reference: 'trace-9',
+      occurrence_id: 'trace-9',
       code: 'SEARCH_DOWN',
       message: 'Search is down.',
       as_json: { retryAfterSeconds: 30 },
@@ -108,7 +108,7 @@ describe('toPublicReport', () => {
     });
     expect(toPublicReport(new Throws())).toEqual({
       v: 'appex/public/v3',
-      reference: expect.stringMatching(/^AE_/),
+      occurrence_id: expect.stringMatching(/^AE_/),
       code: 'THROWS',
       message: 'Something went wrong',
     });
@@ -178,11 +178,11 @@ describe('toPublicReport', () => {
     expect(() => toPublicReport(error, { message: 42 } as never)).toThrow(
       code('APPEX_INVALID_PUBLIC_MESSAGE'),
     );
-    expect(() => toPublicReport(error, { reference: '' })).toThrow(
-      code('APPEX_INVALID_REFERENCE'),
+    expect(() => toPublicReport(error, { occurrenceId: '' })).toThrow(
+      code('APPEX_INVALID_OCCURRENCE_ID'),
     );
     expect(() => toPublicReport(error, { stack: true } as never)).toThrow(
-      /APPEX_INVALID_OPTIONS: unknown option "stack"; known options: reference, code, message, details/,
+      /APPEX_INVALID_OPTIONS: unknown option "stack"; known options: occurrenceId, code, message, details/,
     );
     expect(() => toPublicReport(error, null as never)).toThrow(
       code('APPEX_INVALID_OPTIONS'),
@@ -193,7 +193,7 @@ describe('toPublicReport', () => {
 describe('decodePublicReport', () => {
   const valid = {
     v: 'appex/public/v3',
-    reference: 'AE_1',
+    occurrence_id: 'AE_1',
     code: 'TOOL_UNAVAILABLE',
     message: 'Down.',
     as_json: { tool: 'search', tags: ['a', 1, null, true], nested: { n: 1.5 } },
@@ -210,13 +210,18 @@ describe('decodePublicReport', () => {
     expect(
       decodePublicReport({
         v: 'appex/public/v3',
-        reference: 'r',
+        occurrence_id: 'r',
         code: 'c',
         message: '',
       }),
     ).toEqual({
       ok: true,
-      report: { v: 'appex/public/v3', reference: 'r', code: 'c', message: '' },
+      report: {
+        v: 'appex/public/v3',
+        occurrence_id: 'r',
+        code: 'c',
+        message: '',
+      },
     });
     expect(decodePublicReport(toPublicReport(new Error('x')))).toMatchObject({
       ok: true,
@@ -254,16 +259,16 @@ describe('decodePublicReport', () => {
       '$.v',
     ],
     [
-      'a missing reference',
-      { ...valid, reference: undefined },
+      'a missing occurrence id',
+      { ...valid, occurrence_id: undefined },
       'Expected a string',
-      '$.reference',
+      '$.occurrence_id',
     ],
     [
-      'an empty reference',
-      { ...valid, reference: '' },
+      'an empty occurrence id',
+      { ...valid, occurrence_id: '' },
       'Expected 1 to 128 characters',
-      '$.reference',
+      '$.occurrence_id',
     ],
     [
       'a long code',
@@ -358,15 +363,15 @@ describe('toPublicReport reads details defensively', () => {
   });
 
   test('falls back to an empty record for absent or non-object details', () => {
-    const missing = { id: 'AE_missing' };
+    const missing = { occurrenceId: 'AE_missing' };
     registerTypedException(missing, { code: 'MISSING' });
     expect(toPublicReport(missing).code).toBe('MISSING');
 
-    const primitive = { id: 'AE_primitive', details: 7 };
+    const primitive = { occurrenceId: 'AE_primitive', details: 7 };
     registerTypedException(primitive, { code: 'PRIMITIVE' });
     expect(toPublicReport(primitive).code).toBe('PRIMITIVE');
 
-    const empty = { id: 'AE_null', details: null };
+    const empty = { occurrenceId: 'AE_null', details: null };
     registerTypedException(empty, { code: 'NULL' });
     expect(toPublicReport(empty).code).toBe('NULL');
   });

@@ -16,7 +16,7 @@ import type {
 } from './report-types';
 import {
   brandedOccurrenceId,
-  memoizedReference,
+  memoizedOccurrenceId,
   publicPolicyOf,
 } from './typed-internals';
 import type { PublicPolicyRecord } from './typed-internals';
@@ -28,7 +28,7 @@ const MAX_REPORTING_ERRORS = 8;
 const GENERIC_CODE = 'INTERNAL_ERROR';
 const GENERIC_MESSAGE = 'Something went wrong';
 const DIAGNOSTIC_OPTION_KEYS = [
-  'reference',
+  'occurrenceId',
   'context',
   'maxReportSize',
   'maxDepth',
@@ -36,14 +36,14 @@ const DIAGNOSTIC_OPTION_KEYS = [
   'stackFormat',
 ] satisfies readonly (keyof DiagnosticReportOptions)[];
 const PUBLIC_OPTION_KEYS = [
-  'reference',
+  'occurrenceId',
   'code',
   'message',
   'details',
 ] satisfies readonly (keyof PublicReportOptions)[];
 const PUBLIC_FIELDS = new Set([
   'v',
-  'reference',
+  'occurrence_id',
   'code',
   'message',
   'as_json',
@@ -78,7 +78,7 @@ function assertOptions(
 
 function boundedIdentifier(
   value: unknown,
-  code: 'APPEX_INVALID_REFERENCE' | 'APPEX_INVALID_PUBLIC_CODE',
+  code: 'APPEX_INVALID_OCCURRENCE_ID' | 'APPEX_INVALID_PUBLIC_CODE',
   name: string,
 ): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 128)
@@ -89,12 +89,16 @@ function boundedIdentifier(
   return value;
 }
 
-function referenceFor(caught: unknown, explicit: unknown): string {
+function occurrenceIdFor(caught: unknown, explicit: unknown): string {
   if (explicit !== undefined)
-    return boundedIdentifier(explicit, 'APPEX_INVALID_REFERENCE', 'reference');
+    return boundedIdentifier(
+      explicit,
+      'APPEX_INVALID_OCCURRENCE_ID',
+      'occurrenceId',
+    );
   return (
     brandedOccurrenceId(caught) ??
-    memoizedReference(caught, () => createOccurrence().id)
+    memoizedOccurrenceId(caught, () => createOccurrence().id)
   );
 }
 
@@ -133,17 +137,17 @@ function jsonView(
 }
 
 /**
- * Report any caught value for operators: a corj report with `reference`,
+ * Report any caught value for operators: a corj report with `occurrence_id`,
  * optional `context`, and `reporting_errors`. Send it to a trusted sink; it
  * contains messages, stacks, and every enumerable property of the error graph.
  *
- * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`; corj option errors propagate.
+ * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`; corj option errors propagate.
  * @example
  * ```ts
  * import { toDiagnosticReport } from 'application-exception';
  * const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
  * const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
- * // { "v": "corj/v0.12", "reference": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
+ * // { "v": "corj/v0.12", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
  * //   "context": { "runId": "run-1" } }
  * console.error(JSON.stringify(report));
  * ```
@@ -153,7 +157,7 @@ export function toDiagnosticReport(
   options: DiagnosticReportOptions = {},
 ): DiagnosticReport {
   assertOptions(options, DIAGNOSTIC_OPTION_KEYS);
-  const reference = referenceFor(caught, options.reference);
+  const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
   const errors: ReportingError[] = [];
   const report = new CorjMaker({
     ...compact({
@@ -176,7 +180,7 @@ export function toDiagnosticReport(
         };
   // corj always emits `v` under these options (metadata.v defaults to true).
   return {
-    reference,
+    occurrence_id: occurrenceId,
     ...report,
     ...context,
     ...(errors.length > 0 ? { reporting_errors: errors } : {}),
@@ -226,11 +230,11 @@ function selectPublicDetails(
 
 /**
  * Report a failure to an agent or user: the kind's `public` policy rendered
- * into `code`, `message`, and `as_json`, with the same `reference` as the
+ * into `code`, `message`, and `as_json`, with the same `occurrence_id` as the
  * diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
  * generic message. Nothing is read from the error except its policy inputs.
  *
- * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_REFERENCE`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
+ * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
  * @example
  * ```ts
  * import { defineException, toPublicReport } from 'application-exception';
@@ -239,7 +243,7 @@ function selectPublicDetails(
  *   public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
  * });
  * const report = toPublicReport(new ToolUnavailable({ details: { tool: 'search' } }));
- * // { v: 'appex/public/v3', reference: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
+ * // { v: 'appex/public/v3', occurrence_id: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
  * //   as_json: { tool: 'search' } }
  * console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
  * ```
@@ -249,7 +253,7 @@ export function toPublicReport(
   options: PublicReportOptions = {},
 ): PublicReport {
   assertOptions(options, PUBLIC_OPTION_KEYS);
-  const reference = referenceFor(caught, options.reference);
+  const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
   if (options.message !== undefined && typeof options.message !== 'string')
     throw invalid('APPEX_INVALID_PUBLIC_MESSAGE', 'message must be a string');
   const policy = publicPolicyOf(caught);
@@ -271,7 +275,7 @@ export function toPublicReport(
   const truncated = cut || view?.truncated === true;
   return {
     v: PUBLIC_REPORT_VERSION,
-    reference,
+    occurrence_id: occurrenceId,
     code,
     message: cut ? message.slice(0, PUBLIC_MESSAGE_MAX_LENGTH) : message,
     ...(view === undefined ? {} : { as_json: view.value }),
@@ -350,7 +354,7 @@ function boundedText(
  * @example
  * ```ts
  * import { decodePublicReport } from 'application-exception';
- * const json = '{"v":"appex/public/v3","reference":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
+ * const json = '{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
  * const decoded = decodePublicReport(JSON.parse(json) as unknown);
  * if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
  * else console.log(decoded.reason, decoded.path);
@@ -367,7 +371,12 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
       reject(`Expected version ${PUBLIC_REPORT_VERSION}`, '$.v');
     const base = {
       v: PUBLIC_REPORT_VERSION,
-      reference: boundedText(value['reference'], '$.reference', 1, 128),
+      occurrence_id: boundedText(
+        value['occurrence_id'],
+        '$.occurrence_id',
+        1,
+        128,
+      ),
       code: boundedText(value['code'], '$.code', 1, 128),
       message: boundedText(
         value['message'],

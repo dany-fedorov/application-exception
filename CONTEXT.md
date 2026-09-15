@@ -21,14 +21,14 @@ type. Present on every occurrence, frozen, and included in the diagnostic
 report's `as_json`. Their presence never authorizes disclosure.
 _Avoid_: Public payload
 
-**Occurrence reference**:
+**Occurrence id**:
 The string that correlates the diagnostic and public reports of one failure:
-the occurrence `id` for typed exceptions, a generated `AE_` id remembered per
-object otherwise. Appears as `reference` on both reports.
+the `occurrenceId` of a typed exception, a generated `AE_` id remembered per
+object otherwise. Appears as `occurrence_id` on both reports.
 
 **Diagnostic report**:
 A caught-object-report-json report of the occurrence and its causes, plus
-`reference`, `context`, and `reporting_errors`. Bounded, serializable, meant for
+`occurrence_id`, `context`, and `reporting_errors`. Bounded, serializable, for
 trusted sinks. A representation of a failure, not a failure to throw.
 
 **Public policy**:
@@ -38,7 +38,7 @@ Declared where the details type is known.
 
 **Public report**:
 What the application discloses about one occurrence: `code`, `message`,
-`as_json`, `reference`, `truncated`. Rendered from the public policy or the
+`as_json`, `occurrence_id`, `truncated`. Rendered from the public policy or the
 generic default; never read from the error graph.
 
 **Context**:

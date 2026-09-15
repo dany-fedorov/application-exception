@@ -8,7 +8,7 @@ describe('agent recovery example', () => {
     remainingAttempts: 1,
   };
   const report = toPublicReport(new Error('x'), {
-    reference: 'AE_retry',
+    occurrenceId: 'AE_retry',
     code: 'TOOL_UNAVAILABLE',
     message: 'The requested tool is temporarily unavailable.',
     details: { tool: 'search' },
@@ -18,7 +18,7 @@ describe('agent recovery example', () => {
   test('retries a known code within the budget and carries the tool', () => {
     expect(chooseRecoveryAction(received(), policy)).toEqual({
       action: 'retry',
-      reference: 'AE_retry',
+      occurrenceId: 'AE_retry',
       operation: 'read-only-search',
       remainingAttempts: 0,
       tool: 'search',
@@ -31,7 +31,7 @@ describe('agent recovery example', () => {
         chooseRecoveryAction(received(), { ...policy, remainingAttempts }),
       ).toEqual({
         action: 'escalate',
-        reference: 'AE_retry',
+        occurrenceId: 'AE_retry',
         reason: 'retry-budget-exhausted',
       });
     }
@@ -42,12 +42,12 @@ describe('agent recovery example', () => {
       chooseRecoveryAction({ ...report, code: 'NEW_STATE' }, policy),
     ).toEqual({
       action: 'escalate',
-      reference: 'AE_retry',
+      occurrenceId: 'AE_retry',
       reason: 'unknown-code',
     });
     expect(chooseRecoveryAction({ v: 'appex/public/v2' }, policy)).toEqual({
       action: 'escalate',
-      reference: 'unavailable',
+      occurrenceId: 'unavailable',
       reason: 'invalid-report',
       detail: 'Expected version appex/public/v3 at $.v',
     });
@@ -64,7 +64,7 @@ describe('agent recovery example', () => {
     ]) {
       expect(chooseRecoveryAction({ ...report, as_json }, policy)).toEqual({
         action: 'retry',
-        reference: 'AE_retry',
+        occurrenceId: 'AE_retry',
         operation: 'read-only-search',
         remainingAttempts: 0,
       });

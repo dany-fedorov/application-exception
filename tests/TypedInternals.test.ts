@@ -5,7 +5,7 @@ import {
   TYPED_EXCEPTION_BRAND,
   brandedOccurrenceId,
   isLocalTypedException,
-  memoizedReference,
+  memoizedOccurrenceId,
   publicPolicyOf,
   registerTypedException,
 } from '../src/typed-internals';
@@ -25,11 +25,11 @@ describe('typed internals', () => {
     expect(publicPolicyOf('a')).toBeUndefined();
   });
 
-  test('reads the id of a branded occurrence without running getters', () => {
+  test('reads the occurrence id of a branded occurrence without running getters', () => {
     let reads = 0;
     const branded = {
       [TYPED_EXCEPTION_BRAND]: true,
-      id: 'AE_branded',
+      occurrenceId: 'AE_branded',
       get _tag() {
         reads++;
         return 'x';
@@ -38,18 +38,20 @@ describe('typed internals', () => {
     expect(brandedOccurrenceId(branded)).toBe('AE_branded');
     expect(reads).toBe(0);
     expect(
-      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: '' }),
+      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, occurrenceId: '' }),
     ).toBeUndefined();
     expect(
       brandedOccurrenceId({
         [TYPED_EXCEPTION_BRAND]: true,
-        id: 'x'.repeat(129),
+        occurrenceId: 'x'.repeat(129),
       }),
     ).toBeUndefined();
     expect(
-      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, id: 42 }),
+      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, occurrenceId: 42 }),
     ).toBeUndefined();
-    expect(brandedOccurrenceId({ id: 'AE_unbranded' })).toBeUndefined();
+    expect(
+      brandedOccurrenceId({ occurrenceId: 'AE_unbranded' }),
+    ).toBeUndefined();
     expect(brandedOccurrenceId(null)).toBeUndefined();
     expect(brandedOccurrenceId('AE_string')).toBeUndefined();
     const { proxy, revoke } = Proxy.revocable({}, {});
@@ -57,19 +59,19 @@ describe('typed internals', () => {
     expect(brandedOccurrenceId(proxy)).toBeUndefined();
   });
 
-  test('memoizes a reference per object or function and never for primitives', () => {
+  test('memoizes an occurrence id per object or function and never for primitives', () => {
     let counter = 0;
     const create = () => `AE_${++counter}`;
     const target = {};
     const fn = () => undefined;
-    expect(memoizedReference(target, create)).toBe('AE_1');
-    expect(memoizedReference(target, create)).toBe('AE_1');
-    expect(memoizedReference(fn, create)).toBe('AE_2');
-    expect(memoizedReference(fn, create)).toBe('AE_2');
-    expect(memoizedReference('thrown string', create)).toBe('AE_3');
-    expect(memoizedReference('thrown string', create)).toBe('AE_4');
-    expect(memoizedReference(null, create)).toBe('AE_5');
-    expect(memoizedReference(undefined, create)).toBe('AE_6');
+    expect(memoizedOccurrenceId(target, create)).toBe('AE_1');
+    expect(memoizedOccurrenceId(target, create)).toBe('AE_1');
+    expect(memoizedOccurrenceId(fn, create)).toBe('AE_2');
+    expect(memoizedOccurrenceId(fn, create)).toBe('AE_2');
+    expect(memoizedOccurrenceId('thrown string', create)).toBe('AE_3');
+    expect(memoizedOccurrenceId('thrown string', create)).toBe('AE_4');
+    expect(memoizedOccurrenceId(null, create)).toBe('AE_5');
+    expect(memoizedOccurrenceId(undefined, create)).toBe('AE_6');
   });
 });
 
