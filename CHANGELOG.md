@@ -5,7 +5,7 @@
 Breaking.
 
 - The diagnostic report is a `caught-object-report-json` report (`v: "corj/v0.12"`)
-  with `reference`, `context`, and `reporting_errors`. The `appex/diagnostic/v2`
+  with `occurrence_id`, `context`, and `reporting_errors`. The `appex/diagnostic/v2`
   envelope, its `$appex` markers, `redactKeys`, `limits`, `includeStack`, and
   `messageRenderingError` are gone; stacks are always included.
 - `defineException` accepts a `public` policy (`code`, `message`, `details`).
@@ -19,6 +19,9 @@ Breaking.
 - Typed exceptions define `name` on the prototype; `as_json` no longer repeats it.
 - Ships `AGENTS.md`, `docs/agent/api-card.md` (generated), `docs/agent/recipes.md`,
   `docs/agent/errors.md`, and v3 JSON Schemas. Coverage is gated at 100%.
+- Typed exceptions expose `occurrenceId` (was `id`); both reports carry
+  `occurrence_id` (was `reference`); the option is `occurrenceId`;
+  `APPEX_INVALID_REFERENCE` is now `APPEX_INVALID_OCCURRENCE_ID`.
 - Runtime dependency added: `caught-object-report-json ^9.0.1`.
 
 ## 0.2.2 — 2026-09-12

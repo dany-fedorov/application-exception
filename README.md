@@ -3,7 +3,7 @@
 Typed failures with two reports for TypeScript services and agent harnesses: a
 [caught-object-report-json](https://www.npmjs.com/package/caught-object-report-json)
 diagnostic report for operators and a selected public report for agents and
-users, both carrying the same `reference`.
+users, both carrying the same `occurrence_id`.
 
 [Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Changelog](CHANGELOG.md)
 
@@ -48,7 +48,7 @@ try {
   console.error(JSON.stringify(diagnostic)); // trusted sink only
   const response = toPublicReport(caught);
   console.log(JSON.stringify(response)); // safe for the agent
-  console.log(response.reference === diagnostic.reference); // true
+  console.log(response.occurrence_id === diagnostic.occurrence_id); // true
 }
 ```
 
@@ -57,7 +57,7 @@ The response is:
 ```json
 {
   "v": "appex/public/v3",
-  "reference": "AE_01J8Z3C4V5X6Y7Z8A9B0C1D2E3",
+  "occurrence_id": "AE_01J8Z3C4V5X6Y7Z8A9B0C1D2E3",
   "code": "TOOL_UNAVAILABLE",
   "message": "The requested tool is temporarily unavailable.",
   "as_json": { "tool": "search" }
@@ -66,19 +66,19 @@ The response is:
 
 A caught value without a policy, including a plain `Error`, produces
 `code: "INTERNAL_ERROR"` and `message: "Something went wrong"` with the same
-`reference` as its diagnostic report. Nothing is disclosed by accident.
+`occurrence_id` as its diagnostic report. Nothing is disclosed by accident.
 
-## Two reports, one reference
+## Two reports, one occurrence id
 
 | Report | Function | Audience | Content |
 | --- | --- | --- | --- |
-| Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `reference`, `context`, `reporting_errors` |
-| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `reference` |
+| Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `context`, `reporting_errors` |
+| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id` |
 
-`reference` is the occurrence `id` of a typed exception. Any other object gets
-one generated id, remembered for the object, so both functions agree in either
-order. A thrown primitive gets a fresh reference on each call; pass the same
-`options.reference` to both calls to correlate them.
+`occurrence_id` is the `occurrenceId` of a typed exception. Any other object
+gets one generated id, remembered for the object, so both functions agree in
+either order. A thrown primitive gets a fresh occurrence id on each call; pass
+the same `options.occurrenceId` to both calls to correlate them.
 
 ### Diagnostic report
 
@@ -88,7 +88,7 @@ the whole report (100,000 bytes by default). This package adds:
 
 | Field | Meaning |
 | --- | --- |
-| `reference` | the occurrence reference, always present |
+| `occurrence_id` | the occurrence id, always present |
 | `context` | optional, present only when `options.context` is given: that value normalized by corj's serializer with a 16,384-byte budget; `null` if it could not be serialized |
 | `reporting_errors` | optional, present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, key?, prop?, error }` |
 
@@ -115,7 +115,7 @@ The public report keeps corj's field names and meanings for `message`,
 `as_json`, and `truncated`, and nothing else from the error. Limits: `message`
 4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set `truncated: true`.
 Per-call `options` override the policy: `code`, `message`, `details`, and
-`reference`. A policy without `message` yields the generic message, and
+`occurrenceId`. A policy without `message` yields the generic message, and
 `details: null` suppresses the policy's selection, yielding `as_json: null`.
 
 `decodePublicReport(value)` validates JSON received from another process and
@@ -124,9 +124,9 @@ returns `{ ok: true, report }` or `{ ok: false, reason, path }`:
 ```ts
 import { decodePublicReport } from 'application-exception';
 
-const decoded = decodePublicReport(JSON.parse('{"v":"appex/public/v3","reference":"AE_1","code":"TOOL_UNAVAILABLE","message":"Retry later."}'));
+const decoded = decodePublicReport(JSON.parse('{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Retry later."}'));
 if (decoded.ok && decoded.report.code === 'TOOL_UNAVAILABLE') {
-  console.log('retry', decoded.report.reference);
+  console.log('retry', decoded.report.occurrence_id);
 }
 ```
 
@@ -155,10 +155,10 @@ function explain(error: ToolFailure): string {
 
 const caught: unknown = new InvalidBudget({ details: { attempts: -1 } });
 if (caught instanceof InvalidBudget) console.log(explain(caught));
-console.log(isTypedException(caught), new Unavailable().id.startsWith('AE_'));
+console.log(isTypedException(caught), new Unavailable().occurrenceId.startsWith('AE_'));
 ```
 
-Each occurrence is a native `Error` with `_tag`, `id`, `timestamp`,
+Each occurrence is a native `Error` with `_tag`, `occurrenceId`, `timestamp`,
 shallow-frozen `details` (nested objects stay shared), and an optional `cause`
 (two or more `causes` become an ordered `AggregateError`; one is installed
 directly; an empty list installs nothing). Details are copied once and must be

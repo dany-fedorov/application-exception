@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dany-fedorov/application-exception/schemas/diagnostic-report-v3.json",
   "title": "application-exception diagnostic report v3",
-  "description": "A caught-object-report-json report object (corj/v0.12, https://github.com/dany-fedorov/caught-object-report-json) with the extension fields reference, context, and reporting_errors. corj definitions are embedded under $defs; a missing corj field holds its expected value, null means producing it failed.",
+  "description": "A caught-object-report-json report object (corj/v0.12, https://github.com/dany-fedorov/caught-object-report-json) with the extension fields occurrence_id, context, and reporting_errors. corj definitions are embedded under $defs; a missing corj field holds its expected value, null means producing it failed.",
   "type": "object",
   "allOf": [
     { "$ref": "#/$defs/corjBase" },
@@ -93,7 +93,7 @@
       "required": ["id", "path", "level"],
       "properties": {
         "id": {
-          "description": "Node id within this report: the discovery index. Not the occurrence reference.",
+          "description": "Node id within this report: the discovery index. Not the occurrence id.",
           "type": "string"
         },
         "path": {
@@ -128,14 +128,14 @@
     },
     "appexExtension": {
       "type": "object",
-      "required": ["v", "reference"],
+      "required": ["v", "occurrence_id"],
       "properties": {
         "v": {
           "description": "The corj report version. corj/v0.12-full marks a complete report, as produced by restoreExpectedValues or when corj could not omit expected values.",
           "enum": ["corj/v0.12", "corj/v0.12-full"]
         },
-        "reference": {
-          "description": "The occurrence reference: the typed occurrence id, or a generated AE_ id. Shared with the public report.",
+        "occurrence_id": {
+          "description": "The occurrence id: the typed exception's occurrenceId, or a generated AE_ id. Shared with the public report.",
           "type": "string",
           "minLength": 1,
           "maxLength": 128

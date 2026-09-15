@@ -9,14 +9,14 @@ export interface RetryPolicy {
 export type RecoveryAction =
   | {
       readonly action: 'retry';
-      readonly reference: string;
+      readonly occurrenceId: string;
       readonly operation: string;
       readonly remainingAttempts: number;
       readonly tool?: string;
     }
   | {
       readonly action: 'escalate';
-      readonly reference: string;
+      readonly occurrenceId: string;
       readonly reason:
         | 'invalid-report'
         | 'unknown-code'
@@ -42,26 +42,30 @@ export function chooseRecoveryAction(
   if (!decoded.ok) {
     return {
       action: 'escalate',
-      reference: 'unavailable',
+      occurrenceId: 'unavailable',
       reason: 'invalid-report',
       detail: `${decoded.reason} at ${decoded.path}`,
     };
   }
-  const { reference, code, as_json } = decoded.report;
+  const { occurrence_id: occurrenceId, code, as_json } = decoded.report;
   // The message is display text. Only the code selects an action.
   if (!policy.retryableCodes.includes(code)) {
-    return { action: 'escalate', reference, reason: 'unknown-code' };
+    return { action: 'escalate', occurrenceId, reason: 'unknown-code' };
   }
   if (
     !Number.isSafeInteger(policy.remainingAttempts) ||
     policy.remainingAttempts <= 0
   ) {
-    return { action: 'escalate', reference, reason: 'retry-budget-exhausted' };
+    return {
+      action: 'escalate',
+      occurrenceId,
+      reason: 'retry-budget-exhausted',
+    };
   }
   const tool = selectedTool(as_json);
   return {
     action: 'retry',
-    reference,
+    occurrenceId,
     operation: policy.operation,
     remainingAttempts: policy.remainingAttempts - 1,
     ...(tool === undefined ? {} : { tool }),
@@ -72,7 +76,7 @@ if (require.main === module) {
   const action = chooseRecoveryAction(
     {
       v: 'appex/public/v3',
-      reference: 'AE_example',
+      occurrence_id: 'AE_example',
       code: 'TOOL_UNAVAILABLE',
       message: 'The requested tool is temporarily unavailable.',
       as_json: { tool: 'search' },

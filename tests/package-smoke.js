@@ -156,11 +156,11 @@ try {
   const diagnostic = api.toDiagnosticReport(error, { context: { runId: 'r' } });
   const publicReport = api.toPublicReport(error);
   assert.equal(diagnostic.v, 'corj/v0.12');
-  assert.equal(diagnostic.reference, error.id);
-  assert.equal(publicReport.reference, error.id);
+  assert.equal(diagnostic.occurrence_id, error.occurrenceId);
+  assert.equal(publicReport.occurrence_id, error.occurrenceId);
   assert.deepEqual(publicReport, {
     v: 'appex/public/v3',
-    reference: error.id,
+    occurrence_id: error.occurrenceId,
     code: 'TOOL_FAILED',
     message: 'Something went wrong',
     as_json: { tool: 'search' },

@@ -77,13 +77,13 @@ export type ExceptionDefinition<
   readonly public?: PublicPolicy<Details>;
 };
 
-/** One occurrence: a native `Error` with a stable `_tag`, an `id` used as the report `reference`, and frozen `details`. */
+/** One occurrence: a native `Error` with a stable `_tag`, an `occurrenceId` used as the report `occurrence_id`, and frozen `details`. */
 export interface TypedException<
   Tag extends string = string,
   Details extends object = object,
 > extends Error {
   readonly _tag: Tag;
-  readonly id: string;
+  readonly occurrenceId: string;
   readonly timestamp: string;
   readonly details: DetailsRecord<Details>;
   readonly cause?: unknown;
@@ -225,7 +225,7 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
 
 /**
  * Define an error kind: a native `Error` subclass with a stable `_tag`, typed
- * `details`, an occurrence `id`, and an optional `public` disclosure policy.
+ * `details`, an `occurrenceId`, and an optional `public` disclosure policy.
  *
  * Annotate the message renderer's parameter to declare the details type. A
  * string message defines a kind without details. Details must be a data-only
@@ -289,7 +289,7 @@ export function defineException(definition: {
   class DefinedException extends Error {
     static readonly tag = tag;
     readonly _tag: string;
-    readonly id: string;
+    readonly occurrenceId: string;
     readonly timestamp: string;
     readonly details: Readonly<Record<PropertyKey, unknown>>;
     declare readonly cause?: unknown;
@@ -327,7 +327,7 @@ export function defineException(definition: {
       );
       const occurrence = createOccurrence(idPrefix);
       this._tag = tag;
-      this.id = occurrence.id;
+      this.occurrenceId = occurrence.id;
       this.timestamp = occurrence.timestamp;
       this.details = details;
       installCause(this, options);
@@ -355,7 +355,7 @@ export function defineException(definition: {
  * import { defineException, isTypedException } from 'application-exception';
  * const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
  * const caught: unknown = new Unavailable();
- * if (isTypedException(caught)) console.log(caught._tag, caught.id);
+ * if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId);
  * if (caught instanceof Unavailable) console.log(caught.details);
  * ```
  */

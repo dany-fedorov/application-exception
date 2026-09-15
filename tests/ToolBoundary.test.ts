@@ -19,7 +19,7 @@ describe('tool boundary example', () => {
     if (outcome.ok) throw new Error('expected a failure');
     expect(outcome.response).toEqual({
       v: 'appex/public/v3',
-      reference: outcome.diagnostic.reference,
+      occurrence_id: outcome.diagnostic.occurrence_id,
       code: 'TOOL_UNAVAILABLE',
       message: 'The requested tool is temporarily unavailable.',
       as_json: { tool: 'search' },
@@ -44,7 +44,9 @@ describe('tool boundary example', () => {
     });
     if (outcome.ok) throw new Error('expected a failure');
     expect(outcome.response.code).toBe('INTERNAL_ERROR');
-    expect(outcome.response.reference).toBe(outcome.diagnostic.reference);
+    expect(outcome.response.occurrence_id).toBe(
+      outcome.diagnostic.occurrence_id,
+    );
     expect(JSON.stringify(outcome.response)).not.toContain('secret');
   });
 });

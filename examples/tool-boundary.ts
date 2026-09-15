@@ -20,7 +20,7 @@ export type ToolOutcome<T> =
       readonly response: PublicReport;
     };
 
-/** Run a tool; on failure return the operator report and the agent-facing report, correlated by reference. */
+/** Run a tool; on failure return the operator report and the agent-facing report, correlated by occurrence id. */
 export function runTool<T>(
   runId: string,
   tool: string,

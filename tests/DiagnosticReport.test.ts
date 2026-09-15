@@ -13,7 +13,7 @@ describe('toDiagnosticReport', () => {
       `${tool} failed`,
   });
 
-  test('is a corj report of the occurrence plus a reference', () => {
+  test('is a corj report of the occurrence plus an occurrence id', () => {
     const cause = Object.assign(new Error('connection refused'), {
       code: 'ECONNREFUSED',
     });
@@ -26,10 +26,10 @@ describe('toDiagnosticReport', () => {
 
     expect(report.v).toBe('corj/v0.12');
     expect(DIAGNOSTIC_REPORT_VERSION).toBe('corj/v0.12');
-    expect(report.reference).toBe(error.id);
+    expect(report.occurrence_id).toBe(error.occurrenceId);
     expect(report.as_json).toEqual({
       _tag: 'agent/ToolFailure',
-      id: error.id,
+      occurrenceId: error.occurrenceId,
       timestamp: error.timestamp,
       details: { tool: 'search', input: { query: 'Ada' } },
     });
@@ -46,7 +46,7 @@ describe('toDiagnosticReport', () => {
     });
     expect(report).not.toHaveProperty('context');
     expect(report).not.toHaveProperty('reporting_errors');
-    expect(Object.keys(report)[0]).toBe('reference');
+    expect(Object.keys(report)[0]).toBe('occurrence_id');
 
     const full = restoreExpectedValues(report);
     expect(full.constructor_name).toBe('agent/ToolFailure');
@@ -54,51 +54,53 @@ describe('toDiagnosticReport', () => {
     expect(full.instanceof_error).toBe(true);
   });
 
-  test('reports thrown primitives with a fresh reference per call', () => {
+  test('reports thrown primitives with a fresh occurrence id per call', () => {
     const first = toDiagnosticReport('socket closed');
     const second = toDiagnosticReport('socket closed');
-    expect(first.reference).toMatch(/^AE_/);
-    expect(second.reference).not.toBe(first.reference);
+    expect(first.occurrence_id).toMatch(/^AE_/);
+    expect(second.occurrence_id).not.toBe(first.occurrence_id);
     expect(first.as_json).toBe('socket closed');
     expect(first.typeof).toBe('string');
     expect(toDiagnosticReport(null).as_json).toBeNull();
   });
 
-  test('keeps one reference per object across both report functions', () => {
+  test('keeps one occurrence id per object across both report functions', () => {
     const error = new Error('plain');
     const diagnostic = toDiagnosticReport(error);
-    expect(toDiagnosticReport(error).reference).toBe(diagnostic.reference);
-    expect(toPublicReport(error).reference).toBe(diagnostic.reference);
+    expect(toDiagnosticReport(error).occurrence_id).toBe(
+      diagnostic.occurrence_id,
+    );
+    expect(toPublicReport(error).occurrence_id).toBe(diagnostic.occurrence_id);
     const thrownObject = { code: 'E_PLAIN' };
-    expect(toPublicReport(thrownObject).reference).toBe(
-      toDiagnosticReport(thrownObject).reference,
+    expect(toPublicReport(thrownObject).occurrence_id).toBe(
+      toDiagnosticReport(thrownObject).occurrence_id,
     );
   });
 
-  test('uses the id of an occurrence from another copy of the package', () => {
+  test('uses the occurrence id of an occurrence from another copy of the package', () => {
     const foreign = Object.assign(new Error('foreign'), {
       [TYPED_EXCEPTION_BRAND]: true,
-      id: 'AE_foreign',
+      occurrenceId: 'AE_foreign',
     });
-    expect(toDiagnosticReport(foreign).reference).toBe('AE_foreign');
+    expect(toDiagnosticReport(foreign).occurrence_id).toBe('AE_foreign');
     const forged = Object.assign(new Error('forged'), {
       [TYPED_EXCEPTION_BRAND]: true,
-      id: 42,
+      occurrenceId: 42,
     });
-    expect(toDiagnosticReport(forged).reference).toMatch(/^AE_/);
+    expect(toDiagnosticReport(forged).occurrence_id).toMatch(/^AE_/);
   });
 
-  test('honors and validates an explicit reference', () => {
-    expect(toDiagnosticReport('x', { reference: 'trace-1' }).reference).toBe(
-      'trace-1',
-    );
+  test('honors and validates an explicit occurrence id', () => {
+    expect(
+      toDiagnosticReport('x', { occurrenceId: 'trace-1' }).occurrence_id,
+    ).toBe('trace-1');
     const error = new ToolFailure({ details: { tool: 'a', input: {} } });
-    expect(toDiagnosticReport(error, { reference: 'override' }).reference).toBe(
-      'override',
-    );
-    for (const reference of ['', 'x'.repeat(129), 42, null]) {
-      expect(() => toDiagnosticReport('x', { reference } as never)).toThrow(
-        code('APPEX_INVALID_REFERENCE'),
+    expect(
+      toDiagnosticReport(error, { occurrenceId: 'override' }).occurrence_id,
+    ).toBe('override');
+    for (const occurrenceId of ['', 'x'.repeat(129), 42, null]) {
+      expect(() => toDiagnosticReport('x', { occurrenceId } as never)).toThrow(
+        code('APPEX_INVALID_OCCURRENCE_ID'),
       );
     }
   });
@@ -231,7 +233,7 @@ describe('toDiagnosticReport', () => {
       );
     }
     expect(() => toDiagnosticReport('x', { maxDepht: 1 } as never)).toThrow(
-      /APPEX_INVALID_OPTIONS: unknown option "maxDepht"; known options: reference, context, maxReportSize, maxDepth, maxChildren, stackFormat/,
+      /APPEX_INVALID_OPTIONS: unknown option "maxDepht"; known options: occurrenceId, context, maxReportSize, maxDepth, maxChildren, stackFormat/,
     );
   });
 });

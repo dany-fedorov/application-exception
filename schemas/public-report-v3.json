@@ -5,11 +5,11 @@
   "description": "What an application discloses about one failure. message and as_json keep the meaning of the same corj fields; nothing else from the error appears.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["v", "reference", "code", "message"],
+  "required": ["v", "occurrence_id", "code", "message"],
   "properties": {
     "v": { "const": "appex/public/v3" },
-    "reference": {
-      "description": "The occurrence reference shared with the diagnostic report.",
+    "occurrence_id": {
+      "description": "The occurrence id shared with the diagnostic report.",
       "type": "string",
       "minLength": 1,
       "maxLength": 128

@@ -54,8 +54,10 @@ describe('shipped schemas', () => {
 
   test('reject diagnostic reports without the extension contract', () => {
     const report = toDiagnosticReport(new Error('x'));
-    expect(validateDiagnostic({ ...report, reference: undefined })).toBe(false);
-    expect(validateDiagnostic({ ...report, reference: '' })).toBe(false);
+    expect(validateDiagnostic({ ...report, occurrence_id: undefined })).toBe(
+      false,
+    );
+    expect(validateDiagnostic({ ...report, occurrence_id: '' })).toBe(false);
     expect(validateDiagnostic({ ...report, v: 'corj/v0.11' })).toBe(false);
     expect(validateDiagnostic({ ...report, reporting_errors: [{}] })).toBe(
       false,
