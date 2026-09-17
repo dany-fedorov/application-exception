@@ -1,4 +1,6 @@
 import { CORJ_VERSION } from 'caught-object-report-json';
+import type { RedactionPolicy } from './redaction';
+import type { TrustRealm } from './typed-internals';
 import type {
   CorjErrorStage,
   CorjJsonValue,
@@ -22,16 +24,18 @@ export interface ReportingError {
 }
 
 /**
- * A corj report object (see caught-object-report-json) with three extension
+ * A corj report object (see caught-object-report-json) with four extension
  * fields. `occurrence_id` is the occurrence id shared with the public
  * report. `context` is the normalized `options.context`. `reporting_errors`
- * lists inspection failures (at most 8).
+ * lists inspection failures (at most 8). `report_omitted` names the optional
+ * fields dropped to meet `maxFinalReportSize`.
  */
 export type DiagnosticReport = Omit<CorjReport, 'v'> & {
   readonly v: CorjVersion;
   readonly occurrence_id: string;
   readonly context?: CorjJsonValue | null;
   readonly reporting_errors?: readonly ReportingError[];
+  readonly report_omitted?: readonly ('context' | 'reporting_errors')[];
 };
 
 /**
@@ -39,14 +43,19 @@ export type DiagnosticReport = Omit<CorjReport, 'v'> & {
  * and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
  * 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
  * the report budget. `occurrenceId` overrides the occurrence id.
+ * `maxFinalReportSize` bounds the UTF-8 bytes of `JSON.stringify(report)` for
+ * the whole report, extension fields included; `null` (the default) disables
+ * it and leaves `maxReportSize` alone.
  */
 export interface DiagnosticReportOptions {
   readonly occurrenceId?: string;
   readonly context?: unknown;
   readonly maxReportSize?: number | null;
+  readonly maxFinalReportSize?: number | null;
   readonly maxDepth?: number;
   readonly maxChildren?: number;
   readonly stackFormat?: 'lines' | 'string';
+  readonly redact?: RedactionPolicy;
 }
 
 /**
@@ -70,6 +79,27 @@ export interface PublicReportOptions {
   readonly code?: string;
   readonly message?: string;
   readonly details?: unknown;
+  readonly redact?: RedactionPolicy;
+  readonly realm?: TrustRealm;
+}
+
+/**
+ * Options of `toReports`. `occurrenceId` overrides the occurrence id of both
+ * reports. `diagnostic` and `public` are the per-report option bags, each
+ * without its own `occurrenceId`, so that `message` and `context` stay
+ * unambiguous.
+ */
+export interface ToReportsOptions {
+  readonly occurrenceId?: string;
+  readonly diagnostic?: Omit<DiagnosticReportOptions, 'occurrenceId'>;
+  readonly public?: Omit<PublicReportOptions, 'occurrenceId'>;
+}
+
+/** Both reports of one occurrence, produced together; the three `occurrence_id`s are the same string. */
+export interface CapturedReports {
+  readonly occurrence_id: string;
+  readonly diagnostic: DiagnosticReport;
+  readonly public: PublicReport;
 }
 
 /** Result of `decodePublicReport`: a detached report, or the first reason it was rejected and where. */

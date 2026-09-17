@@ -57,8 +57,8 @@ defineException({
 ## APPEX_INVALID_DETAILS
 
 When: a kind is constructed with details that are not a data-only record.
-Cause: `null`, an array, a class instance with methods, a getter, a function-valued field, a non-enumerable field, more than 1,000 keys, more than 32 prototype levels, or a proxy that throws.
-Fix: pass a plain object of data; convert instances with a projection first.
+Cause: `null`, an array, a class instance with methods, a getter, a function-valued field, a non-enumerable field, more than 1,000 keys, more than 32 prototype levels, or a proxy that throws. Under `snapshotDetails: true` it also covers nested content a snapshot cannot capture: a cycle, a function, an accessor, a non-enumerable property, a class instance or other exotic object, an invalid `Date`, an array with extra own properties, nesting past 32 levels, or more than 10,000 values. A non-boolean `snapshotDetails` is rejected when the kind is defined.
+Fix: pass a plain object of data; convert instances with a projection first. The message names the offending path, such as `details.session.token`.
 
 ```ts
 import { defineException } from 'application-exception';
@@ -123,4 +123,40 @@ Fix: pass display text, or omit `message` to use the kind's policy.
 ```ts
 import { toPublicReport } from 'application-exception';
 toPublicReport(new Error('x'), { message: 'Search is temporarily unavailable.' });
+```
+
+## APPEX_REPORT_BUDGET_TOO_SMALL
+
+When: `options.maxFinalReportSize` cannot hold the report even after `context` and `reporting_errors` are dropped and corj's own budget is halved to its 256-byte floor.
+Cause: a budget of a few dozen bytes, or one too small for a long `occurrenceId` plus the required corj fields.
+Fix: raise `maxFinalReportSize` (a few hundred bytes hold the smallest report), or shorten the occurrence id.
+
+```ts
+import { toDiagnosticReport } from 'application-exception';
+toDiagnosticReport(new Error('x'), { maxFinalReportSize: 4096, context: { runId: 'r' } });
+```
+
+## APPEX_INVALID_TRUST_REALM
+
+When: a `realm` passed to `defineException`, `isTypedException`, `toPublicReport`, or `toReports` is not a realm this copy can speak to.
+Cause: a value that did not come from `createTrustRealm`, a realm built by a copy on a different realm protocol, or an object claiming the protocol without its methods. The message names both protocols.
+Fix: create the realm once with `createTrustRealm()` and pass that same object to every cooperating copy; align the package versions when the protocols differ. Omit `realm` to keep each copy isolated.
+
+```ts
+import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
+const realm = createTrustRealm();
+const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
+toPublicReport(new Timeout(), { realm });
+```
+
+## APPEX_INVALID_REDACTION_POLICY
+
+When: `createRedactionPolicy` is given malformed options, or a `redact` option is not a policy it produced.
+Cause: `keys` holding something other than strings and regular expressions, `paths` holding a non-string, `values` holding a non-regular-expression, a `replacement` that is not a string of at most 128 characters, a `transform` that is not a function, or a hand-built object passed as `redact`.
+Fix: build the policy once with `createRedactionPolicy` and share that object between reports.
+
+```ts
+import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
+const redact = createRedactionPolicy({ keys: ['password', /token$/i] });
+toDiagnosticReport(new Error('x'), { redact });
 ```

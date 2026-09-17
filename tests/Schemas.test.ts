@@ -1,6 +1,10 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { CORJ_VERSION } from 'caught-object-report-json';
-import { toDiagnosticReport, toPublicReport } from '../src/reporting';
+import {
+  toDiagnosticReport,
+  toPublicReport,
+  toReports,
+} from '../src/reporting';
 import { defineException } from '../src/typed';
 
 const diagnosticSchema = require('../schemas/diagnostic-report-v3.json') as {
@@ -52,6 +56,26 @@ describe('shipped schemas', () => {
     }
   });
 
+  test('accept budgeted and paired reports', () => {
+    const bounded = toDiagnosticReport(new Error('failure'), {
+      maxReportSize: 1024,
+      maxFinalReportSize: 1024,
+      context: { text: 'x'.repeat(12_000) },
+    });
+    expect(bounded.report_omitted).toEqual(['context']);
+    expect(validateDiagnostic(JSON.parse(JSON.stringify(bounded)))).toBe(true);
+    const captured = toReports(
+      new ToolUnavailable({ details: { tool: 'search' } }),
+      { diagnostic: { context: { runId: 'run-1' } } },
+    );
+    expect(
+      validateDiagnostic(JSON.parse(JSON.stringify(captured.diagnostic))),
+    ).toBe(true);
+    expect(validatePublic(JSON.parse(JSON.stringify(captured.public)))).toBe(
+      true,
+    );
+  });
+
   test('reject diagnostic reports without the extension contract', () => {
     const report = toDiagnosticReport(new Error('x'));
     expect(validateDiagnostic({ ...report, occurrence_id: undefined })).toBe(
@@ -63,6 +87,18 @@ describe('shipped schemas', () => {
       false,
     );
     expect(validateDiagnostic({ ...report, context: undefined })).toBe(true);
+    expect(validateDiagnostic({ ...report, report_omitted: ['context'] })).toBe(
+      true,
+    );
+    expect(validateDiagnostic({ ...report, report_omitted: ['stack'] })).toBe(
+      false,
+    );
+    expect(
+      validateDiagnostic({
+        ...report,
+        report_omitted: ['context', 'context'],
+      }),
+    ).toBe(false);
   });
 
   test('accept generated public reports and reject additions', () => {

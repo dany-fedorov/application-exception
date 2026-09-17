@@ -20,7 +20,9 @@ const LINK_SOURCES = [
   'CONTEXT.md',
   'docs/README.md',
 ];
-const BUDGETS = { 'AGENTS.md': 150, 'docs/agent/api-card.md': 400 };
+// The card is generated, so these bound drift, not prose. 0.4.0 added five
+// runtime exports and six types; the card budget rose with the surface.
+const BUDGETS = { 'AGENTS.md': 170, 'docs/agent/api-card.md': 600 };
 const findings = [];
 const finding = (text) => findings.push(text);
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');

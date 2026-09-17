@@ -2,10 +2,14 @@ import { describeValue, invalid, isAppexError } from './errors';
 import { createOccurrence, installCause } from './occurrence';
 import {
   TYPED_EXCEPTION_BRAND,
-  isLocalTypedException,
+  isTrustedTypedException,
+  makeTrustRealm,
   registerTypedException,
+  trustRealmApi,
 } from './typed-internals';
-import type { PublicPolicyRecord } from './typed-internals';
+import type { PublicPolicyRecord, TrustRealm } from './typed-internals';
+
+export type { TrustRealm } from './typed-internals';
 
 type NoCause = {
   readonly cause?: never;
@@ -64,7 +68,7 @@ export type ExceptionInput<Details extends object = never> = ([
   : { readonly details: RecordDetails<Details> }) &
   (NoCause | SingleCause | MultipleCauses);
 
-/** Input of `defineException`. A string `message` defines a kind without details. */
+/** Input of `defineException`. A string `message` defines a kind without details; `snapshotDetails` opts into a deep frozen copy of the details. */
 export type ExceptionDefinition<
   Tag extends string,
   Details extends object = never,
@@ -75,6 +79,8 @@ export type ExceptionDefinition<
     : (details: Readonly<RecordDetails<Details>>) => string;
   readonly idPrefix?: string;
   readonly public?: PublicPolicy<Details>;
+  readonly snapshotDetails?: boolean;
+  readonly realm?: TrustRealm;
 };
 
 /** One occurrence: a native `Error` with a stable `_tag`, an `occurrenceId` used as the report `occurrence_id`, and frozen `details`. */
@@ -123,6 +129,7 @@ function readDetailsOption(options: {
 
 function copyRecordDetails(
   value: object,
+  snapshot: boolean,
 ): Readonly<Record<PropertyKey, unknown>> {
   try {
     let prototype = Object.getPrototypeOf(value) as object | null;
@@ -160,16 +167,116 @@ function copyRecordDetails(
         );
       }
       Object.defineProperty(output, key, {
-        value: descriptor.value,
+        value: snapshot
+          ? snapshotValue(
+              descriptor.value,
+              String(key),
+              1,
+              { nodes: 0 },
+              new Set(),
+            )
+          : descriptor.value,
         enumerable: true,
-        writable: true,
-        configurable: true,
+        writable: !snapshot,
+        configurable: !snapshot,
       });
     }
     return Object.freeze(output);
   } catch (failure: unknown) {
     if (isAppexError(failure)) throw failure;
     throw invalid('APPEX_INVALID_DETAILS', 'details could not be inspected');
+  }
+}
+
+const SNAPSHOT_MAX_DEPTH = 32;
+const SNAPSHOT_MAX_NODES = 10_000;
+
+function unsupported(path: string, what: string): never {
+  throw invalid(
+    'APPEX_INVALID_DETAILS',
+    `details.${path} is ${what}; a snapshotted kind accepts only primitives, plain objects, arrays, and Date`,
+  );
+}
+
+/**
+ * A deep, detached copy of one details value. Primitives (including BigInt
+ * and symbols) and `Date` are captured by value; plain objects and arrays are
+ * rebuilt. Anything else, and any cycle, is rejected rather than approximated.
+ */
+function snapshotValue(
+  value: unknown,
+  path: string,
+  depth: number,
+  budget: { nodes: number },
+  seen: Set<object>,
+): unknown {
+  if (++budget.nodes > SNAPSHOT_MAX_NODES)
+    throw invalid(
+      'APPEX_INVALID_DETAILS',
+      `details exceed ${SNAPSHOT_MAX_NODES.toLocaleString('en-US')} snapshotted values`,
+    );
+  if (value === null) return null;
+  const kind = typeof value;
+  if (kind === 'function') unsupported(path, 'a function');
+  if (kind !== 'object') return value;
+  if (depth >= SNAPSHOT_MAX_DEPTH)
+    throw invalid(
+      'APPEX_INVALID_DETAILS',
+      `details.${path} exceeds snapshot depth ${SNAPSHOT_MAX_DEPTH}`,
+    );
+
+  const object = value as object;
+  if (seen.has(object)) unsupported(path, 'a cycle');
+  if (object instanceof Date) {
+    let time: unknown;
+    try {
+      // Through the real method, so a proxy claiming Date.prototype cannot
+      // substitute its own getTime.
+      time = Date.prototype.getTime.call(object);
+    } catch {
+      unsupported(path, 'not a plain object');
+    }
+    if (typeof time !== 'number' || Number.isNaN(time))
+      unsupported(path, 'an invalid Date');
+    return Object.freeze(new Date(time));
+  }
+
+  const prototype: unknown = Object.getPrototypeOf(object);
+  const isArray = Array.isArray(object);
+  if (!isArray && prototype !== Object.prototype && prototype !== null)
+    unsupported(path, 'not a plain object');
+
+  seen.add(object);
+  try {
+    if (isArray) {
+      const items = object as readonly unknown[];
+      if (Reflect.ownKeys(object).length !== items.length + 1)
+        unsupported(path, 'an array with extra own properties');
+      return Object.freeze(
+        items.map((item, index) =>
+          snapshotValue(item, `${path}[${index}]`, depth + 1, budget, seen),
+        ),
+      );
+    }
+    const output: Record<PropertyKey, unknown> = {};
+    const keys = Reflect.ownKeys(object);
+    if (keys.length > 1_000)
+      unsupported(path, 'an object with more than 1,000 own keys');
+    for (const key of keys) {
+      const descriptor = Object.getOwnPropertyDescriptor(object, key);
+      const at = `${path}.${String(key)}`;
+      if (!descriptor || !('value' in descriptor)) unsupported(at, 'an accessor');
+      if (!descriptor.enumerable) unsupported(at, 'not enumerable');
+      Object.defineProperty(output, key, {
+        value: snapshotValue(descriptor.value, at, depth + 1, budget, seen),
+        enumerable: true,
+        writable: false,
+        configurable: false,
+      });
+    }
+    return Object.freeze(output);
+  } finally {
+    seen.delete(object);
   }
 }
 
@@ -231,7 +338,14 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
  * string message defines a kind without details. Details must be a data-only
  * record: no arrays, functions, accessors, or methods.
  *
- * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`
+ * `snapshotDetails: true` captures a deep frozen copy at construction, so later
+ * mutation of the caller's nested objects cannot change what the message and the
+ * reports describe. A snapshot accepts primitives, plain objects, arrays, and
+ * `Date`, and rejects cycles, functions, accessors, non-enumerable properties,
+ * class instances, nesting past 32 levels, and more than 10,000 values. The
+ * default stays the shallow freeze, which shares the caller's nested objects.
+ *
+ * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`, `APPEX_INVALID_DETAILS`
  * @example
  * ```ts
  * import { defineException } from 'application-exception';
@@ -252,6 +366,8 @@ export function defineException<Tag extends string, Details extends object>(
     readonly message: (details: Details) => string;
     readonly idPrefix?: string;
     readonly public?: PublicPolicy<Details>;
+    readonly snapshotDetails?: boolean;
+    readonly realm?: TrustRealm;
   } & ([RecordDetails<Details>] extends [never] ? never : unknown),
 ): TypedExceptionClass<Tag, Details>;
 export function defineException(definition: {
@@ -259,6 +375,8 @@ export function defineException(definition: {
   readonly message: string | ((details: never) => string);
   readonly idPrefix?: string;
   readonly public?: unknown;
+  readonly snapshotDetails?: unknown;
+  readonly realm?: unknown;
 }): unknown {
   const { tag, message, idPrefix } = definition;
   if (typeof tag !== 'string' || tag.trim().length === 0 || tag.length > 128) {
@@ -284,6 +402,15 @@ export function defineException(definition: {
       'idPrefix must be a nonempty string of at most 32 characters',
     );
   }
+  const snapshot = definition.snapshotDetails;
+  if (snapshot !== undefined && typeof snapshot !== 'boolean') {
+    throw invalid(
+      'APPEX_INVALID_DETAILS',
+      'snapshotDetails must be a boolean',
+    );
+  }
+  const snapshotDetails = snapshot === true;
+  const realm = trustRealmApi(definition.realm);
   const policy = validatePublicPolicy(definition.public);
 
   class DefinedException extends Error {
@@ -317,7 +444,7 @@ export function defineException(definition: {
           'details must be a non-array object',
         );
       }
-      const details = copyRecordDetails(suppliedDetails);
+      const details = copyRecordDetails(suppliedDetails, snapshotDetails);
       super(
         renderMessage(
           tag,
@@ -331,7 +458,7 @@ export function defineException(definition: {
       this.timestamp = occurrence.timestamp;
       this.details = details;
       installCause(this, options);
-      registerTypedException(this, policy);
+      registerTypedException(this, policy, realm);
     }
   }
   Object.defineProperty(DefinedException, 'name', {
@@ -360,5 +487,52 @@ export function defineException(definition: {
  * ```
  */
 export function isTypedException(value: unknown): value is TypedException {
-  return isLocalTypedException(value);
+  return isTrustedTypedException(value, undefined);
+}
+
+/**
+ * Whether a value is an occurrence of this copy of the package, or of another
+ * copy that joined the same realm. `isTypedException` keeps its one-argument
+ * shape, so it still works as an array callback; this is the realm-aware form.
+ *
+ * @throws `APPEX_INVALID_TRUST_REALM`
+ * @example
+ * ```ts
+ * import { createTrustRealm, defineException, isTrustedException } from 'application-exception';
+ * const realm = createTrustRealm();
+ * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
+ * console.log(isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
+ * ```
+ */
+export function isTrustedException(
+  value: unknown,
+  realm: TrustRealm,
+): value is TypedException {
+  return isTrustedTypedException(value, trustRealmApi(realm));
+}
+
+/**
+ * Create an explicit trust boundary that cooperating copies of this package can
+ * share. Pass the returned object as `realm` to `defineException` in each copy
+ * that defines failures, and as `realm` to `isTrustedException`,
+ * `toPublicReport`, or `toReports` in the copy that reports them.
+ * `toDiagnosticReport` takes no realm: a diagnostic report consults no
+ * disclosure policy, and occurrence ids already correlate across copies.
+ *
+ * The realm object reference *is* the capability: holding it is the trust
+ * decision. Nothing is matched by `_tag`, by the global brand, or by any value
+ * read off the caught object, so a forged tag or a report deserialized from the
+ * wire can never acquire a public policy. Without a realm every copy keeps
+ * today's isolation and foreign values stay generic.
+ *
+ * @example
+ * ```ts
+ * import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
+ * const realm = createTrustRealm();
+ * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
+ * console.log(toPublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
+ * ```
+ */
+export function createTrustRealm(): TrustRealm {
+  return makeTrustRealm();
 }

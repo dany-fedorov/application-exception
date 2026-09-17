@@ -127,12 +127,16 @@ try {
     'APPEX_ERROR_CODES',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
+    'createRedactionPolicy',
+    'createTrustRealm',
     'decodePublicReport',
     'defineException',
+    'isTrustedException',
     'isTypedException',
     'restoreExpectedValues',
     'toDiagnosticReport',
     'toPublicReport',
+    'toReports',
   ]);
   assert.throws(
     () => consumerRequire('application-exception/typed'),

@@ -2,7 +2,9 @@
 
 Typed failures with two reports: a corj diagnostic report for operators and a
 public report for agents and users, correlated by one `occurrence_id`. Runtime API:
-`defineException`, `toDiagnosticReport`, `toPublicReport`, `decodePublicReport`.
+`defineException`, `toDiagnosticReport`, `toPublicReport`, `toReports`,
+`decodePublicReport`, `createRedactionPolicy`, `createTrustRealm`,
+`isTrustedException`.
 
 Exact signatures and one example per call: [docs/agent/api-card.md](docs/agent/api-card.md).
 Step-by-step tasks: [docs/agent/recipes.md](docs/agent/recipes.md).
@@ -21,10 +23,11 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
    see. Without a policy the public report is `INTERNAL_ERROR` /
    `Something went wrong`; a policy without `message` also yields the generic
    message. That default is the safe one.
-4. At a boundary, call both report functions on the same caught value:
-   `toDiagnosticReport(caught, { context })` for the trusted sink, then
-   `toPublicReport(caught)` for the response. They share `occurrence_id`; for
-   a thrown primitive, pass the same `occurrenceId` option to both calls.
+4. At a boundary, call `toReports(caught, { diagnostic: { context } })` and send
+   `reports.diagnostic` to the trusted sink and `reports.public` in the response.
+   One occurrence is resolved for both, so they share `occurrence_id` for every
+   caught value, thrown primitives included. Use the single-report calls when you
+   need only one; then pass the same `occurrenceId` to both for a primitive.
 5. The diagnostic report holds stacks, messages, and every enumerable property
    of the error graph, including `details`. Never return it to an agent or user.
 6. When you receive a public report, run `decodePublicReport`, branch on
@@ -36,11 +39,29 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
    message linking to its section in errors.md. Fix the call site; do not catch it.
 9. Translate lower-level failures into your kinds and pass the original as
    `cause` (or `causes`). The diagnostic report lists the chain under `children`.
+10. Bound what a sink receives with `maxFinalReportSize`: the whole report is
+    held to that many UTF-8 bytes of compact JSON, dropping `context` then
+    `reporting_errors` (both named in `report_omitted`) before shrinking corj's
+    own budget. A budget too small for the envelope throws rather than emitting
+    an over-budget or invalid report.
+11. Build one `createRedactionPolicy({ keys, paths, values })` per service and
+    pass it as `redact` to both reports. It rewrites messages, stacks, `as_json`,
+    `context`, `reporting_errors`, and nested causes. On a public report it runs
+    after the `details` selector, so it can only narrow what was selected — it is
+    not a way to disclose anything.
+12. Use `snapshotDetails: true` on a kind whose details are mutated after the
+    throw, or whose reporting is deferred across an async boundary. It captures a
+    deep frozen copy and rejects anything it cannot capture faithfully.
+13. Two loaded copies of this package do not trust each other, by design. To
+    share typed identity and disclosure policies between them, create one
+    `createTrustRealm()` and pass it as `realm` to `defineException` in each copy
+    and to `isTrustedException` / `toPublicReport` / `toReports` in the reporter.
+    `toDiagnosticReport` takes no realm; occurrence ids already correlate.
 
 ## Report shapes
 
 Diagnostic report (`v: "corj/v0.12"`): a corj report plus `occurrence_id`,
-optional `context`, optional `reporting_errors`. A missing corj field holds its
+optional `context`, optional `reporting_errors`, optional `report_omitted`. A missing corj field holds its
 expected value; `null` means reading it failed. Field meanings:
 https://github.com/dany-fedorov/caught-object-report-json#the-report
 

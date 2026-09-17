@@ -1,28 +1,43 @@
-export { defineException, isTypedException } from './typed';
+export {
+  createTrustRealm,
+  defineException,
+  isTrustedException,
+  isTypedException,
+} from './typed';
 export type {
   DetailsRecord,
   ExceptionDefinition,
   ExceptionInput,
   PublicPolicy,
+  TrustRealm,
   TypedException,
   TypedExceptionClass,
 } from './typed';
+export { createRedactionPolicy } from './redaction';
+export type {
+  RedactionContext,
+  RedactionPolicy,
+  RedactionPolicyOptions,
+} from './redaction';
 export {
   decodePublicReport,
   toDiagnosticReport,
   toPublicReport,
+  toReports,
 } from './reporting';
 export {
   DIAGNOSTIC_REPORT_VERSION,
   PUBLIC_REPORT_VERSION,
 } from './report-types';
 export type {
+  CapturedReports,
   DecodePublicReportResult,
   DiagnosticReport,
   DiagnosticReportOptions,
   PublicReport,
   PublicReportOptions,
   ReportingError,
+  ToReportsOptions,
 } from './report-types';
 export { APPEX_ERROR_CODES } from './errors';
 export type { AppexErrorCode, AppexTypeError } from './errors';
