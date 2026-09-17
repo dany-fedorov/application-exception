@@ -36,6 +36,26 @@ const TASKS = [
   ],
   ['Read a public report received as JSON', '`decodePublicReport(value)`'],
   [
+    'Capture both reports as one occurrence',
+    '`toReports(caught, { diagnostic, public })`',
+  ],
+  [
+    'Bound the whole diagnostic report',
+    '`toDiagnosticReport(caught, { maxFinalReportSize })`',
+  ],
+  [
+    'Keep secrets out of either report',
+    '`createRedactionPolicy({ keys, paths, values })` passed as `redact`',
+  ],
+  [
+    'Freeze details against later mutation',
+    '`defineException({ tag, message, snapshotDetails: true })`',
+  ],
+  [
+    'Trust failures from another loaded copy',
+    '`createTrustRealm()` passed as `realm` to `defineException` and `toPublicReport`',
+  ],
+  [
     'Read omitted corj fields of a diagnostic report',
     '`restoreExpectedValues(report)`',
   ],
@@ -44,8 +64,11 @@ const TASKS = [
 const RUNTIME_ORDER = [
   'defineException',
   'isTypedException',
+  'createTrustRealm',
+  'createRedactionPolicy',
   'toDiagnosticReport',
   'toPublicReport',
+  'toReports',
   'decodePublicReport',
   'restoreExpectedValues',
   'DIAGNOSTIC_REPORT_VERSION',

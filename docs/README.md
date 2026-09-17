@@ -10,6 +10,7 @@
 | [Schemas](../schemas) | JSON Schemas for both reports | yes |
 | [Changelog](../CHANGELOG.md) | Changes by release | yes |
 | [Vocabulary](../CONTEXT.md) | The terms the code and docs use | no |
+| [Runtime support](runtime-support.md) | Which runtimes are exercised, how, and the limits | no |
 | [Specs and plans](superpowers) | Design decisions and implementation plans | no |
 
 ## Where a fact lives
@@ -23,6 +24,7 @@
 | corj field meanings | the caught-object-report-json README and schema |
 | Extension and public field meanings | `README.md` and the schema descriptions |
 | Vocabulary | `CONTEXT.md` |
+| Which runtimes are supported and what was observed | `docs/runtime-support.md` |
 
 ## Checks
 

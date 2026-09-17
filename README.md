@@ -74,11 +74,22 @@ A caught value without a policy, including a plain `Error`, produces
 | --- | --- | --- | --- |
 | Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `context`, `reporting_errors` |
 | Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id` |
+| Both | `toReports(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence |
 
 `occurrence_id` is the `occurrenceId` of a typed exception. Any other object
 gets one generated id, remembered for the object, so both functions agree in
 either order. A thrown primitive gets a fresh occurrence id on each call; pass
-the same `options.occurrenceId` to both calls to correlate them.
+the same `options.occurrenceId` to both calls to correlate them, or call
+`toReports`, which resolves the occurrence once for both:
+
+```ts
+import { toReports } from 'application-exception';
+
+const caught: unknown = new Error('connection refused');
+const reports = toReports(caught, { diagnostic: { context: { runId: 'run-1' } } });
+console.error(JSON.stringify(reports.diagnostic));
+console.log(reports.public.occurrence_id === reports.diagnostic.occurrence_id); // true
+```
 
 ### Diagnostic report
 
@@ -167,6 +178,85 @@ data only. A message renderer that throws yields
 
 Errors thrown by this package carry an `APPEX_*` code and a link to
 [docs/agent/errors.md](docs/agent/errors.md).
+
+## Bound, redact, snapshot, share
+
+Four opt-in controls, each off by default and each leaving 0.3.0 behaviour
+unchanged when omitted.
+
+**Bound the whole report.** `maxFinalReportSize` holds the final diagnostic
+report to that many UTF-8 bytes of compact JSON — corj report, `occurrence_id`,
+`context`, and `reporting_errors` together. It drops `context`, then
+`reporting_errors`, naming both in `report_omitted`, then shrinks corj's own
+budget. A budget too small for the required envelope throws rather than emitting
+an over-budget or invalid report.
+
+```ts
+import { toDiagnosticReport } from 'application-exception';
+
+const caught: unknown = new Error('connection refused');
+toDiagnosticReport(caught, { context: { runId: 'run-1' }, maxFinalReportSize: 32_768 });
+```
+
+**Redact once, everywhere.** A policy built by `createRedactionPolicy` applies
+to messages, stacks, `as_json`, `context`, `reporting_errors`, and nested
+causes. On a public report it runs *after* the kind's `details` selector, so it
+can only narrow what was selected — redaction never authorizes disclosure.
+Identity and shape fields are never rewritten, so a redacted report still
+validates against its schema.
+
+```ts
+import { createRedactionPolicy, toReports } from 'application-exception';
+
+const caught: unknown = new Error('connection refused');
+const redact = createRedactionPolicy({ keys: ['password', /token$/i], values: [/\bsk-[A-Za-z0-9]{8,}\b/] });
+toReports(caught, { diagnostic: { redact }, public: { redact } });
+```
+
+**Snapshot the details.** By default `details` is shallow-frozen, so a caller
+mutating a nested object changes what a later report describes. `snapshotDetails`
+captures a deep frozen copy at construction instead, and rejects content it
+cannot capture faithfully — cycles, functions, accessors, class instances —
+rather than inventing it.
+
+```ts
+import { defineException } from 'application-exception';
+
+const Failed = defineException({
+  tag: 'jobs/Failed',
+  message: ({ job }: { job: { name: string } }) => `${job.name} failed`,
+  snapshotDetails: true,
+});
+const job = { name: 'nightly' };
+const failure = new Failed({ details: { job } });
+job.name = 'renamed';
+console.log(failure.details.job.name); // 'nightly'
+```
+
+**Share trust between copies.** Two separately loaded copies of this package do
+not recognize each other's occurrences, by design: a disclosure policy decides
+what leaves the process, so a value that merely claims to be typed must not pick
+its own public code. `createTrustRealm()` is the explicit opt-in. The realm
+object reference *is* the capability — nothing is matched by `_tag`, by the
+global brand, or by any value read off the caught object, so a forged tag or a
+report revived from JSON acquires nothing.
+
+```ts
+import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
+
+const realm = createTrustRealm();
+const Timeout = defineException({
+  tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm,
+});
+console.log(toPublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT' across copies
+```
+
+## Runtime support
+
+Node >= 18 (CommonJS, the published artifact), Node ESM, Bun, and browsers via a
+bundler. Each is exercised against the packed artifact in CI; the measured
+contract and its limits are in
+[docs/runtime-support.md](docs/runtime-support.md).
 
 ## Schemas
 

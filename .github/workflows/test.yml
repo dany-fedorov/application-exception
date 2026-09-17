@@ -30,3 +30,47 @@ jobs:
         uses: 'jpb06/jest-badges-action@latest'
         with:
           branches: main
+
+  bun:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: npm ci
+
+      - name: Run the Bun runtime check against the packed artifact
+        run: npm run test:bun
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright-core install --with-deps chromium
+
+      - name: Run the browser runtime check against the packed artifact
+        run: npm run test:browser

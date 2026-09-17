@@ -1,10 +1,12 @@
 import {
+  CapturedReports,
   DecodePublicReportResult,
   DiagnosticReport,
   PublicReport,
   restoreExpectedValues,
   toDiagnosticReport,
   toPublicReport,
+  toReports,
 } from '../src';
 import { defineException } from '../src/typed';
 
@@ -56,3 +58,24 @@ function consume(result: DecodePublicReportResult): PublicReport | null {
   return null;
 }
 void consume;
+
+const captured: CapturedReports = toReports(error, {
+  occurrenceId: 'trace-1',
+  diagnostic: { context: { requestId: 'req' }, maxFinalReportSize: 4096 },
+  public: { code: 'X', message: 'x' },
+});
+const capturedId: string = captured.occurrence_id;
+const capturedDiagnostic: DiagnosticReport = captured.diagnostic;
+const capturedPublic: PublicReport = captured.public;
+const omitted: readonly ('context' | 'reporting_errors')[] | undefined =
+  capturedDiagnostic.report_omitted;
+void capturedId;
+void capturedPublic;
+void omitted;
+
+// @ts-expect-error the occurrence id belongs to the top-level bag only.
+toReports(error, { diagnostic: { occurrenceId: 'trace-1' } });
+// @ts-expect-error the public bag never carries its own occurrence id.
+toReports(error, { public: { occurrenceId: 'trace-1' } });
+// @ts-expect-error per-report options are nested, never flat.
+toReports(error, { context: { requestId: 'req' } });

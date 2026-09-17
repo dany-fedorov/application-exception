@@ -2,6 +2,7 @@ import {
   decodePublicReport,
   toDiagnosticReport,
   toPublicReport,
+  toReports,
 } from '../src/reporting';
 import { PUBLIC_REPORT_VERSION } from '../src/report-types';
 import { defineException } from '../src/typed';
@@ -374,6 +375,23 @@ describe('toPublicReport reads details defensively', () => {
     const empty = { occurrenceId: 'AE_null', details: null };
     registerTypedException(empty, { code: 'NULL' });
     expect(toPublicReport(empty).code).toBe('NULL');
+  });
+
+  test('keeps its disclosure policy when captured as a pair', () => {
+    const error = new ToolUnavailable({
+      details: { tool: 'search', secret: 'hunter2' },
+    });
+    const captured = toReports(error);
+    expect(captured.public).toEqual(toPublicReport(error));
+    expect(captured.public.code).toBe('TOOL_UNAVAILABLE');
+    expect(captured.public.as_json).toEqual({ tool: 'search' });
+    expect(JSON.stringify(captured.public)).not.toContain('hunter2');
+    expect(toReports(new NoPolicy({ details: { tool: 'x' } })).public).toEqual({
+      v: 'appex/public/v3',
+      occurrence_id: expect.stringMatching(/^AE_/),
+      code: 'INTERNAL_ERROR',
+      message: 'Something went wrong',
+    });
   });
 
   test('never throws when the value itself cannot be inspected', () => {

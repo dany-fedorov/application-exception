@@ -10,10 +10,13 @@ export const APPEX_ERROR_CODES = [
   'APPEX_INVALID_OCCURRENCE_ID',
   'APPEX_INVALID_PUBLIC_CODE',
   'APPEX_INVALID_PUBLIC_MESSAGE',
+  'APPEX_INVALID_TRUST_REALM',
+  'APPEX_INVALID_REDACTION_POLICY',
+  'APPEX_REPORT_BUDGET_TOO_SMALL',
 ] as const;
 
 /** One of the codes in `APPEX_ERROR_CODES`. */
-export type AppexErrorCode = typeof APPEX_ERROR_CODES[number];
+export type AppexErrorCode = (typeof APPEX_ERROR_CODES)[number];
 
 /** Where every error message points; the fragment is the code in lower case. */
 export const ERRORS_GUIDE_URL =
