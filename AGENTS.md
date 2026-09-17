@@ -3,7 +3,8 @@
 Typed failures with two reports: a corj diagnostic report for operators and a
 public report for agents and users, correlated by one `occurrence_id`. Runtime API:
 `defineException`, `toDiagnosticReport`, `toPublicReport`, `toReports`,
-`decodePublicReport`, `createRedactionPolicy`, `createTrustRealm`.
+`decodePublicReport`, `createRedactionPolicy`, `createTrustRealm`,
+`isTrustedException`.
 
 Exact signatures and one example per call: [docs/agent/api-card.md](docs/agent/api-card.md).
 Step-by-step tasks: [docs/agent/recipes.md](docs/agent/recipes.md).
@@ -54,7 +55,8 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
 13. Two loaded copies of this package do not trust each other, by design. To
     share typed identity and disclosure policies between them, create one
     `createTrustRealm()` and pass it as `realm` to `defineException` in each copy
-    and to `isTypedException` / `toPublicReport` / `toReports` in the reporter.
+    and to `isTrustedException` / `toPublicReport` / `toReports` in the reporter.
+    `toDiagnosticReport` takes no realm; occurrence ids already correlate.
 
 ## Report shapes
 

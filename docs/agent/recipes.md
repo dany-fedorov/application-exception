@@ -259,7 +259,7 @@ the details stay shallow-frozen and share the caller's nested objects.
 ## Share typed failures between two loaded copies
 
 ```ts
-import { createTrustRealm, defineException, isTypedException, toPublicReport } from 'application-exception';
+import { createTrustRealm, defineException, isTrustedException, toPublicReport } from 'application-exception';
 
 export const realm = createTrustRealm();
 
@@ -271,15 +271,16 @@ const Timeout = defineException({
 });
 
 const caught: unknown = new Timeout();
-console.log(isTypedException(caught, realm), toPublicReport(caught, { realm }).code);
+console.log(isTrustedException(caught, realm), toPublicReport(caught, { realm }).code);
 ```
 
 A duplicate install or a separately bundled module loads its own copy of this
 package, and copies do not recognize each other's occurrences by default: a
 public policy decides what leaves the process, so a value that merely claims to
 be typed must not pick its own code. Pass one realm to `defineException` in each
-cooperating copy and to `isTypedException`, `toPublicReport`, or `toReports` in
-the copy that reports. Trust is keyed by object identity, so a forged `_tag` or
+cooperating copy and to `isTrustedException`, `toPublicReport`, or `toReports`
+in the copy that reports. `isTypedException` keeps its one-argument shape, so it
+still works as an array callback; `isTrustedException` is the realm-aware form. Trust is keyed by object identity, so a forged `_tag` or
 brand and a report revived from JSON acquire nothing. Deduplicating the install
 is the simpler fix when you control it; it does not help across independently
 bundled artifacts.

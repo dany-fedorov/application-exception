@@ -131,6 +131,7 @@ try {
     'createTrustRealm',
     'decodePublicReport',
     'defineException',
+    'isTrustedException',
     'isTypedException',
     'restoreExpectedValues',
     'toDiagnosticReport',

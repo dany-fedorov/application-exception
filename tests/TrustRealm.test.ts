@@ -1,6 +1,7 @@
 import {
   createTrustRealm,
   defineException,
+  isTrustedException,
   isTypedException,
   toPublicReport,
 } from '../src/index';
@@ -74,7 +75,7 @@ describe('cross-copy trust', () => {
       expect(report.message).toBe('The database timed out.');
       expect(report.as_json).toEqual({ table: 'orders' });
       expect(report.occurrence_id).toBe(foreign.occurrenceId);
-      expect(isTypedException(foreign, realm)).toBe(true);
+      expect(isTrustedException(foreign, realm)).toBe(true);
     });
 
     test('recognizes locally defined kinds through the realm too', () => {
@@ -85,7 +86,7 @@ describe('cross-copy trust', () => {
       );
       const failure = new Local({ details: { table: 'orders' } });
 
-      expect(isTypedException(failure, realm)).toBe(true);
+      expect(isTrustedException(failure, realm)).toBe(true);
       expect(isTypedException(failure)).toBe(true);
       expect(toPublicReport(failure, { realm }).code).toBe('DB_TIMEOUT');
     });
@@ -98,7 +99,7 @@ describe('cross-copy trust', () => {
         return new Timeout({ details: { table: 'orders' } });
       });
 
-      expect(isTypedException(foreign, realm)).toBe(false);
+      expect(isTrustedException(foreign, realm)).toBe(false);
       expect(toPublicReport(foreign, { realm }).code).toBe('INTERNAL_ERROR');
     });
 
@@ -127,7 +128,7 @@ describe('cross-copy trust', () => {
         { value: true, enumerable: false },
       );
 
-      expect(isTypedException(forged, realm)).toBe(false);
+      expect(isTrustedException(forged, realm)).toBe(false);
       const report = toPublicReport(forged, { realm });
       expect(report.code).toBe('INTERNAL_ERROR');
       expect(report.as_json).toBeUndefined();
@@ -148,11 +149,11 @@ describe('cross-copy trust', () => {
         }),
       );
 
-      expect(isTypedException(revived, realm)).toBe(false);
+      expect(isTrustedException(revived, realm)).toBe(false);
       expect(toPublicReport(revived, { realm }).code).toBe('INTERNAL_ERROR');
     });
 
-    test('an object shaped like a realm cannot lend trust it never granted', () => {
+    test('a hand-built realm speaks only for the caller that passed it', () => {
       const realm = createTrustRealm();
       const foreign = inOtherCopy((copy) => {
         const Timeout = defineTimeout(copy, realm);
@@ -190,7 +191,7 @@ describe('cross-copy trust', () => {
         details: { table: 'orders' },
       }));
 
-      expect(isTypedException(foreign, hostile)).toBe(false);
+      expect(isTrustedException(foreign, hostile)).toBe(false);
       expect(toPublicReport(foreign, { realm: hostile }).code).toBe(
         'INTERNAL_ERROR',
       );
@@ -209,7 +210,7 @@ describe('cross-copy trust', () => {
         details: { table: 'orders' },
       }));
 
-      expect(isTypedException(foreign, loose)).toBe(true);
+      expect(isTrustedException(foreign, loose)).toBe(true);
       expect(toPublicReport(foreign, { realm: loose }).code).toBe(
         'INTERNAL_ERROR',
       );
@@ -218,14 +219,14 @@ describe('cross-copy trust', () => {
     test('a non-object caught value is never realm-trusted', () => {
       const realm = createTrustRealm();
 
-      expect(isTypedException('db/Timeout', realm)).toBe(false);
-      expect(isTypedException(null, realm)).toBe(false);
+      expect(isTrustedException('db/Timeout', realm)).toBe(false);
+      expect(isTrustedException(null, realm)).toBe(false);
     });
   });
 
   describe('realm validation', () => {
     const rejected = (realm: unknown) =>
-      expect(() => isTypedException({}, realm as TrustRealm));
+      expect(() => isTrustedException({}, realm as TrustRealm));
 
     test('rejects a value that is not a realm', () => {
       rejected({}).toThrow(code('APPEX_INVALID_TRUST_REALM'));
@@ -274,8 +275,51 @@ describe('cross-copy trust', () => {
       ).toThrow(code('APPEX_INVALID_TRUST_REALM'));
     });
 
-    test('treats an absent realm as no realm', () => {
-      expect(isTypedException({}, undefined)).toBe(false);
+    test('isTypedException keeps its one-argument shape', () => {
+      const Kind = defineException({ tag: 'arity/Kind', message: 'kind' });
+      const failure = new Kind();
+      const values: unknown[] = [failure, new Error('x'), 'str'];
+
+      // A second parameter would make this throw on the array index.
+      expect(values.filter(isTypedException)).toEqual([failure]);
     });
+  });
+});
+
+describe('a realm may not hand back a policy the package would reject', () => {
+  const withPolicy = (policy: unknown) =>
+    ({
+      [TRUST_REALM_API]: {
+        protocol: 'appex/realm/v1',
+        register: () => undefined,
+        has: () => true,
+        policyOf: () => policy,
+      },
+    } as unknown as TrustRealm);
+
+  const foreign = () => new Error('boom');
+
+  test.each([
+    ['an empty code', { code: '' }],
+    ['a non-string code', { code: 123 }],
+    ['a code past 128 characters', { code: 'x'.repeat(129) }],
+    ['a missing code', { message: 'hello' }],
+    ['a non-string non-function message', { code: 'OK', message: 7 }],
+    ['a non-function details selector', { code: 'OK', details: 'all' }],
+    ['a string in place of a policy', 'DB_TIMEOUT'],
+  ])('ignores %s', (_name, policy) => {
+    const report = toPublicReport(foreign(), { realm: withPolicy(policy) });
+
+    expect(report.code).toBe('INTERNAL_ERROR');
+    expect(report.message).toBe('Something went wrong');
+  });
+
+  test('accepts a well-formed foreign policy', () => {
+    const report = toPublicReport(foreign(), {
+      realm: withPolicy({ code: 'DB_TIMEOUT', message: 'Timed out.' }),
+    });
+
+    expect(report.code).toBe('DB_TIMEOUT');
+    expect(report.message).toBe('Timed out.');
   });
 });

@@ -64,6 +64,7 @@ const TASKS = [
 const RUNTIME_ORDER = [
   'defineException',
   'isTypedException',
+  'isTrustedException',
   'createTrustRealm',
   'createRedactionPolicy',
   'toDiagnosticReport',

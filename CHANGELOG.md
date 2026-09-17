@@ -37,8 +37,10 @@ Additive. Every 0.3.0 call keeps its behaviour; each feature is opt-in.
   ([#47](https://github.com/dany-fedorov/application-exception/issues/47))
 - `createTrustRealm()` is an explicit, capability-based trust boundary between
   separately loaded copies of this package. Pass the realm as `realm` to
-  `defineException` in each cooperating copy and to `isTypedException`,
-  `toPublicReport`, or `toReports` in the copy that reports. Trust is keyed by
+  `defineException` in each cooperating copy and to the new
+  `isTrustedException(caught, realm)`, `toPublicReport`, or `toReports` in the
+  copy that reports. `isTypedException` keeps its one-argument 0.3.0 shape, so it
+  still works as an array callback. Trust is keyed by
   object identity only, so a forged `_tag` or brand and a wire-deserialized
   value acquire nothing; the local registry wins; a realm on a different
   protocol throws `APPEX_INVALID_TRUST_REALM` naming both sides. Without a realm
@@ -52,6 +54,10 @@ Additive. Every 0.3.0 call keeps its behaviour; each feature is opt-in.
   resolution. ([#48](https://github.com/dany-fedorov/application-exception/issues/48))
 - New error codes: `APPEX_REPORT_BUDGET_TOO_SMALL`, `APPEX_INVALID_TRUST_REALM`,
   `APPEX_INVALID_REDACTION_POLICY`.
+- A diagnostic report now always carries `v`. corj drops it when its own budget
+  cannot hold the metadata, which `maxFinalReportSize` and a small
+  `maxReportSize` can both reach; the version is restored so the report always
+  validates and always identifies itself.
 
 ## 0.3.0 — 2026-09-14
 

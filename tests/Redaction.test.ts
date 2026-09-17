@@ -1,9 +1,22 @@
+import Ajv2020 from 'ajv/dist/2020';
 import { createRedactionPolicy, defineException } from '../src/index';
 import { toDiagnosticReport, toPublicReport, toReports } from '../src/reporting';
 import { REDACTION_POLICY } from '../src/redaction';
 import type { RedactionPolicy } from '../src/redaction';
 
 const code = (value: string) => expect.objectContaining({ code: value });
+
+const ajv = new Ajv2020({ strict: true, allErrors: true });
+const diagnosticSchema: object = require('../schemas/diagnostic-report-v3.json');
+const publicSchema: object = require('../schemas/public-report-v3.json');
+const compiledDiagnostic = ajv.compile(diagnosticSchema);
+const compiledPublic = ajv.compile(publicSchema);
+
+/** `null` when the report validates, otherwise the ajv errors, so a failure names what broke. */
+const validateDiagnostic = (report: unknown): unknown =>
+  compiledDiagnostic(JSON.parse(JSON.stringify(report))) ? null : ajv.errorsText(compiledDiagnostic.errors);
+const validatePublic = (report: unknown): unknown =>
+  compiledPublic(JSON.parse(JSON.stringify(report))) ? null : ajv.errorsText(compiledPublic.errors);
 
 const Rejected = defineException({
   tag: 'auth/Rejected',
@@ -235,7 +248,9 @@ describe('createRedactionPolicy', () => {
       expect(report.stack?.[0]).toBe('Error: boom');
     });
 
-    test('accepts a finite number and replaces anything else', () => {
+    test('substitutes only within the JSON type it was given', () => {
+      // A report pins types positionally, so a transform may narrow a number to
+      // another number but never turn one into a string.
       const report = toDiagnosticReport(
         { count: 1, flag: true, nothing: null, bad: 2 },
         {
@@ -247,10 +262,11 @@ describe('createRedactionPolicy', () => {
 
       expect(report.as_json).toMatchObject({
         count: 9,
-        flag: 9,
-        nothing: 9,
-        bad: '[redacted]',
+        flag: false,
+        nothing: null,
+        bad: 0,
       });
+      expect(validateDiagnostic(report)).toBeNull();
     });
 
     test('may narrow a value it is asked about', () => {
@@ -296,8 +312,181 @@ describe('createRedactionPolicy', () => {
       details: { user: 'ada', password: 'hunter2' },
     });
 
+    expect(validateDiagnostic(toDiagnosticReport(failure))).toBeNull();
+    expect(validatePublic(toPublicReport(failure))).toBeNull();
     expect(JSON.stringify(toDiagnosticReport(failure))).toContain('hunter2');
     expect(JSON.stringify(toPublicReport(failure))).toContain('hunter2');
+  });
+
+  describe('a policy can never break a report schema', () => {
+    const everything = () =>
+      createRedactionPolicy({ keys: [/.*/], values: [/.*/], paths: ['$'] });
+
+    test.each([
+      ['a plain error', () => new Error('boom'), {}],
+      [
+        'an aggregate with children omitted',
+        () => new AggregateError([new Error('a'), new Error('b')], 'agg'),
+        { maxDepth: 0 },
+      ],
+      [
+        'a value whose inspection fails',
+        () => ({
+          get password(): never {
+            throw new Error('unreadable');
+          },
+        }),
+        {},
+      ],
+      ['a nested cause chain', () => new Error('a', { cause: new Error('b') }), {}],
+    ])('survives %s', (_name, make, options) => {
+      const report = toDiagnosticReport(make(), {
+        ...options,
+        redact: everything(),
+      });
+
+      expect(validateDiagnostic(report)).toBeNull();
+      expect(report.v).toBe('corj/v0.12');
+      expect(report.occurrence_id).toMatch(/^AE_/);
+    });
+
+    test.each([
+      ['a transform returning a number', () => 9],
+      ['a transform returning a structure', () => ({ leaked: true })],
+      ['a transform returning an over-long string', () => 'x'.repeat(20_000)],
+      [
+        'a transform that throws',
+        () => {
+          throw new Error('policy exploded');
+        },
+      ],
+    ])('survives %s', (_name, transform) => {
+      const caught = new Error('boom', { cause: { level: 1, flag: true } });
+      const policy = createRedactionPolicy({ transform });
+
+      expect(
+        validateDiagnostic(toDiagnosticReport(caught, { redact: policy })),
+      ).toBeNull();
+      expect(validatePublic(toPublicReport(caught, { redact: policy }))).toBeNull();
+    });
+
+    test('survives redaction composed with a tight budget', () => {
+      for (const budget of [400, 512, 1_024, 4_096, 65_536]) {
+        const report = toDiagnosticReport(
+          new Error('e'.repeat(50_000), { cause: new Error('inner') }),
+          {
+            context: { text: 'x'.repeat(20_000) },
+            maxFinalReportSize: budget,
+            redact: secretPolicy(),
+          },
+        );
+
+        expect(validateDiagnostic(report)).toBeNull();
+        expect(
+          new TextEncoder().encode(JSON.stringify(report)).byteLength,
+        ).toBeLessThanOrEqual(budget);
+        expect(report.v).toBe('corj/v0.12');
+      }
+    });
+
+    test('keeps a budgeted report identifiable at the smallest size it reaches', () => {
+      const report = toDiagnosticReport(new Error('e'.repeat(3_000)), {
+        maxFinalReportSize: 400,
+      });
+
+      expect(report.v).toBe('corj/v0.12');
+      expect(validateDiagnostic(report)).toBeNull();
+      expect(report.truncated).toBe(true);
+    });
+
+    test('uses the budget it was given rather than half of it', () => {
+      const report = toDiagnosticReport(new Error('e'.repeat(200_000)), {
+        maxFinalReportSize: 50_000,
+      });
+      const bytes = new TextEncoder().encode(JSON.stringify(report)).byteLength;
+
+      expect(bytes).toBeLessThanOrEqual(50_000);
+      expect(bytes).toBeGreaterThan(45_000);
+    });
+  });
+
+  describe('protection is positional, not by name', () => {
+    const named = () => {
+      const caught = new Error('boom');
+      return Object.assign(caught, {
+        id: 'sk-id',
+        code: 'sk-code',
+        path: 'sk-path',
+        stage: 'sk-stage',
+        level: 'sk-level',
+        truncated: 'sk-truncated',
+      });
+    };
+
+    test('redacts report-shaped names carrying application data', () => {
+      const report = toDiagnosticReport(named(), {
+        context: { id: 'sk-cid', code: 'sk-ccode', path: 'sk-cpath' },
+        redact: createRedactionPolicy({ values: [/sk-[a-z]+/] }),
+      });
+
+      expect(JSON.stringify(report)).not.toMatch(/sk-[a-z]+/);
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test('redacts them by key rule too', () => {
+      const report = toDiagnosticReport(named(), {
+        redact: createRedactionPolicy({ keys: ['id', 'code', 'path'] }),
+      });
+
+      expect(report.as_json).toMatchObject({
+        id: '[redacted]',
+        code: '[redacted]',
+        path: '[redacted]',
+      });
+    });
+
+    test('redacts a public field the selector called code', () => {
+      const Named = defineException({
+        tag: 'auth/Named',
+        message: 'named',
+        public: {
+          code: 'AUTH_NAMED',
+          details: () => ({ code: 'sk-inner', truncated: 'sk-flag' }),
+        },
+      });
+
+      const report = toPublicReport(new Named(), {
+        redact: createRedactionPolicy({ values: [/sk-[a-z]+/] }),
+      });
+
+      expect(report.code).toBe('AUTH_NAMED');
+      expect(report.as_json).toEqual({
+        code: '[redacted]',
+        truncated: '[redacted]',
+      });
+      expect(validatePublic(report)).toBeNull();
+    });
+
+    test('leaves the report\'s own link graph intact', () => {
+      const report = toDiagnosticReport(
+        new Error('a', { cause: new Error('b') }),
+        { redact: createRedactionPolicy({ values: [/.*/] }) },
+      );
+
+      expect(report.children?.[0]?.id).toBe('0');
+      expect(report.children?.[0]?.path).toBe('$.cause');
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+  });
+
+  test('replaces a subtree nested past the walk depth instead of overflowing', () => {
+    let deep: unknown = 'leaf';
+    for (let level = 0; level < 3_000; level++) deep = [deep];
+
+    const report = toDiagnosticReport({ deep }, { redact: secretPolicy() });
+
+    expect(validateDiagnostic(report)).toBeNull();
+    expect(JSON.stringify(report)).toContain('[redacted]');
   });
 
   describe('validation', () => {
@@ -323,6 +512,9 @@ describe('createRedactionPolicy', () => {
         /replacement must be a string/,
       );
       rejects({ transform: 'x' }).toThrow(/transform must be a function/);
+      rejects({ values: [/sk-[a-z]/y] }).toThrow(
+        /values must not use the sticky flag/,
+      );
     });
 
     test('accepts an empty policy', () => {
@@ -361,18 +553,31 @@ describe('createRedactionPolicy', () => {
     });
 
     test('is unaffected by a global regex flag reused across calls', () => {
+      // Several matching keys in one walk: a stale lastIndex would let the
+      // second and third escape.
       const policy = createRedactionPolicy({
-        keys: [/^password$/g],
-        values: [/hunter2/g],
+        keys: [/password/g],
+        values: [/secret/g],
       });
       const make = () =>
         toDiagnosticReport(
-          new Rejected({ details: { user: 'ada', password: 'hunter2' } }),
+          {
+            password: 'one',
+            passwordConfirm: 'two',
+            password2: 'three',
+            note: 'secret secret secret',
+          },
           { redact: policy },
         );
 
-      expect(JSON.stringify(make())).not.toContain('hunter2');
-      expect(JSON.stringify(make())).not.toContain('hunter2');
+      for (const report of [make(), make()]) {
+        expect(report.as_json).toEqual({
+          password: '[redacted]',
+          passwordConfirm: '[redacted]',
+          password2: '[redacted]',
+          note: '[redacted] [redacted] [redacted]',
+        });
+      }
     });
   });
 });

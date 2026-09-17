@@ -61,7 +61,7 @@ console.log(error._tag, error.details.tool); // 'tools/Unavailable' 'search'
 ### `isTypedException`
 
 ```ts signature
-function isTypedException(value: unknown, realm?: TrustRealm): value is TypedException;
+function isTypedException(value: unknown): value is TypedException;
 ```
 
 Whether a value is an occurrence created by this loaded copy of the package.
@@ -75,6 +75,25 @@ if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId);
 if (caught instanceof Unavailable) console.log(caught.details);
 ```
 
+### `isTrustedException`
+
+```ts signature
+function isTrustedException(value: unknown, realm: TrustRealm): value is TypedException;
+```
+
+Whether a value is an occurrence of this copy of the package, or of another
+copy that joined the same realm. `isTypedException` keeps its one-argument
+shape, so it still works as an array callback; this is the realm-aware form.
+
+Throws: `APPEX_INVALID_TRUST_REALM`
+
+```ts
+import { createTrustRealm, defineException, isTrustedException } from 'application-exception';
+const realm = createTrustRealm();
+const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
+console.log(isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
+```
+
 ### `createTrustRealm`
 
 ```ts signature
@@ -83,8 +102,10 @@ function createTrustRealm(): TrustRealm;
 
 Create an explicit trust boundary that cooperating copies of this package can
 share. Pass the returned object as `realm` to `defineException` in each copy
-that defines failures, and as `realm` to `isTypedException`, `toPublicReport`,
-and `toDiagnosticReport` in the copy that reports them.
+that defines failures, and as `realm` to `isTrustedException`,
+`toPublicReport`, or `toReports` in the copy that reports them.
+`toDiagnosticReport` takes no realm: a diagnostic report consults no
+disclosure policy, and occurrence ids already correlate across copies.
 
 The realm object reference *is* the capability: holding it is the trust
 decision. Nothing is matched by `_tag`, by the global brand, or by any value

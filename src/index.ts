@@ -1,6 +1,7 @@
 export {
   createTrustRealm,
   defineException,
+  isTrustedException,
   isTypedException,
 } from './typed';
 export type {

@@ -36,6 +36,7 @@ export function runFlow(appex, { runtime }) {
     'decodePublicReport',
     'createRedactionPolicy',
     'createTrustRealm',
+    'isTrustedException',
     'isTypedException',
     'restoreExpectedValues',
     'DIAGNOSTIC_REPORT_VERSION',

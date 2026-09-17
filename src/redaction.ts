@@ -35,26 +35,38 @@ export const REDACTION_POLICY = Symbol('application-exception/RedactionPolicy');
 const DEFAULT_REPLACEMENT = '[redacted]';
 
 /**
- * Keys whose values carry the identity, version, and shape of a report. They
- * are walked but never replaced, so a policy can never make a report fail its
- * own schema.
+ * Fields of a report node that carry its identity, version, or shape. Protection
+ * is positional, never by name: a value the application happens to call `id`,
+ * `code`, or `path` inside `as_json` or `context` is ordinary data and stays
+ * redactable, while the report's own fields at those positions do not.
  */
-const STRUCTURAL_KEYS = new Set([
-  'v',
-  '$schema',
-  'occurrence_id',
-  'id',
-  'path',
-  'level',
-  'child_ids',
-  'children',
-  'truncated',
-  'typeof',
-  'instanceof_error',
-  'stage',
-  'report_omitted',
-  'code',
-]);
+const NODE_KEYS =
+  'v|\\$schema|id|path|level|child_ids|typeof|instanceof_error|truncated|as_json_format|as_string_format|children_omitted|stack|children';
+
+/**
+ * Positions in a diagnostic report a policy may not replace. Containers are
+ * listed so an array is never swapped for a string; their items are still
+ * walked, except where the schema pins them to an enum.
+ */
+const DIAGNOSTIC_PROTECTED = new RegExp(
+  `^\\$$` +
+    `|^\\$\\.(?:${NODE_KEYS}|occurrence_id|report_omitted|reporting_errors)$` +
+    `|^\\$\\.report_omitted\\[\\d+\\]$` +
+    `|^\\$(?:\\.children\\[\\d+\\])?\\.child_ids\\[\\d+\\]$` +
+    `|^\\$\\.children\\[\\d+\\](?:\\.(?:${NODE_KEYS}))?$` +
+    `|^\\$\\.reporting_errors\\[\\d+\\](?:\\.stage)?$`,
+);
+
+/** Positions in a public report a policy may not replace. */
+const PUBLIC_PROTECTED = /^\$$|^\$\.(?:v|occurrence_id|code|truncated)$/;
+
+/**
+ * Depth past which the walk stops descending and replaces the subtree. corj
+ * bounds a report by bytes, not by nesting, so a hostile caught value can
+ * produce an `as_json` thousands of levels deep; replacing is the safe
+ * outcome, since it can only narrow what is disclosed.
+ */
+const MAX_REDACTION_DEPTH = 512;
 
 export interface CompiledRedactionPolicy {
   readonly keys: readonly (string | RegExp)[];
@@ -138,6 +150,14 @@ export function createRedactionPolicy(
     (item) => item instanceof RegExp,
     'regular expressions',
   ) as readonly RegExp[];
+  for (const pattern of values) {
+    // A sticky pattern anchors at lastIndex and would silently match nothing.
+    if (pattern.flags.includes('y'))
+      throw invalid(
+        'APPEX_INVALID_REDACTION_POLICY',
+        `values must not use the sticky flag; ${String(pattern)} would match nothing`,
+      );
+  }
   const { replacement, transform } = options;
   if (
     replacement !== undefined &&
@@ -215,34 +235,36 @@ function redactStringValues(
 export type RedactionFailure = (path: string, error: string) => void;
 
 /**
- * Rewrite a report tree through a policy. Structural keys survive; a throwing
- * `transform` drops the value it was asked about and reports the failure,
- * which is always safe because dropping can only narrow disclosure.
+ * Rewrite a report tree through a policy. Positions the schema pins survive; a
+ * throwing `transform` drops the value it was asked about and reports the
+ * failure, which is always safe because dropping can only narrow disclosure.
  */
 export function applyRedaction(
   value: CorjJsonValue,
   policy: CompiledRedactionPolicy,
   onFailure: RedactionFailure,
-  protectedKeys: ReadonlySet<string> = STRUCTURAL_KEYS,
+  protectedAt: RegExp = DIAGNOSTIC_PROTECTED,
 ): CorjJsonValue {
-  // No node budget is needed: the tree is a report corj already bounded by its
-  // own byte and depth limits, and a transform may only replace scalars.
   const walk = (
     node: CorjJsonValue,
     path: string,
     key: string | undefined,
-    structural: boolean,
+    depth: number,
   ): CorjJsonValue => {
+    const structural = protectedAt.test(path);
     if (!structural) {
       if (
+        depth > MAX_REDACTION_DEPTH ||
         policy.paths.has(path) ||
         (key !== undefined && matchesKey(policy, key))
       )
-        return policy.replacement;
+        return typeof node === 'object' && node !== null
+          ? policy.replacement
+          : blankOf(node, policy.replacement);
     }
     if (Array.isArray(node))
       return node.map((item, index) =>
-        walk(item as CorjJsonValue, `${path}[${index}]`, undefined, false),
+        walk(item as CorjJsonValue, `${path}[${index}]`, undefined, depth + 1),
       );
     if (typeof node === 'object' && node !== null) {
       const output: Record<string, CorjJsonValue> = {};
@@ -251,7 +273,7 @@ export function applyRedaction(
           childValue as CorjJsonValue,
           `${path}.${childKey}`,
           childKey,
-          protectedKeys.has(childKey),
+          depth + 1,
         );
       }
       return output;
@@ -265,27 +287,42 @@ export function applyRedaction(
     try {
       const produced = policy.transform(node, { path, key });
       if (produced === node) return node;
-      return toJsonScalar(produced, policy.replacement);
+      return narrowTo(node, produced, policy.replacement);
     } catch (failure: unknown) {
       onFailure(path, describeValue(failure));
-      return policy.replacement;
+      return blankOf(node, policy.replacement);
     }
   };
-  return walk(value, '$', undefined, false);
+  return walk(value, '$', undefined, 0);
 }
 
-/** A transform may only narrow: anything it returns that is not a JSON scalar becomes the replacement. */
-function toJsonScalar(value: unknown, replacement: string): CorjJsonValue {
-  if (value === null || typeof value === 'boolean' || typeof value === 'string')
-    return value;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+/**
+ * What a transform is allowed to put in place of one value. It may return a
+ * JSON scalar of the same type, which is the narrowing case, and nothing else:
+ * a report pins types positionally (stack lines are strings, `level` is a
+ * number), so a substitution of a different type would make the report fail its
+ * own schema. Anything else collapses to a blank of the original's type, which
+ * carries no information.
+ */
+function narrowTo(
+  original: CorjJsonValue,
+  produced: unknown,
+  replacement: string,
+): CorjJsonValue {
+  if (original === null) return null;
+  if (typeof produced === typeof original) {
+    if (typeof produced !== 'number') return produced as CorjJsonValue;
+    if (Number.isFinite(produced)) return produced;
+  }
+  return blankOf(original, replacement);
+}
+
+/** The information-free value of the same JSON type, used when a transform cannot be honoured. */
+function blankOf(original: CorjJsonValue, replacement: string): CorjJsonValue {
+  if (typeof original === 'number') return 0;
+  if (typeof original === 'boolean') return false;
+  if (original === null) return null;
   return replacement;
 }
 
-/** Keys of a public report that a policy is never allowed to rewrite. */
-export const PUBLIC_STRUCTURAL_KEYS: ReadonlySet<string> = new Set([
-  'v',
-  'occurrence_id',
-  'code',
-  'truncated',
-]);
+export { DIAGNOSTIC_PROTECTED, PUBLIC_PROTECTED };

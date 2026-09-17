@@ -239,7 +239,8 @@ what leaves the process, so a value that merely claims to be typed must not pick
 its own public code. `createTrustRealm()` is the explicit opt-in. The realm
 object reference *is* the capability — nothing is matched by `_tag`, by the
 global brand, or by any value read off the caught object, so a forged tag or a
-report revived from JSON acquires nothing.
+report revived from JSON acquires nothing. `isTrustedException(caught, realm)` is
+the realm-aware recognizer; `isTypedException` keeps its one-argument shape.
 
 ```ts
 import { createTrustRealm, defineException, toPublicReport } from 'application-exception';

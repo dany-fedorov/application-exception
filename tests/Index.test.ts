@@ -10,6 +10,7 @@ test('exposes exactly the documented runtime surface', () => {
     'createTrustRealm',
     'decodePublicReport',
     'defineException',
+    'isTrustedException',
     'isTypedException',
     'restoreExpectedValues',
     'toDiagnosticReport',

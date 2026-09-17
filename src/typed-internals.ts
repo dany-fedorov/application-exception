@@ -174,11 +174,28 @@ export function trustedPublicPolicyOf(
   if (api === undefined || typeof value !== 'object' || value === null)
     return undefined;
   try {
-    const policy: unknown = api.policyOf(value);
-    return typeof policy === 'object' && policy !== null
-      ? (policy as PublicPolicyRecord)
-      : undefined;
+    return validForeignPolicy(api.policyOf(value));
   } catch {
     return undefined;
   }
+}
+
+/**
+ * A policy that crossed a realm boundary, accepted only in the shape
+ * `defineException` validates. A realm is trusted to say *which* values are
+ * typed, never to hand back a policy that would make a public report invalid.
+ */
+function validForeignPolicy(policy: unknown): PublicPolicyRecord | undefined {
+  if (typeof policy !== 'object' || policy === null) return undefined;
+  const { code, message, details } = policy as Record<string, unknown>;
+  if (typeof code !== 'string' || code.length === 0 || code.length > 128)
+    return undefined;
+  if (
+    message !== undefined &&
+    typeof message !== 'string' &&
+    typeof message !== 'function'
+  )
+    return undefined;
+  if (details !== undefined && typeof details !== 'function') return undefined;
+  return policy as PublicPolicyRecord;
 }

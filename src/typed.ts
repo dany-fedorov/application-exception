@@ -228,9 +228,17 @@ function snapshotValue(
   const object = value as object;
   if (seen.has(object)) unsupported(path, 'a cycle');
   if (object instanceof Date) {
-    const time = object.getTime();
-    if (Number.isNaN(time)) unsupported(path, 'an invalid Date');
-    return new Date(time);
+    let time: unknown;
+    try {
+      // Through the real method, so a proxy claiming Date.prototype cannot
+      // substitute its own getTime.
+      time = Date.prototype.getTime.call(object);
+    } catch {
+      unsupported(path, 'not a plain object');
+    }
+    if (typeof time !== 'number' || Number.isNaN(time))
+      unsupported(path, 'an invalid Date');
+    return Object.freeze(new Date(time));
   }
 
   const prototype: unknown = Object.getPrototypeOf(object);
@@ -478,9 +486,27 @@ export function defineException(definition: {
  * if (caught instanceof Unavailable) console.log(caught.details);
  * ```
  */
-export function isTypedException(
+export function isTypedException(value: unknown): value is TypedException {
+  return isTrustedTypedException(value, undefined);
+}
+
+/**
+ * Whether a value is an occurrence of this copy of the package, or of another
+ * copy that joined the same realm. `isTypedException` keeps its one-argument
+ * shape, so it still works as an array callback; this is the realm-aware form.
+ *
+ * @throws `APPEX_INVALID_TRUST_REALM`
+ * @example
+ * ```ts
+ * import { createTrustRealm, defineException, isTrustedException } from 'application-exception';
+ * const realm = createTrustRealm();
+ * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
+ * console.log(isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
+ * ```
+ */
+export function isTrustedException(
   value: unknown,
-  realm?: TrustRealm,
+  realm: TrustRealm,
 ): value is TypedException {
   return isTrustedTypedException(value, trustRealmApi(realm));
 }
@@ -488,8 +514,10 @@ export function isTypedException(
 /**
  * Create an explicit trust boundary that cooperating copies of this package can
  * share. Pass the returned object as `realm` to `defineException` in each copy
- * that defines failures, and as `realm` to `isTypedException`, `toPublicReport`,
- * and `toDiagnosticReport` in the copy that reports them.
+ * that defines failures, and as `realm` to `isTrustedException`,
+ * `toPublicReport`, or `toReports` in the copy that reports them.
+ * `toDiagnosticReport` takes no realm: a diagnostic report consults no
+ * disclosure policy, and occurrence ids already correlate across copies.
  *
  * The realm object reference *is* the capability: holding it is the trust
  * decision. Nothing is matched by `_tag`, by the global brand, or by any value

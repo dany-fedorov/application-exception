@@ -1,6 +1,7 @@
-import { restoreExpectedValues } from 'caught-object-report-json';
+import { CorjMaker, restoreExpectedValues } from 'caught-object-report-json';
 import { toDiagnosticReport, toPublicReport } from '../src/reporting';
 import { DIAGNOSTIC_REPORT_VERSION } from '../src/report-types';
+import { createRedactionPolicy } from '../src/redaction';
 import { defineException } from '../src/typed';
 import { TYPED_EXCEPTION_BRAND } from '../src/typed-internals';
 
@@ -447,5 +448,103 @@ describe('toDiagnosticReport with maxFinalReportSize', () => {
     expect(
       toDiagnosticReport('x', { maxFinalReportSize: null }).occurrence_id,
     ).toMatch(/^AE_/);
+  });
+});
+
+describe('maxFinalReportSize drop order', () => {
+  /**
+   * The explicit context and reporting_errors steps must do the work, not the
+   * corj shrink that follows them: at a budget the un-shrunk corj report
+   * already fits, only the two drop steps can bring the report inside it.
+   */
+  test('drops context and reporting_errors without shrinking the corj report', () => {
+    const caught = {
+      message: 'boom',
+      get password(): never {
+        throw new Error('unreadable');
+      },
+    };
+    const full = toDiagnosticReport(caught, { context: { text: 'x'.repeat(400) } });
+    const corjOnly = toDiagnosticReport(caught);
+    const corjBytes = new TextEncoder().encode(JSON.stringify(corjOnly)).byteLength;
+    const fullBytes = new TextEncoder().encode(JSON.stringify(full)).byteLength;
+
+    expect(fullBytes).toBeGreaterThan(corjBytes);
+    expect(full.reporting_errors).toBeDefined();
+
+    // Room for everything except context and reporting_errors, plus the
+    // report_omitted marker the two drops add.
+    const errorsBytes = new TextEncoder().encode(
+      `,"reporting_errors":${JSON.stringify(corjOnly.reporting_errors)}`,
+    ).byteLength;
+    const budget = corjBytes - errorsBytes + 60;
+    const bounded = toDiagnosticReport(caught, {
+      context: { text: 'x'.repeat(400) },
+      maxFinalReportSize: budget,
+    });
+
+    expect(bounded.report_omitted).toEqual(['context', 'reporting_errors']);
+    expect(bounded.context).toBeUndefined();
+    expect(bounded.reporting_errors).toBeUndefined();
+    // The corj report itself was never shrunk: its own content survives whole.
+    expect(bounded.truncated).toBeUndefined();
+    expect(bounded.as_json).toEqual(corjOnly.as_json);
+  });
+
+  test('drops context alone when that is enough', () => {
+    const caught = new Error('boom');
+    const corjBytes = new TextEncoder().encode(
+      JSON.stringify(toDiagnosticReport(caught)),
+    ).byteLength;
+
+    const bounded = toDiagnosticReport(caught, {
+      context: { text: 'x'.repeat(400) },
+      maxFinalReportSize: corjBytes + 40,
+    });
+
+    expect(bounded.report_omitted).toEqual(['context']);
+    expect(bounded.truncated).toBeUndefined();
+  });
+});
+
+describe('the report always identifies itself', () => {
+  test('restores the version corj dropped to meet its own budget', () => {
+    const corjAlone = new CorjMaker({ maxReportSize: 256 }).makeReportObject(
+      new Error('e'.repeat(3_000)),
+    );
+    expect(corjAlone.v).toBeUndefined();
+
+    const report = toDiagnosticReport(new Error('e'.repeat(3_000)), {
+      maxReportSize: 256,
+    });
+
+    expect(report.v).toBe(DIAGNOSTIC_REPORT_VERSION);
+    expect(report.truncated).toBe(true);
+  });
+});
+
+describe('APPEX_REPORT_BUDGET_TOO_SMALL', () => {
+  test('names the redaction policy when one is in play', () => {
+    expect(() =>
+      toDiagnosticReport(new Error('boom'), {
+        maxFinalReportSize: 300,
+        redact: createRedactionPolicy({
+          values: [/./],
+          replacement: 'x'.repeat(128),
+        }),
+      }),
+    ).toThrow(/a redaction policy can enlarge but never shrink/);
+  });
+
+  test('does not mention a policy when there is none', () => {
+    let message = '';
+    try {
+      toDiagnosticReport(new Error('boom'), { maxFinalReportSize: 20 });
+    } catch (failure: unknown) {
+      message = (failure as Error).message;
+    }
+
+    expect(message).toContain('APPEX_REPORT_BUDGET_TOO_SMALL');
+    expect(message).not.toContain('redaction policy');
   });
 });

@@ -56,8 +56,14 @@ selector already chose, so redacting a field is never a decision to disclose the
 rest, and a kind with no selector still returns no `as_json` no matter what the
 policy says. An unknown failure keeps the generic `INTERNAL_ERROR` shape.
 
-**A transform can only narrow.** Anything it returns that is not a JSON scalar
-becomes the replacement, so a policy cannot smuggle a structure into a report.
+**A transform may only substitute within the JSON type it was given.** A report
+pins types positionally — stack lines are strings, `level` is a number — so a
+transform that returns a different type, or a structure, collapses to an
+information-free blank of the original's type. It cannot smuggle a structure
+into a report or make one fail its schema. It *can* return a longer string than
+it replaced: a replacement is never guaranteed to shrink the report, which is
+why a policy can push a tight `maxFinalReportSize` over its limit. The budget
+error says so when a policy is in play.
 
 **A throwing transform is safe and observable.** The value it was asked about is
 dropped and replaced, and the diagnostic report records the failure in
@@ -65,14 +71,33 @@ dropped and replaced, and the diagnostic report records the failure in
 only narrow disclosure — the reporting-failure outcome stays visible rather than
 degrading into a silent leak.
 
-**Identity and shape survive.** `v`, `$schema`, `occurrence_id`, `code`, and
-corj's structural keys (`id`, `path`, `level`, `child_ids`, `children`,
-`truncated`, `typeof`, `instanceof_error`, `stage`, `report_omitted`) are walked
-but never replaced, so a redacted report still validates against its schema. A
-policy of `{ keys: [/.*/], values: [/.*/] }` produces a valid report.
+**Identity and shape survive, positionally.** Protection is by *position*, never
+by name: the report's own fields — `v`, `occurrence_id`, `report_omitted`, and
+corj's `id`, `path`, `level`, `child_ids`, `typeof`, `instanceof_error`,
+`truncated`, `as_json_format`, `as_string_format`, `children_omitted`, and the
+`stage` of a `reporting_errors` entry — are walked but never replaced at the
+positions the schema pins them to. A value the application happens to call `id`,
+`code`, or `path` inside `as_json` or `context` is ordinary data and *is*
+redacted; protecting such names globally would have silently leaked exactly the
+fields most likely to hold a session id or a file path. Container arrays are
+protected so one is never swapped for a string, while their items are still
+walked. A policy of `{ keys: [/.*/], values: [/.*/], paths: ['$'] }` produces a
+valid report; the test suite validates redacted reports against both schemas.
+
+**Rules target values, not key names.** A secret that appears as a property
+*name* (`{ 'sk-live-abc': 1 }`) is not rewritten by `values`; use `keys` or
+`paths` to drop the whole entry, or avoid putting secrets in key positions.
 
 **Redaction runs before the byte budget**, so `maxFinalReportSize` measures what
-is actually emitted.
+is actually emitted. On a public report it runs before the 4,096-character
+message bound is re-applied, so a policy cannot push a message past the length
+its own schema and decoder accept.
+
+**The walk is depth-bounded.** corj bounds a report by bytes, not by nesting, so
+a hostile caught value can produce an `as_json` thousands of levels deep. Past
+512 levels the walk replaces the subtree instead of descending, which narrows
+rather than leaks, and keeps a redacting reporter from turning a deep value into
+a `RangeError`.
 
 **No policy means no change.** Reports without `redact` behave exactly as they
 did in 0.3.0; the test suite asserts the secret comes back when the policy is

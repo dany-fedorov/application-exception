@@ -44,11 +44,13 @@ The browser suite asserts this rather than assuming it: it reads the Rollup modu
 build and fails unless `nanoid/index.browser.js` is the entry that was bundled, and unless
 `nanoid/index.js` and `nanoid/index.cjs` are absent from the graph.
 
-Web Crypto requires a secure context, so browser id generation works on HTTPS pages and on
-`localhost`/`127.0.0.1`. The suite serves the build over `http://127.0.0.1` and asserts
-`window.isSecureContext === true` before the flow runs. **A page served over plain HTTP from a
-non-loopback origin has no `crypto.getRandomValues` and cannot generate occurrence ids.** That is
-the one documented browser limitation.
+nanoid's browser build draws from `crypto.getRandomValues`, which is **not** gated on a secure
+context — only `crypto.subtle` and `crypto.randomUUID` are. Occurrence ids were observed to
+generate on a plain-HTTP non-loopback origin in headless Chromium, where `isSecureContext` is
+`false` and `crypto.subtle` is `undefined`. The suite nonetheless serves the build over
+`http://127.0.0.1` and asserts `window.isSecureContext === true`, so the non-secure case is
+described from a one-off probe rather than pinned by CI; treat it as observed, not guaranteed
+across browsers.
 
 ## No Node shims in the browser
 
@@ -75,8 +77,8 @@ Adding `"browser": "./index.js"` and `"import": "./index.js"` to the `"."` expor
 throwaway checkout. With the extra conditions, `npm run test:types`, `npm run test:package`
 (including its `Node16` declaration check) and all three runtime suites passed — and produced
 **exactly the same resolutions**: Bun still loaded `index.js`, Vite still bundled the same
-CommonJS entry and still picked `nanoid/index.browser.js`, Node ESM still got the same nine named
-exports. The conditions changed nothing because every one of them points at the same file, and the
+CommonJS entry and still picked `nanoid/index.browser.js`, Node ESM still got the same named
+exports (13 today; `tests/runtime/run-node-esm.js` asserts the exact list). The conditions changed nothing because every one of them points at the same file, and the
 existing `"default"` condition already covers `import` and `browser`.
 
 So the conditions were not added:

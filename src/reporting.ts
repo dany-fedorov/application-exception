@@ -6,7 +6,10 @@ import type {
 } from 'caught-object-report-json';
 import { describeValue, invalid } from './errors';
 import { createOccurrence } from './occurrence';
-import { PUBLIC_REPORT_VERSION } from './report-types';
+import {
+  DIAGNOSTIC_REPORT_VERSION,
+  PUBLIC_REPORT_VERSION,
+} from './report-types';
 import type {
   CapturedReports,
   DecodePublicReportResult,
@@ -25,7 +28,7 @@ import {
 } from './typed-internals';
 import type { PublicPolicyRecord } from './typed-internals';
 import {
-  PUBLIC_STRUCTURAL_KEYS,
+  PUBLIC_PROTECTED,
   applyRedaction,
   compiledPolicy,
 } from './redaction';
@@ -166,9 +169,10 @@ function jsonView(
 /**
  * Rewrite an assembled diagnostic report through a policy. Failures of a
  * throwing `transform` are appended as `reporting_errors` and are not
- * themselves redacted: they carry the policy's own error text, never report
- * content, and re-running the broken transform over them would erase the only
- * record that it broke.
+ * themselves redacted: re-running the broken transform over them would erase
+ * the only record that it broke. A transform that puts the value it was given
+ * into its own error message therefore surfaces it here — the policy owns its
+ * error text.
  */
 function redactDiagnostic(
   report: DiagnosticReport,
@@ -184,7 +188,10 @@ function redactDiagnostic(
         failures.push({ stage: 'other', path, error });
     },
   ) as unknown as DiagnosticReport;
-  if (failures.length === 0) return redacted;
+  // A budget that already dropped `reporting_errors` says so in
+  // `report_omitted`; re-adding records here would contradict it.
+  if (failures.length === 0 || redacted.report_omitted?.includes('reporting_errors'))
+    return redacted;
   return {
     ...redacted,
     reporting_errors: [
@@ -229,7 +236,11 @@ function corjReportOf(
   }).makeReportObject(caught);
 }
 
-/** The final object in field order; corj always emits `v` under these options (metadata.v defaults to true). */
+/**
+ * The final object in field order. corj drops `v` when its own budget cannot
+ * hold the metadata, so the version is restored here: the report identifies
+ * itself even at the smallest size the halving loop reaches.
+ */
 function assembleDiagnostic(
   occurrenceId: string,
   report: CorjReport,
@@ -240,6 +251,7 @@ function assembleDiagnostic(
   return {
     occurrence_id: occurrenceId,
     ...report,
+    v: report.v ?? DIAGNOSTIC_REPORT_VERSION,
     ...(context === undefined ? {} : context),
     ...(errors.length > 0 ? { reporting_errors: errors } : {}),
     ...(omitted.length > 0 ? { report_omitted: omitted } : {}),
@@ -275,8 +287,10 @@ function startingCorjLimit(
 
 /**
  * Fit the report into `budget` by dropping `context`, then `reporting_errors`,
- * then halving corj's own budget down to its 256-byte floor; throws when even
- * the smallest report does not fit.
+ * then shrinking corj's own budget down to its 256-byte floor; throws when even
+ * the smallest report does not fit. Each retry scales corj's budget by how far
+ * the last one overshot, rather than halving, so the report that comes back
+ * uses the budget the caller actually granted.
  */
 function shrinkToBudget(
   caught: unknown,
@@ -314,8 +328,13 @@ function shrinkToBudget(
     if (finalReportSize(next) <= budget) return next;
   }
   let limit = startingCorjLimit(options.maxReportSize, budget);
+  let overshot: number | undefined;
   for (;;) {
-    limit = Math.max(CORJ_MIN_REPORT_SIZE, Math.floor(limit / 2));
+    if (overshot !== undefined)
+      limit = Math.max(
+        CORJ_MIN_REPORT_SIZE,
+        Math.min(limit - 1, Math.floor((limit * budget) / overshot)),
+      );
     const retryErrors: ReportingError[] = [];
     const smaller = corjReportOf(caught, options, limit, retryErrors);
     const marks =
@@ -332,10 +351,12 @@ function shrinkToBudget(
     );
     const size = finalReportSize(next);
     if (size <= budget) return next;
-    if (limit === CORJ_MIN_REPORT_SIZE)
+    const stalled = limit === CORJ_MIN_REPORT_SIZE && overshot !== undefined;
+    overshot = size;
+    if (stalled)
       throw invalid(
         'APPEX_REPORT_BUDGET_TOO_SMALL',
-        `maxFinalReportSize ${budget} cannot hold the required report envelope; the smallest report of this occurrence is ${size} bytes`,
+        `maxFinalReportSize ${budget} cannot hold the required report envelope; the smallest report of this occurrence is ${size} bytes${options.redact === undefined ? '' : ', which a redaction policy can enlarge but never shrink'}`,
       );
   }
 }
@@ -520,13 +541,20 @@ function publicReportOf(
   };
   if (redact === undefined) return report;
   // Redaction runs after selection: it can only narrow what the policy chose,
-  // never disclose a field the selector left out.
-  return applyRedaction(
+  // never disclose a field the selector left out. A replacement can be longer
+  // than what it replaced, so the message bound is re-applied afterwards.
+  const redacted = applyRedaction(
     report as unknown as CorjJsonValue,
     redact,
     () => undefined,
-    PUBLIC_STRUCTURAL_KEYS,
+    PUBLIC_PROTECTED,
   ) as unknown as PublicReport;
+  if (redacted.message.length <= PUBLIC_MESSAGE_MAX_LENGTH) return redacted;
+  return {
+    ...redacted,
+    message: redacted.message.slice(0, PUBLIC_MESSAGE_MAX_LENGTH),
+    truncated: true,
+  };
 }
 
 /**

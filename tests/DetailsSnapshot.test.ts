@@ -240,3 +240,23 @@ describe('snapshotDetails', () => {
     expect(failure.details.detail.text).toBe('changed');
   });
 });
+
+describe('a hostile value cannot pass itself off as capturable', () => {
+  test('rejects a proxy that only claims to be a Date', () => {
+    const impostor = new Proxy(
+      {},
+      {
+        getPrototypeOf: () => Date.prototype,
+        get: (_target, key) => (key === 'getTime' ? () => 'not a number' : undefined),
+      },
+    );
+
+    rejects(impostor).toThrow(code('APPEX_INVALID_DETAILS'));
+  });
+
+  test('freezes a captured Date', () => {
+    const captured = snapshot(new Date(0)) as Date;
+
+    expect(Object.isFrozen(captured)).toBe(true);
+  });
+});
