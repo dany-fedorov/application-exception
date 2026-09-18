@@ -1,104 +1,146 @@
 # Redaction policy — decision record (issue #43)
 
-Status: **implemented** as `createRedactionPolicy`, with one documented
-assumption that should be revisited when corj ships its own mechanism.
+Status: **implemented** as `createRedactionPolicy`, applied by
+`caught-object-report-json` while it inspects the caught value.
 
-## The assumption
+## History, in two sentences
+
+An unreleased 0.4.0 draft applied redaction as a post-production walk over the
+already produced report, because corj had no mechanism of its own. corj 10.0.0
+(format `corj/v0.13`) ships that mechanism, so the walk was deleted before
+0.4.0 was ever published — and with it a bug where `replacement: '<$&>'` was
+handed to `String.prototype.replace` and re-inserted the match it was supposed
+to remove.
+
+## corj owns the mechanism
 
 [#43](https://github.com/dany-fedorov/application-exception/issues/43) says to
-avoid duplicating corj's traversal implementation, and points at
-[caught-object-report-json#211](https://github.com/dany-fedorov/caught-object-report-json/issues/211)
-as the source of the underlying transformation. corj#211 is open, and the
-installed `caught-object-report-json@9.0.1` exports `CorjMaker`, `makeCorj`,
-`makeCorjArray`, `restoreExpectedValues`, the marker and schema-link constants,
-and `CORJ_DEFAULT_OPTIONS` — nothing for field selection or redaction.
+avoid duplicating corj's traversal. It is not duplicated: `new CorjMaker({
+redact })` consults `keys` and `paths` *before* reading a property, and applies
+`patterns` and then `transform` to every value it emits. `src/redaction.ts` in
+this package is validation plus forwarding — it validates the options by calling
+corj's `resolveCorjRedactPolicy`, rewraps corj's `TypeError` as
+`APPEX_INVALID_REDACTION_POLICY`, bounds `replacement` at 128 characters (corj
+has no bound; the public message bound depends on one), and freezes the result
+into an opaque policy object.
 
-**Assumption taken:** redaction is applied as a transform over the *already
-produced* report, which is a plain JSON tree, rather than during corj's
-inspection of the caught value.
+## What is forwarded where
 
-This is not the duplication the issue warns about. What corj owns — reading
-properties without invoking accessors, flattening the cause graph into
-`children`, depth and child limits, expected-value omission, the circular and
-truncated markers, the `reporting_errors` stages — is still corj's, and is run
-exactly once before redaction sees anything. `src/redaction.ts` walks a JSON
-object; it does not inspect caught values.
+This package builds a `CorjMaker` in exactly three places, and a policy carries
+two resolved corj policies for them:
 
-**Cost of the assumption:** a secret is materialized in memory inside the corj
-report for the moment between production and redaction. It never reaches a sink,
-because both reporters redact before returning, but a policy that must never
-materialize a secret at all needs corj#211. When corj#211 lands, the `keys` /
-`paths` / `values` rules should be forwarded into `CorjMaker` and this walk kept
-only for the fields corj does not produce (`context`, `reporting_errors`, and
-the selected public `as_json`).
+- `forCaught` — the whole policy, including `paths`. Forwarded to the
+  `CorjMaker` that inspects the caught value for the diagnostic report.
+- `forViews` — the same policy with `paths` emptied. Forwarded to the
+  `CorjMaker` that renders `context`, and to the one that renders the public
+  report's `as_json`.
 
-## What was built
+**D5: `paths` address the caught value only.** A path such as `$.password` is
+documented as a path into the caught value, rooted at its `$`. Letting the same
+path also match inside `context` or inside the details a kind's selector chose
+would be an accident of implementation rather than a policy anyone wrote.
+`keys` still match everywhere, and are the rule to reach for when a name is
+sensitive wherever it appears.
 
-`createRedactionPolicy({ keys, paths, values, replacement, transform })` returns
-an opaque, reusable policy. It is accepted as `redact` by `toDiagnosticReport`,
-`toPublicReport`, and `toReports`.
+## The two flat strings corj never sees
 
-- `keys` — property names, exact or `RegExp`, redacted wherever they appear.
-- `paths` — exact JSON paths such as `$.as_json.details.token`.
-- `values` — `RegExp`s matched against string values, so a secret is caught in
-  a message or a stack line as well as in structured details.
-- `replacement` — what a redacted value becomes; `[redacted]` by default.
-- `transform` — the last word on any value the rules above left alone.
+corj scrubs the warning line only inside its own default `onError`; a custom
+handler receives the caught object unchanged. This package installs its own
+handler, so it scrubs those strings itself, with corj's exported `CorjRedactor`
+— the same traversal and the same policy, not a second implementation:
 
-It covers the whole diagnostic report: message, stack, `as_json`, every nested
-cause under `children`, `context`, and `reporting_errors`.
+- the public report's `message`, scrubbed **before** the 4,096-character cut, so
+  a replacement longer than the text it replaced is bounded by the cut rather
+  than escaping it;
+- `reporting_errors[].error`, scrubbed before the entry is pushed. `stage` is
+  never scrubbed: it is this package's own enum.
 
-## The rules that make it safe
+**The `stage: 'redact'` exception.** An entry at `stage: 'redact'` describes the
+policy's *own* failure. Scrubbing it with the full policy ran the application's
+throwing `transform` over the description of its own failure, so the text became
+`[redacted]` and the operator could no longer see why the policy broke. Such an
+entry is scrubbed with the same policy minus its `transform`; every other stage
+keeps the full policy. This is safe, not a hole: corj applies `patterns` before
+it calls `transform`, and a value excluded by `keys` or `paths` never reaches
+`transform` at all, so the text of a transform's error can only embed content
+that was already scrubbed.
 
-**Selection and redaction stay distinct.** On a public report the policy runs
-*after* the kind's `public.details` selector. It can only rewrite what the
-selector already chose, so redacting a field is never a decision to disclose the
-rest, and a kind with no selector still returns no `as_json` no matter what the
-policy says. An unknown failure keeps the generic `INTERNAL_ERROR` shape.
+## What this design gains
 
-**A transform may only substitute within the JSON type it was given.** A report
-pins types positionally — stack lines are strings, `level` is a number — so a
-transform that returns a different type, or a structure, collapses to an
-information-free blank of the original's type. It cannot smuggle a structure
-into a report or make one fail its schema. It *can* return a longer string than
-it replaced: a replacement is never guaranteed to shrink the report, which is
-why a policy can push a tight `maxFinalReportSize` over its limit. The budget
-error says so when a policy is in play.
+**An excluded property is never read.** `keys` and `paths` are consulted before
+the property access, so a getter under `keys: ['password']` does not run — the
+counting-getter test *never reads a property the policy excluded* asserts zero
+reads. The post-production walk could only rewrite a value it had already
+caused to be produced.
 
-**A throwing transform is safe and observable.** The value it was asked about is
-dropped and replaced, and the diagnostic report records the failure in
-`reporting_errors` with stage `other`. Dropping is always safe because it can
-only narrow disclosure — the reporting-failure outcome stays visible rather than
-degrading into a silent leak.
+**The size budget is spent on surviving content.** Redaction happens during
+inspection, so `maxReportSize` and `maxFinalReportSize` measure what is actually
+emitted. A replacement can still be longer than what it replaced, so a policy
+can enlarge a report; the `APPEX_REPORT_BUDGET_TOO_SMALL` message says as much
+when a policy is in play.
 
-**Identity and shape survive, positionally.** Protection is by *position*, never
-by name: the report's own fields — `v`, `occurrence_id`, `report_omitted`, and
-corj's `id`, `path`, `level`, `child_ids`, `typeof`, `instanceof_error`,
-`truncated`, `as_json_format`, `as_string_format`, `children_omitted`, and the
-`stage` of a `reporting_errors` entry — are walked but never replaced at the
-positions the schema pins them to. A value the application happens to call `id`,
-`code`, or `path` inside `as_json` or `context` is ordinary data and *is*
-redacted; protecting such names globally would have silently leaked exactly the
-fields most likely to hold a session id or a file path. Container arrays are
-protected so one is never swapped for a string, while their items are still
-walked. A policy of `{ keys: [/.*/], values: [/.*/], paths: ['$'] }` produces a
-valid report; the test suite validates redacted reports against both schemas.
+**One implementation of the traversal.** corj decides what is a property, a
+child, a stack line or a JSON value, exactly once.
 
-**Rules target values, not key names.** A secret that appears as a property
-*name* (`{ 'sk-live-abc': 1 }`) is not rewritten by `values`; use `keys` or
-`paths` to drop the whole entry, or avoid putting secrets in key positions.
+**`replacement` is literal.** `$&`, `$1` and friends are never expanded — corj
+replaces through a function. `replacement: '<$&>'` yields the literal `<$&>`, in
+the diagnostic report, in `context`, in the public `as_json`, and in the public
+`message`.
 
-**Redaction runs before the byte budget**, so `maxFinalReportSize` measures what
-is actually emitted. On a public report it runs before the 4,096-character
-message bound is re-applied, so a policy cannot push a message past the length
-its own schema and decoder accept.
+## What a policy cannot do
 
-**The walk is depth-bounded.** corj bounds a report by bytes, not by nesting, so
-a hostile caught value can produce an `as_json` thousands of levels deep. Past
-512 levels the walk replaces the subtree instead of descending, which narrows
-rather than leaks, and keeps a redacting reporter from turning a deep value into
-a `RangeError`.
+**It cannot discover an unknown secret.** The package supplies the mechanism;
+which content is sensitive stays the application's decision.
+
+**`keys` and `paths` select properties, not content.** Error text is duplicated
+across `message`, `stack` and `as_string`, and neither the object's own
+`toString` nor V8's stack formatting can be stopped from reading `message`. So
+`keys: ['message']` leaves the text in `stack`. Removing *content* needs
+`patterns` or `transform`.
+
+**A secret in a key position stays a key.** `patterns` apply to emitted strings;
+a secret used as a property *name* (`{ 'sk-live-abc': 1 }`) is removed by `keys`
+or `paths`, not by matching values.
+
+**Selection and redaction stay distinct (D8).** On a public report the policy
+runs over the output of the kind's `public.details` selector. It can only narrow
+what the selector chose; a kind with no selector still emits no `as_json`, and an
+unknown failure keeps the generic `INTERNAL_ERROR` shape.
+
+## corj behaviours worth knowing
+
+Each is pinned by a test in `tests/Redaction.test.ts`.
+
+**A policy failure is reported once per value.** A throwing `transform` or
+matcher fails closed — the value becomes the replacement — and the failure is
+recorded once for the value it was asked about, without re-consulting the
+policy. A transform that throws for *every* value therefore produces **several**
+`stage: 'redact'` entries, not one (*a transform that always throws blanks the
+report without recursing, and says why*).
+
+**A catch-all pattern also rewrites a child report's `id`.** corj emits `id`
+through the policy, because `makeReportId` may have built it from the caught
+object; `path` and `level` are corj's own structure and are not. So
+`patterns: [/[\s\S]*/g]` rewrites `children[0].id` and the `child_ids` linkage
+stops identifying anything (*leaves the positions corj generates itself
+intact*). Write targeted patterns.
+
+**Report-shaped names are ordinary data.** A value the application calls `id`,
+`code`, `path`, `stage`, `level` or `truncated` inside `as_json` or `context` is
+redacted like anything else. Protecting such names would silently leak exactly
+the fields most likely to hold a session id or a file path.
+
+**A redacted children source is marked.** Excluding the property children come
+from yields `children_omitted: 'redacted'`, and the report still validates
+against `schemas/diagnostic-report-v4.json`.
 
 **No policy means no change.** Reports without `redact` behave exactly as they
-did in 0.3.0; the test suite asserts the secret comes back when the policy is
-bypassed.
+did in 0.3.0, apart from the format version; the test suite asserts the secret
+comes back when the policy is bypassed.
+
+## Follow-up, not done
+
+corj 10.0.0 also offers `inspection: 'no-invoke'`, which reads nothing from the
+caught object that could run application code. Exposing it through this package
+is **D7: out of scope** here — it changes what every report contains, not just a
+redacted one, and deserves its own decision.

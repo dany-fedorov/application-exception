@@ -129,23 +129,39 @@ function createRedactionPolicy(options?: RedactionPolicyOptions): RedactionPolic
 Build a reusable redaction policy for `toDiagnosticReport`, `toPublicReport`,
 and `toReports`.
 
-The policy rewrites values in the produced report: messages, stacks,
-`as_json`, `context`, `reporting_errors`, and every nested cause. On a public
-report it runs **after** the kind's `public.details` selector, so redaction
-can only narrow what was selected — it never authorizes disclosure, and a
-field the selector did not choose stays absent.
+The policy is applied by corj **while it inspects** the caught value: a
+property excluded by `keys` or `paths` is never read, so an excluded getter
+never runs and the size budget is spent only on what survives. `patterns` and
+`transform` then run over every string and value the report emits — messages,
+stacks, `as_json`, `context`, every nested cause — and over the two strings
+corj never sees, the public `message` and `reporting_errors[].error`.
 
-Identity and shape fields (`v`, `occurrence_id`, `code`, and corj's
-structural keys) are walked but never replaced, so a redacted report still
-validates against its schema.
+`keys` and `paths` select *properties*, not content: error text is duplicated
+into `stack` and `as_string`, so removing content needs `patterns` or
+`transform`. Each pattern must carry the `g` flag, or the policy is rejected.
+`replacement` is literal — `$&` and `$1` are not expanded. `paths` address the
+caught value only; they never match inside `context` or selected public
+details.
+
+On a public report the policy runs over the output of the kind's
+`public.details` selector, so redaction can only narrow what was selected — it
+never authorizes disclosure of a field the selector did not choose.
+
+A `transform` or matcher that throws fails closed — the value becomes the
+replacement — and is recorded in `reporting_errors` with `stage: 'redact'`,
+once per value. That entry's text is scrubbed by `patterns` alone, so why the
+policy broke stays readable.
 
 Throws: `APPEX_INVALID_REDACTION_POLICY`
 
 ```ts
 import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
-const redact = createRedactionPolicy({ keys: ['password', /token$/i], values: [/\bsk-[A-Za-z0-9]{8,}\b/] });
+const redact = createRedactionPolicy({
+  keys: ['password', /token$/i],
+  patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
+});
 const report = toDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
-console.log(report.message); // 'bad key [redacted]'
+console.log(report.stack?.[0]); // 'Error: bad key [redacted]'
 ```
 
 ### `toDiagnosticReport`
@@ -451,14 +467,12 @@ Per-call overrides of the kind's public policy; `details: null` suppresses the p
 ### `RedactionContext`
 
 ```ts signature
-export interface RedactionContext {
-  readonly path: string;
-  readonly key: string | undefined;
-}
+export type RedactionContext = CorjRedactContext;
 ```
 
-How a redaction policy rewrites one value it decided to redact, and what the
-policy was asked about. `path` is a JSON path rooted at `$`.
+What a policy was asked about: `stage` is where corj produced the value,
+`path` is a JSON path rooted at the caught value's `$`, `key` is the report
+field it is destined for, and `prop` the property it was read from.
 
 ### `RedactionPolicy`
 
@@ -474,16 +488,16 @@ An opaque, reusable redaction policy. Build it once and share it between reports
 
 ```ts signature
 export interface RedactionPolicyOptions {
-  /** Property names redacted wherever they appear, by exact match or pattern. */
+  /** Property names never read, by exact match or pattern. */
   readonly keys?: readonly (string | RegExp)[];
-  /** Exact JSON paths redacted, such as `$.as_json.token` or `$.children[0].as_json.password`. */
-  readonly paths?: readonly string[];
-  /** String values redacted wherever they appear, including in messages and stack lines. */
-  readonly values?: readonly RegExp[];
-  /** What a redacted value becomes. Defaults to `[redacted]`. */
+  /** JSON paths never read, rooted at the caught value, such as `$.cause.config.headers`. */
+  readonly paths?: readonly (string | RegExp)[];
+  /** Patterns replaced in every string the report emits. Each must carry the `g` flag. */
+  readonly patterns?: readonly RegExp[];
+  /** What a redacted value becomes, used literally. Defaults to `[redacted]`. */
   readonly replacement?: string;
-  /** Last word on any value the rules above did not redact; return the value unchanged to keep it. */
-  readonly transform?: (value: CorjJsonValue, context: RedactionContext) => unknown;
+  /** Last word on every emitted value; returning `undefined` drops the field. */
+  readonly transform?: CorjRedactTransform;
 }
 ```
 

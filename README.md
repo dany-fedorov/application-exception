@@ -198,18 +198,24 @@ const caught: unknown = new Error('connection refused');
 toDiagnosticReport(caught, { context: { runId: 'run-1' }, maxFinalReportSize: 32_768 });
 ```
 
-**Redact once, everywhere.** A policy built by `createRedactionPolicy` applies
-to messages, stacks, `as_json`, `context`, `reporting_errors`, and nested
-causes. On a public report it runs *after* the kind's `details` selector, so it
-can only narrow what was selected — redaction never authorizes disclosure.
-Identity and shape fields are never rewritten, so a redacted report still
-validates against its schema.
+**Redact once, everywhere.** A policy built by `createRedactionPolicy` is
+applied by corj *while it inspects* the caught value: a property excluded by
+`keys` or `paths` is never read, so an excluded getter never runs and the size
+budget is spent only on what survives. `patterns` and `transform` then run over
+every string and value the reports emit — messages, stacks, `as_json`,
+`context`, nested causes — and over the two strings corj never sees, the public
+`message` and `reporting_errors`. Each pattern must carry the `g` flag;
+`replacement` is used literally, so `$&` is never expanded; `paths` address the
+caught value only. On a public report the policy runs *after* the kind's
+`details` selector, so it can only narrow what was selected — redaction never
+authorizes disclosure. See
+[docs/design/redaction-policy.md](docs/design/redaction-policy.md).
 
 ```ts
 import { createRedactionPolicy, toReports } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const redact = createRedactionPolicy({ keys: ['password', /token$/i], values: [/\bsk-[A-Za-z0-9]{8,}\b/] });
+const redact = createRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
 toReports(caught, { diagnostic: { redact }, public: { redact } });
 ```
 

@@ -72,6 +72,11 @@ function corjMessage(failure: unknown): string {
  * `public.details` selector, so redaction can only narrow what was selected — it
  * never authorizes disclosure of a field the selector did not choose.
  *
+ * A `transform` or matcher that throws fails closed — the value becomes the
+ * replacement — and is recorded in `reporting_errors` with `stage: 'redact'`,
+ * once per value. That entry's text is scrubbed by `patterns` alone, so why the
+ * policy broke stays readable.
+ *
  * @throws `APPEX_INVALID_REDACTION_POLICY`
  * @example
  * ```ts

@@ -207,7 +207,7 @@ import { createRedactionPolicy, defineException, toReports } from 'application-e
 
 const redact = createRedactionPolicy({
   keys: ['password', /token$/i],
-  values: [/\bsk-[A-Za-z0-9]{8,}\b/],
+  patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
 });
 
 const Rejected = defineException({
@@ -223,13 +223,20 @@ const reports = toReports(new Rejected({ details: { user: 'ada', password: 'hunt
 console.log(JSON.stringify(reports).includes('hunter2')); // false
 ```
 
-Build the policy once and share it. It covers messages, stacks, `as_json`,
-`context`, `reporting_errors`, and nested causes. On a public report it runs
-after the kind's `details` selector, so it can only narrow what was already
-selected — it is not a way to disclose a field the selector left out. Identity
-and shape fields are never rewritten, so a redacted report still validates
-against its schema. A `transform` that throws drops the value it was asked about
-and records the failure in `reporting_errors`.
+Build the policy once and share it. corj applies it while inspecting the caught
+value, so a property excluded by `keys` or `paths` is never read and its getter
+never runs; `patterns` and `transform` then cover messages, stacks, `as_json`,
+`context`, `reporting_errors`, and nested causes. Each pattern must carry the
+`g` flag. `replacement` is used literally — `$&` is never expanded back into the
+text. `paths` address the caught value only, so `$.password` never matches
+inside `context` or inside selected public details; use `keys` for a name that
+is sensitive wherever it appears. `keys` and `paths` select properties, not
+content: error text is duplicated into `stack`, so removing content needs
+`patterns` or `transform`. On a public report the policy runs after the kind's
+`details` selector, so it can only narrow what was already selected — it is not
+a way to disclose a field the selector left out. A `transform` that throws fails
+closed: the value becomes the replacement and the failure is recorded in
+`reporting_errors` with `stage: 'redact'`, once per value it was asked about.
 
 ## Capture details that outlive the throw
 

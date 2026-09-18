@@ -23,15 +23,20 @@ diagnostic report format changes.
   emitting an over-budget or invalid report. Default `null` keeps 0.3.0
   behaviour; `report_omitted` is additive to the v3 schema.
   ([#44](https://github.com/dany-fedorov/application-exception/issues/44))
-- `createRedactionPolicy({ keys, paths, values, replacement, transform })`
+- `createRedactionPolicy({ keys, paths, patterns, replacement, transform })`
   builds a reusable policy accepted as `redact` by all three report functions.
-  It covers messages, stacks, `as_json`, `context`, `reporting_errors`, and
-  nested causes. On a public report it runs after the kind's `details` selector,
-  so it can only narrow what was selected; identity and shape fields are never
-  rewritten, and a throwing `transform` drops the value and records the failure
-  in `reporting_errors`. Applied as a transform over the produced report — see
-  [docs/design/redaction-policy.md](docs/design/redaction-policy.md) for the
-  assumption and what changes when corj ships its own mechanism.
+  corj applies it **while it inspects** the caught value, so a property excluded
+  by `keys` or `paths` is never read — an excluded getter never runs and the
+  size budget is spent only on what survives. `patterns` (each must carry the
+  `g` flag) and `transform` cover messages, stacks, `as_json`, `context`, nested
+  causes, and the two strings corj never sees, the public `message` and
+  `reporting_errors`. `replacement` is used literally, so `$&` is never expanded
+  back into the text; `paths` address the caught value only. On a public report
+  the policy runs after the kind's `details` selector, so it can only narrow
+  what was selected. A throwing `transform` fails closed to the replacement and
+  is recorded in `reporting_errors` with `stage: 'redact'`, once per value, with
+  the failure's own text left readable. See
+  [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
   ([#43](https://github.com/dany-fedorov/application-exception/issues/43))
 - `defineException({ snapshotDetails: true })` captures a deep frozen copy of
   the details at construction, so later mutation of the caller's nested objects
