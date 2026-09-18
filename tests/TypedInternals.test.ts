@@ -50,6 +50,12 @@ describe('typed internals', () => {
       brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, occurrenceId: 42 }),
     ).toBeUndefined();
     expect(
+      brandedOccurrenceId({
+        [TYPED_EXCEPTION_BRAND]: true,
+        occurrenceId: 'has space',
+      }),
+    ).toBeUndefined();
+    expect(
       brandedOccurrenceId({ occurrenceId: 'AE_unbranded' }),
     ).toBeUndefined();
     expect(brandedOccurrenceId(null)).toBeUndefined();

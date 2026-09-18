@@ -43,7 +43,7 @@ describe('toReports', () => {
       );
       expect(captured.occurrence_id).toBe(captured.public.occurrence_id);
       expect(captured.occurrence_id.length).toBeGreaterThan(0);
-      expect(captured.diagnostic.v).toBe('corj/v0.13');
+      expect(captured.diagnostic.v).toBe('corj/v0.14');
       expect(captured.public.v).toBe('appex/public/v3');
     }
   });
@@ -86,7 +86,10 @@ describe('toReports', () => {
       cause: new Error('postgres://user:hunter2@db'),
     });
     const captured = toReports(error, {
-      diagnostic: { context: { runId: 'run-1' }, maxReportSize: 4_096 },
+      diagnostic: {
+        context: { runId: 'run-1' },
+        corj: { maxReportSize: 4_096 },
+      },
       public: { message: 'Search is down.' },
     });
     expect(captured.public).toEqual(
@@ -95,7 +98,7 @@ describe('toReports', () => {
     expect(captured.diagnostic).toEqual(
       toDiagnosticReport(error, {
         context: { runId: 'run-1' },
-        maxReportSize: 4_096,
+        corj: { maxReportSize: 4_096 },
       }),
     );
     expect(captured.public.code).toBe('TOOL_UNAVAILABLE');
@@ -112,11 +115,12 @@ describe('toReports', () => {
     const captured = toReports('socket closed', {
       diagnostic: {
         context: { runId: 'run-1' },
-        maxDepth: 1,
-        maxChildren: 2,
-        maxReportSize: 2_048,
-        maxFinalReportSize: 4_096,
-        stackFormat: 'string',
+        corj: {
+          maxDepth: 1,
+          maxChildren: 2,
+          maxReportSize: 2_048,
+          stackFormat: 'string',
+        },
       },
       public: {
         code: 'SOCKET_CLOSED',
@@ -137,13 +141,12 @@ describe('toReports', () => {
   test('bounds the diagnostic report through the nested budget', () => {
     const captured = toReports(new Error('failure'), {
       diagnostic: {
-        maxReportSize: 1024,
-        maxFinalReportSize: 1024,
+        corj: { maxReportSize: 1024 },
         context: { text: 'x'.repeat(12_000) },
       },
     });
     expect(bytes(captured.diagnostic)).toBeLessThanOrEqual(1024);
-    expect(captured.diagnostic.report_omitted).toEqual(['context']);
+    expect(captured.diagnostic.context_omitted).toBe('max_size');
     expect(captured.diagnostic.occurrence_id).toBe(
       captured.public.occurrence_id,
     );
@@ -169,7 +172,7 @@ describe('toReports', () => {
     expect(() =>
       toReports('x', { diagnostic: { occurrenceId: 'a' } } as never),
     ).toThrow(
-      /unknown option "occurrenceId"; known options: context, maxReportSize, maxFinalReportSize, maxDepth, maxChildren, stackFormat/,
+      /unknown option "occurrenceId"; known options: context, redact, corj/,
     );
     expect(() =>
       toReports('x', { public: { occurrenceId: 'a' } } as never),
@@ -189,11 +192,11 @@ describe('toReports', () => {
     expect(() => toReports(error, { public: { code: '' } })).toThrow(
       code('APPEX_INVALID_PUBLIC_CODE'),
     );
-    expect(() => toReports(error, { diagnostic: { maxDepth: -1 } })).toThrow(
-      RangeError,
-    );
     expect(() =>
-      toReports(error, { diagnostic: { maxFinalReportSize: 64 } }),
-    ).toThrow(code('APPEX_REPORT_BUDGET_TOO_SMALL'));
+      toReports(error, { diagnostic: { corj: { maxDepth: -1 } } }),
+    ).toThrow(RangeError);
+    expect(() =>
+      toReports(error, { diagnostic: { corj: { maxReportSize: 100 } } }),
+    ).toThrow(RangeError);
   });
 });

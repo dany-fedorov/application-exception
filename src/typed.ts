@@ -393,13 +393,11 @@ export function defineException(definition: {
   }
   if (
     idPrefix !== undefined &&
-    (typeof idPrefix !== 'string' ||
-      idPrefix.trim().length === 0 ||
-      idPrefix.length > 32)
+    (typeof idPrefix !== 'string' || !/^[\x21-\x7e]{1,32}$/.test(idPrefix))
   ) {
     throw invalid(
       'APPEX_INVALID_ID_PREFIX',
-      'idPrefix must be a nonempty string of at most 32 characters',
+      'idPrefix must be 1 to 32 printable ASCII characters without spaces',
     );
   }
   const snapshot = definition.snapshotDetails;

@@ -1,10 +1,11 @@
 import { CORJ_VERSION } from 'caught-object-report-json';
+import type { AppexCorjOptions } from './corj-maker';
 import type { RedactionPolicy } from './redaction';
 import type { TrustRealm } from './typed-internals';
 import type {
-  CorjErrorStage,
   CorjJsonValue,
   CorjReport,
+  CorjReportingError,
   CorjVersion,
 } from 'caught-object-report-json';
 
@@ -14,48 +15,34 @@ export const DIAGNOSTIC_REPORT_VERSION: typeof CORJ_VERSION = CORJ_VERSION;
 /** The `v` of every public report. */
 export const PUBLIC_REPORT_VERSION = 'appex/public/v3' as const;
 
-/** A problem corj met while inspecting the caught value; `message: null` and friends mark where. */
-export interface ReportingError {
-  readonly stage: CorjErrorStage;
-  readonly path: string;
-  readonly key?: string;
-  readonly prop?: string;
-  readonly error: string;
-}
+/** A problem corj met while producing a report: `stage`, `path`, the report `key`, the source `prop`, and a scrubbed description. */
+export type ReportingError = CorjReportingError;
 
 /**
- * A corj report object (see caught-object-report-json) with four extension
- * fields. `occurrence_id` is the occurrence id shared with the public
- * report. `context` is the normalized `options.context`. `reporting_errors`
- * lists inspection failures (at most 8). `report_omitted` names the optional
- * fields dropped to meet `maxFinalReportSize`.
+ * A corj report object (see caught-object-report-json) of one occurrence.
+ * `occurrence_id` is the id shared with the public report, and `v` is always
+ * present: corj never trims either. `context` is the JSON form of
+ * `options.context`, `reporting_errors` lists inspection failures (at most 8),
+ * and `context_omitted` / `reporting_errors_omitted` say when one of those two
+ * was left out to meet `corj.maxReportSize`.
  */
-export type DiagnosticReport = Omit<CorjReport, 'v'> & {
+export type DiagnosticReport = CorjReport & {
   readonly v: CorjVersion;
   readonly occurrence_id: string;
-  readonly context?: CorjJsonValue | null;
-  readonly reporting_errors?: readonly ReportingError[];
-  readonly report_omitted?: readonly ('context' | 'reporting_errors')[];
 };
 
 /**
- * Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
- * and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
- * 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
- * the report budget. `occurrenceId` overrides the occurrence id.
- * `maxFinalReportSize` bounds the UTF-8 bytes of `JSON.stringify(report)` for
- * the whole report, extension fields included; `null` (the default) disables
- * it and leaves `maxReportSize` alone.
+ * Options of `toDiagnosticReport`. `occurrenceId` overrides the occurrence id.
+ * `context` is any caller data to report beside the caught value; corj bounds
+ * it and drops it whole when the report is over budget. `redact` is the policy
+ * both reports share. `corj` carries every option of
+ * caught-object-report-json, `maxReportSize` and `inspection` included.
  */
 export interface DiagnosticReportOptions {
   readonly occurrenceId?: string;
   readonly context?: unknown;
-  readonly maxReportSize?: number | null;
-  readonly maxFinalReportSize?: number | null;
-  readonly maxDepth?: number;
-  readonly maxChildren?: number;
-  readonly stackFormat?: 'lines' | 'string';
   readonly redact?: RedactionPolicy;
+  readonly corj?: AppexCorjOptions;
 }
 
 /**

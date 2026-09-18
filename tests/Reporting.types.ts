@@ -21,12 +21,17 @@ const error = new Failure({ details: { operation: 'search' } });
 
 const diagnostic: DiagnosticReport = toDiagnosticReport(error, {
   context: { requestId: 'req' },
-  maxDepth: 2,
-  maxChildren: 10,
-  maxReportSize: 4096,
-  stackFormat: 'string',
+  corj: {
+    maxDepth: 2,
+    maxChildren: 10,
+    maxReportSize: 4096,
+    stackFormat: 'string',
+    inspection: 'no-invoke',
+  },
 });
-const version: 'corj/v0.13' | 'corj/v0.13-full' = diagnostic.v;
+const version: 'corj/v0.14' | 'corj/v0.14-full' = diagnostic.v;
+const fingerprint: string | undefined = diagnostic.fingerprint;
+void fingerprint;
 const stack: string | string[] | null | undefined = diagnostic.stack;
 const restored: DiagnosticReport = restoreExpectedValues(diagnostic);
 void version;
@@ -63,17 +68,23 @@ void consume;
 
 const captured: CapturedReports = toReports(error, {
   occurrenceId: 'trace-1',
-  diagnostic: { context: { requestId: 'req' }, maxFinalReportSize: 4096 },
+  diagnostic: {
+    context: { requestId: 'req' },
+    corj: { maxReportSize: 4096 },
+  },
   public: { code: 'X', message: 'x' },
 });
 const capturedId: string = captured.occurrence_id;
 const capturedDiagnostic: DiagnosticReport = captured.diagnostic;
 const capturedPublic: PublicReport = captured.public;
-const omitted: readonly ('context' | 'reporting_errors')[] | undefined =
-  capturedDiagnostic.report_omitted;
+const contextOmitted: 'max_size' | undefined =
+  capturedDiagnostic.context_omitted;
+const errorsOmitted: 'max_size' | undefined =
+  capturedDiagnostic.reporting_errors_omitted;
 void capturedId;
 void capturedPublic;
-void omitted;
+void contextOmitted;
+void errorsOmitted;
 
 // @ts-expect-error the occurrence id belongs to the top-level bag only.
 toReports(error, { diagnostic: { occurrenceId: 'trace-1' } });
@@ -81,10 +92,14 @@ toReports(error, { diagnostic: { occurrenceId: 'trace-1' } });
 toReports(error, { public: { occurrenceId: 'trace-1' } });
 // @ts-expect-error per-report options are nested, never flat.
 toReports(error, { context: { requestId: 'req' } });
+// @ts-expect-error corj options live in the corj bag, never at the top level.
+toDiagnosticReport(error, { maxDepth: 2 });
+// @ts-expect-error the redaction policy is shared; corj.redact is not accepted.
+toDiagnosticReport(error, { corj: { redact: { keys: ['password'] } } });
 
 const redact: RedactionPolicy = createRedactionPolicy({
   keys: ['password', /token$/i],
-  paths: ['$.config.headers', /^\$\.cause\./],
+  paths: ['$.config.headers', /^\$\.cause\./, '$context.user.email'],
   patterns: [/sk-[a-z]+/g],
   replacement: '[redacted]',
   transform: (value: unknown, context: RedactionContext) =>

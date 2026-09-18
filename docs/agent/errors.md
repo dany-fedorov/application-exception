@@ -3,8 +3,9 @@
 Every error is a `TypeError` with an enumerable `code` and a message of the
 form `<CODE>: <text>; see <this file>#<code>`. They signal a wrong call, not a
 runtime failure of your application: fix the call site instead of catching them.
-Errors from corj options (`maxDepth`, `maxChildren`, `maxReportSize`,
-`stackFormat`) propagate unchanged as corj's `TypeError` or `RangeError`.
+Errors from the options in the `corj` bag (`maxDepth`, `maxChildren`,
+`maxReportSize`, `stackFormat`, and every other corj option) propagate
+unchanged as corj's `TypeError` or `RangeError`.
 
 ## APPEX_INVALID_TAG
 
@@ -30,8 +31,8 @@ defineException({ tag: 'tools/Failed', message: ({ tool }: { tool: string }) => 
 
 ## APPEX_INVALID_ID_PREFIX
 
-When: `defineException` receives an `idPrefix` that is not a nonempty string of at most 32 UTF-16 units.
-Cause: an empty prefix or a very long one.
+When: `defineException` receives an `idPrefix` that is not 1 to 32 printable ASCII characters without spaces.
+Cause: an empty prefix, a very long one, or one with a space or a non-ASCII character.
 Fix: omit `idPrefix` (ids start with `AE_`) or pass a short one.
 
 ```ts
@@ -83,19 +84,19 @@ new Failed({ causes: [new Error('primary down'), new Error('fallback down')] });
 ## APPEX_INVALID_OPTIONS
 
 When: `toDiagnosticReport` or `toPublicReport` receives options that are not an object (or an array), or that contain an unknown key. The message lists the known keys.
-Cause: a typo such as `maxDepht`, or an option from an older version such as `redactKeys`, `limits`, or `includeStack`.
+Cause: a typo such as `contxt`, or an option from an older version such as `maxDepth`, `maxFinalReportSize`, or `includeStack`; every corj option now lives in the `corj` bag.
 Fix: use only the listed keys.
 
 ```ts
 import { toDiagnosticReport, toPublicReport } from 'application-exception';
-toDiagnosticReport(new Error('x'), { context: { runId: 'r' }, maxDepth: 2 });
+toDiagnosticReport(new Error('x'), { context: { runId: 'r' }, corj: { maxDepth: 2 } });
 toPublicReport(new Error('x'), { code: 'X', message: 'x', details: { a: 1 } });
 ```
 
 ## APPEX_INVALID_OCCURRENCE_ID
 
-When: `options.occurrenceId` is not a nonempty string of at most 128 UTF-16 units.
-Cause: passing an empty string or a non-string identifier.
+When: `options.occurrenceId` is not 1 to 128 printable ASCII characters without spaces.
+Cause: passing an empty string, a non-string identifier, or text with a space or a non-ASCII character.
 Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded string.
 
 ```ts
@@ -123,17 +124,6 @@ Fix: pass display text, or omit `message` to use the kind's policy.
 ```ts
 import { toPublicReport } from 'application-exception';
 toPublicReport(new Error('x'), { message: 'Search is temporarily unavailable.' });
-```
-
-## APPEX_REPORT_BUDGET_TOO_SMALL
-
-When: `options.maxFinalReportSize` cannot hold the report even after `context` and `reporting_errors` are dropped and corj's own budget is shrunk to its 256-byte floor.
-Cause: a budget of a few dozen bytes, or one too small for a long `occurrenceId` plus the required corj fields.
-Fix: raise `maxFinalReportSize` (a few hundred bytes hold the smallest report), or shorten the occurrence id.
-
-```ts
-import { toDiagnosticReport } from 'application-exception';
-toDiagnosticReport(new Error('x'), { maxFinalReportSize: 4096, context: { runId: 'r' } });
 ```
 
 ## APPEX_INVALID_TRUST_REALM
