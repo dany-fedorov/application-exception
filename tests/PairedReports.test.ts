@@ -44,7 +44,7 @@ describe('toReports', () => {
       expect(captured.occurrence_id).toBe(captured.public.occurrence_id);
       expect(captured.occurrence_id.length).toBeGreaterThan(0);
       expect(captured.diagnostic.v).toBe('corj/v0.14');
-      expect(captured.public.v).toBe('appex/public/v3');
+      expect(captured.public.v).toBe('appex/public/v4');
     }
   });
 
@@ -132,8 +132,9 @@ describe('toReports', () => {
     });
     expect(captured.diagnostic.context).toEqual({ runId: 'run-1' });
     expect(captured.public).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: captured.occurrence_id,
+      fingerprint: expect.stringMatching(/^fp1_[0-9a-f]{32}$/),
       code: 'SOCKET_CLOSED',
       message: 'Try again.',
       as_json: { a: 1 },
@@ -200,5 +201,24 @@ describe('toReports', () => {
     expect(() =>
       toReports(error, { diagnostic: { corj: { maxReportSize: 100 } } }),
     ).toThrow(RangeError);
+  });
+});
+
+describe('toReports shares one fingerprint', () => {
+  test('the public report copies the diagnostic one', () => {
+    const { diagnostic, public: disclosed } = toReports(
+      new Error('x', { cause: new Error('y') }),
+      { diagnostic: { corj: { maxDepth: 1 } } },
+    );
+    expect(disclosed.fingerprint).toBe(diagnostic.fingerprint);
+    expect(disclosed.fingerprint).toMatch(/^fp1_/);
+  });
+
+  test('off in the diagnostic report means off in both', () => {
+    const { diagnostic, public: disclosed } = toReports(new Error('x'), {
+      diagnostic: { corj: { fingerprintParts: null } },
+    });
+    expect(diagnostic).not.toHaveProperty('fingerprint');
+    expect(disclosed).not.toHaveProperty('fingerprint');
   });
 });

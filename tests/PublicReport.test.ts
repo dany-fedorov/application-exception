@@ -5,10 +5,12 @@ import {
   toReports,
 } from '../src/reporting';
 import { PUBLIC_REPORT_VERSION } from '../src/report-types';
+import { createRedactionPolicy } from '../src/redaction';
 import { defineException } from '../src/typed';
 import { registerTypedException } from '../src/typed-internals';
 
 const code = (value: string) => expect.objectContaining({ code: value });
+const anyFingerprint = expect.stringMatching(/^fp1_[0-9a-f]{32}$/);
 
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
@@ -33,20 +35,22 @@ describe('toPublicReport', () => {
     });
     const report = toPublicReport(error);
     expect(report).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: error.occurrenceId,
+      fingerprint: anyFingerprint,
       code: 'TOOL_UNAVAILABLE',
       message: 'search is temporarily unavailable.',
       as_json: { tool: 'search' },
     });
-    expect(PUBLIC_REPORT_VERSION).toBe('appex/public/v3');
+    expect(PUBLIC_REPORT_VERSION).toBe('appex/public/v4');
     expect(JSON.stringify(report)).not.toContain('hunter2');
     expect(toDiagnosticReport(error).occurrence_id).toBe(report.occurrence_id);
   });
 
   test('discloses nothing for values without a policy', () => {
     const generic = {
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
+      fingerprint: anyFingerprint,
       code: 'INTERNAL_ERROR',
       message: 'Something went wrong',
     };
@@ -81,8 +85,9 @@ describe('toPublicReport', () => {
         occurrenceId: 'trace-9',
       }),
     ).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: 'trace-9',
+      fingerprint: anyFingerprint,
       code: 'SEARCH_DOWN',
       message: 'Search is down.',
       as_json: { retryAfterSeconds: 30 },
@@ -112,8 +117,9 @@ describe('toPublicReport', () => {
       },
     });
     expect(toPublicReport(new Throws())).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: expect.stringMatching(/^AE_/),
+      fingerprint: anyFingerprint,
       code: 'THROWS',
       message: 'Something went wrong',
     });
@@ -271,7 +277,7 @@ describe('decodePublicReport', () => {
     [
       'another version',
       { ...valid, v: 'appex/public/v2' },
-      'Expected version appex/public/v3',
+      'Expected version appex/public/v3 or appex/public/v4',
       '$.v',
     ],
     [
@@ -402,8 +408,9 @@ describe('toPublicReport reads details defensively', () => {
     expect(captured.public.as_json).toEqual({ tool: 'search' });
     expect(JSON.stringify(captured.public)).not.toContain('hunter2');
     expect(toReports(new NoPolicy({ details: { tool: 'x' } })).public).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: expect.stringMatching(/^AE_/),
+      fingerprint: anyFingerprint,
       code: 'INTERNAL_ERROR',
       message: 'Something went wrong',
     });
@@ -549,5 +556,122 @@ describe('the public option', () => {
     ).toThrow(
       /public\.details must be a function that selects the JSON to disclose, or null/,
     );
+  });
+});
+
+describe('public report v4', () => {
+  test('carries v4 and a fingerprint by default', () => {
+    const report = toPublicReport(new Error('x'));
+    expect(report.v).toBe('appex/public/v4');
+    expect(report.fingerprint).toMatch(/^fp1_[0-9a-f]{32}$/);
+    expect(Object.keys(report).slice(0, 3)).toEqual([
+      'v',
+      'occurrence_id',
+      'fingerprint',
+    ]);
+  });
+
+  test('standalone reports agree when they get the same corj bag and policy', () => {
+    const corj = { maxDepth: 3 };
+    const redact = createRedactionPolicy({ patterns: [/sk-[a-z]{10}/g] });
+    const caught = new Error('key sk-abcdefghij', {
+      cause: new Error('inner'),
+    });
+    expect(toPublicReport(caught, { corj, redact }).fingerprint).toBe(
+      toDiagnosticReport(caught, { corj, redact }).fingerprint,
+    );
+  });
+
+  test('fingerprintParts: null turns it off', () => {
+    expect(
+      toPublicReport(new Error('x'), { corj: { fingerprintParts: null } }),
+    ).not.toHaveProperty('fingerprint');
+  });
+
+  test('the fingerprint discloses nothing readable', () => {
+    const report = toPublicReport(
+      new Error('internal secret at /srv/app/db.js'),
+    );
+    expect(JSON.stringify(report)).not.toContain('secret');
+    expect(JSON.stringify(report)).not.toContain('/srv/app');
+  });
+
+  test('with fingerprintParts: null nothing is read from the error', () => {
+    let ran = 0;
+    class Counting extends Error {
+      override get name() {
+        ran++;
+        return 'Counting';
+      }
+    }
+    const caught = new Counting('x');
+    const before = ran; // V8 may read `name` while constructing the error; only the report is under test
+    toPublicReport(caught, { corj: { fingerprintParts: null } });
+    expect(ran).toBe(before);
+  });
+
+  test('under no-invoke, computing it runs no getter', () => {
+    let ran = 0;
+    class Lazy extends Error {
+      override get name() {
+        ran++;
+        return 'Lazy';
+      }
+    }
+    const caught = new Lazy('x');
+    const before = ran; // V8 may read `name` while constructing the error; only the report is under test
+    toPublicReport(caught, { corj: { inspection: 'no-invoke' } });
+    expect(ran).toBe(before);
+  });
+});
+
+describe('decodePublicReport reads v3 and v4', () => {
+  const v4 = {
+    v: 'appex/public/v4',
+    occurrence_id: 'AE_1',
+    fingerprint: 'fp1_' + 'a'.repeat(32),
+    code: 'X',
+    message: 'm',
+  };
+  const v3 = {
+    v: 'appex/public/v3',
+    occurrence_id: 'AE_1',
+    code: 'X',
+    message: 'm',
+  };
+
+  test('both versions decode, each keeping its own v', () => {
+    expect(decodePublicReport(v4)).toEqual({ ok: true, report: v4 });
+    expect(decodePublicReport(v3)).toEqual({ ok: true, report: v3 });
+  });
+
+  test('a round trip of a fresh report decodes', () => {
+    const report = toPublicReport(new Error('x'));
+    expect(decodePublicReport(JSON.parse(JSON.stringify(report)))).toEqual({
+      ok: true,
+      report,
+    });
+  });
+
+  test.each([
+    [{ ...v3, fingerprint: 'fp1_x' }, 'Unexpected field', '$.fingerprint'],
+    [
+      { ...v4, fingerprint: 'has space' },
+      'Expected 1 to 64 printable ASCII characters without spaces',
+      '$.fingerprint',
+    ],
+    [
+      { ...v4, fingerprint: 'x'.repeat(65) },
+      'Expected 1 to 64 printable ASCII characters without spaces',
+      '$.fingerprint',
+    ],
+    [{ ...v4, fingerprint: 5 }, 'Expected a string', '$.fingerprint'],
+    [
+      { ...v4, v: 'appex/public/v5' },
+      'Expected version appex/public/v3 or appex/public/v4',
+      '$.v',
+    ],
+  ])('%j is rejected', (value, reason, path) => {
+    expect(decodePublicReport(value)).toEqual({ ok: false, reason, path });
   });
 });

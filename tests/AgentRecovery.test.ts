@@ -51,7 +51,7 @@ describe('agent recovery example', () => {
       action: 'escalate',
       occurrenceId: 'unavailable',
       reason: 'invalid-report',
-      detail: 'Expected version appex/public/v3 at $.v',
+      detail: 'Expected version appex/public/v3 or appex/public/v4 at $.v',
     });
   });
 

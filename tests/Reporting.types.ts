@@ -43,6 +43,10 @@ const publicReport: PublicReport = toPublicReport(error, {
   occurrenceId: diagnostic.occurrence_id,
 });
 const occurrenceId: string = publicReport.occurrence_id;
+const publicVersion: 'appex/public/v3' | 'appex/public/v4' = publicReport.v;
+const publicFingerprint: string | undefined = publicReport.fingerprint;
+void publicVersion;
+void publicFingerprint;
 void occurrenceId;
 
 // @ts-expect-error public reports never expose a stack.

@@ -9,6 +9,7 @@ import type {
   PublicOverride,
   PublicReport,
   PublicReportOptions,
+  PublicReportVersion,
   ToReportsOptions,
 } from './report-types';
 import type { CorjJsonValue } from 'caught-object-report-json';
@@ -58,11 +59,14 @@ const TO_REPORTS_OPTION_KEYS = [
 const PUBLIC_FIELDS = new Set([
   'v',
   'occurrence_id',
+  'fingerprint',
   'code',
   'message',
   'as_json',
   'truncated',
 ]);
+const PUBLIC_REPORT_VERSION_V3: PublicReportVersion = 'appex/public/v3';
+const FINGERPRINT_PATTERN = /^[\x21-\x7e]{1,64}$/;
 const DECODE_MAX_DEPTH = 32;
 const DECODE_MAX_VALUES = 10_000;
 
@@ -256,7 +260,11 @@ function selectPublicDetails(
  * Report a failure to an agent or user: the kind's `public` policy rendered
  * into `code`, `message`, and `as_json`, with the same `occurrence_id` as the
  * diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
- * generic message. Nothing is read from the error except its policy inputs.
+ * generic message. Nothing from the error is emitted except the policy's
+ * outputs and the fingerprint, a hash. Computing the fingerprint reads names,
+ * messages and stacks of the error graph under the same `corj` options and
+ * `redact` as the diagnostic report; pass `corj: { fingerprintParts: null }`
+ * to read nothing.
  *
  * The `public` option overrides that policy for this call, field by field:
  * `code`, `message` (a string or a function of the details) and `details` (a
@@ -273,8 +281,8 @@ function selectPublicDetails(
  * });
  * const failure = new ToolUnavailable({ details: { tool: 'search' } });
  * const report = toPublicReport(failure, { public: { message: 'Search is down.' } });
- * // { v: 'appex/public/v3', occurrence_id: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Search is down.',
- * //   as_json: { tool: 'search' } }
+ * // { v: 'appex/public/v4', occurrence_id: 'AE_…', fingerprint: 'fp1_…',
+ * //   code: 'TOOL_UNAVAILABLE', message: 'Search is down.', as_json: { tool: 'search' } }
  * console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
  * ```
  */
@@ -290,10 +298,16 @@ export function toPublicReport(
   );
 }
 
+/**
+ * `fingerprint`: `undefined` computes it from the caught value, `null` is "the
+ * diagnostic report had none, emit none", and a string is used as it stands, so
+ * a pair never hashes the same value twice.
+ */
 function publicReportOf(
   caught: unknown,
   options: PublicReportOptions,
   occurrenceId: string,
+  fingerprint?: string | null,
 ): PublicReport {
   const override = publicOverrideOf(options.public);
   const maker = makerFor(options.corj, options.redact);
@@ -320,11 +334,14 @@ function publicReportOf(
         });
   const cut = message.length > PUBLIC_MESSAGE_MAX_LENGTH;
   const truncated = cut || view?.truncated === true;
+  const print =
+    fingerprint === undefined ? maker.makeFingerprint(caught) : fingerprint;
   // Redaction runs after selection: the policy is only ever given what the
   // kind's selector returned, never anything the selector left out.
   return {
     v: PUBLIC_REPORT_VERSION,
     occurrence_id: occurrenceId,
+    ...(typeof print === 'string' ? { fingerprint: print } : {}),
     code,
     message: cut ? message.slice(0, PUBLIC_MESSAGE_MAX_LENGTH) : message,
     ...(view === undefined ? {} : { as_json: view.value }),
@@ -339,7 +356,9 @@ function publicReportOf(
  * live in `options.diagnostic` and `options.public`; the occurrence id is
  * overridden for both at the top level. All option bags are validated before
  * either report is built, and a failure to build either one throws instead of
- * returning half a pair.
+ * returning half a pair. The fingerprint is computed once, for the diagnostic
+ * report, and copied into the public one, so the pair always agrees; the
+ * public bag's `corj.fingerprintParts` does not change it.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
@@ -362,12 +381,27 @@ export function toReports(
   const publicOptions = options.public === undefined ? {} : options.public;
   assertOptions(diagnosticOptions, NESTED_DIAGNOSTIC_OPTION_KEYS);
   assertOptions(publicOptions, NESTED_PUBLIC_OPTION_KEYS);
+  // Everything that rejects a bag runs before either report exists: the public
+  // override, and both makers, which is where corj rejects its own options. The
+  // diagnostic report is built first because its fingerprint is the pair's.
+  publicOverrideOf(publicOptions.public);
+  makerFor(diagnosticOptions.corj, diagnosticOptions.redact);
+  makerFor(publicOptions.corj, publicOptions.redact);
   const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
-  const disclosed = publicReportOf(caught, publicOptions, occurrenceId);
+  const diagnostic = diagnosticReportOf(
+    caught,
+    diagnosticOptions,
+    occurrenceId,
+  );
   return {
     occurrence_id: occurrenceId,
-    diagnostic: diagnosticReportOf(caught, diagnosticOptions, occurrenceId),
-    public: disclosed,
+    diagnostic,
+    public: publicReportOf(
+      caught,
+      publicOptions,
+      occurrenceId,
+      diagnostic.fingerprint ?? null,
+    ),
   };
 }
 
@@ -437,10 +471,32 @@ function boundedText(
   return value;
 }
 
+/** The report's own format, which a decoded report keeps: this version, or the one before it. */
+function publicVersionOf(value: unknown): PublicReportVersion {
+  if (value !== PUBLIC_REPORT_VERSION && value !== PUBLIC_REPORT_VERSION_V3)
+    reject(
+      `Expected version ${PUBLIC_REPORT_VERSION_V3} or ${PUBLIC_REPORT_VERSION}`,
+      '$.v',
+    );
+  return value as PublicReportVersion;
+}
+
+function fingerprintOf(value: unknown): string {
+  if (typeof value !== 'string') reject('Expected a string', '$.fingerprint');
+  if (!FINGERPRINT_PATTERN.test(value))
+    reject(
+      'Expected 1 to 64 printable ASCII characters without spaces',
+      '$.fingerprint',
+    );
+  return value;
+}
+
 /**
  * Validate a public report received as JSON and return a detached copy, or
  * the first reason it is not a public report. Branch on `report.code` after
- * `ok`; escalate on `!ok` with `reason` and `path`.
+ * `ok`; escalate on `!ok` with `reason` and `path`. Both `appex/public/v3` and
+ * `appex/public/v4` are accepted, and the decoded report keeps the `v` it
+ * arrived with, so a v3 sender stays readable while services upgrade.
  *
  * @example
  * ```ts
@@ -458,16 +514,23 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
       if (!PUBLIC_FIELDS.has(key))
         reject('Unexpected field', `$.${key.slice(0, 64)}`);
     }
-    if (value['v'] !== PUBLIC_REPORT_VERSION)
-      reject(`Expected version ${PUBLIC_REPORT_VERSION}`, '$.v');
+    const version = publicVersionOf(value['v']);
+    const fingerprint = value['fingerprint'];
+    // `fingerprint` arrived with v4: a v3 report that carries one was built by
+    // something that is not this format, so it is an unexpected field.
+    if (fingerprint !== undefined && version === PUBLIC_REPORT_VERSION_V3)
+      reject('Unexpected field', '$.fingerprint');
     const base = {
-      v: PUBLIC_REPORT_VERSION,
+      v: version,
       occurrence_id: boundedText(
         value['occurrence_id'],
         '$.occurrence_id',
         1,
         128,
       ),
+      ...(fingerprint === undefined
+        ? {}
+        : { fingerprint: fingerprintOf(fingerprint) }),
       code: boundedText(value['code'], '$.code', 1, 128),
       message: boundedText(
         value['message'],

@@ -18,8 +18,9 @@ describe('tool boundary example', () => {
     });
     if (outcome.ok) throw new Error('expected a failure');
     expect(outcome.response).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: outcome.diagnostic.occurrence_id,
+      fingerprint: outcome.diagnostic.fingerprint,
       code: 'TOOL_UNAVAILABLE',
       message: 'The requested tool is temporarily unavailable.',
       as_json: { tool: 'search' },

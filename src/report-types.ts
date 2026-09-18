@@ -13,8 +13,11 @@ import type {
 /** The `v` of every diagnostic report: corj's report version. */
 export const DIAGNOSTIC_REPORT_VERSION: typeof CORJ_VERSION = CORJ_VERSION;
 
-/** The `v` of every public report. */
-export const PUBLIC_REPORT_VERSION = 'appex/public/v3' as const;
+/** The `v` of every public report this version emits. */
+export const PUBLIC_REPORT_VERSION = 'appex/public/v4' as const;
+
+/** Every public report format `decodePublicReport` reads: the current one and the one before it. */
+export type PublicReportVersion = 'appex/public/v3' | 'appex/public/v4';
 
 /** A problem corj met while producing a report: `stage`, `path`, the report `key`, the source `prop`, and a scrubbed description. */
 export type ReportingError = CorjReportingError;
@@ -50,11 +53,15 @@ export interface DiagnosticReportOptions {
  * What an application discloses about one failure. `code` is the branching
  * protocol, `occurrence_id` correlates with the diagnostic report, `message`
  * is display text, `as_json` is the selected JSON. `truncated` marks a cut
- * message or `as_json`.
+ * message or `as_json`. `fingerprint` is equal for failures of the same kind
+ * from the same place; a retry signal, not a lookup key. It is absent when
+ * `corj: { fingerprintParts: null }` turned it off, and on a decoded report of
+ * format `appex/public/v3`, which predates it.
  */
 export interface PublicReport {
-  readonly v: typeof PUBLIC_REPORT_VERSION;
+  readonly v: PublicReportVersion;
   readonly occurrence_id: string;
+  readonly fingerprint?: string;
   readonly code: string;
   readonly message: string;
   readonly as_json?: CorjJsonValue | null;
