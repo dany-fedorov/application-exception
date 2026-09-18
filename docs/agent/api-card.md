@@ -18,7 +18,7 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 | Read a public report received as JSON | `decodePublicReport(value)` |
 | Capture both reports as one occurrence | `toReports(caught, { diagnostic, public })` |
 | Bound the whole diagnostic report | `toDiagnosticReport(caught, { maxFinalReportSize })` |
-| Keep secrets out of either report | `createRedactionPolicy({ keys, paths, values })` passed as `redact` |
+| Keep secrets out of either report | `createRedactionPolicy({ keys, paths, patterns })` passed as `redact` |
 | Freeze details against later mutation | `defineException({ tag, message, snapshotDetails: true })` |
 | Trust failures from another loaded copy | `createTrustRealm()` passed as `realm` to `defineException` and `toPublicReport` |
 | Read omitted corj fields of a diagnostic report | `restoreExpectedValues(report)` |
@@ -126,26 +126,38 @@ console.log(toPublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
 function createRedactionPolicy(options?: RedactionPolicyOptions): RedactionPolicy;
 ```
 
-Build a reusable redaction policy for `toDiagnosticReport`, `toPublicReport`,
-and `toReports`.
+Build a reusable redaction policy, accepted as `redact` by
+`toDiagnosticReport`, `toPublicReport`, and `toReports`.
 
-The policy rewrites values in the produced report: messages, stacks,
-`as_json`, `context`, `reporting_errors`, and every nested cause. On a public
-report it runs **after** the kind's `public.details` selector, so redaction
-can only narrow what was selected — it never authorizes disclosure, and a
-field the selector did not choose stays absent.
+A policy has two kinds of rule. **Skip** rules (`keys`, `paths`) name
+properties corj never reads, so an excluded getter never runs. **Scrub** rules
+(`patterns`, `transform`) rewrite text wherever it appears in either report:
+messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
 
-Identity and shape fields (`v`, `occurrence_id`, `code`, and corj's
-structural keys) are walked but never replaced, so a redacted report still
-validates against its schema.
+- To remove a secret's *text*, use `patterns`. Skipping a property does not
+  remove its text elsewhere: `keys: ['message']` leaves it in `stack`.
+- `keys` match a name everywhere; `paths` reach the caught value only, never
+  `context` or selected public details.
+- Every pattern needs the `g` flag; `replacement` is inserted literally.
+- A skip rule hides the value, not the name: a secret *name* needs `patterns`.
+- Redaction never discloses: on a public report the policy is given only what
+  the kind's `public.details` selector returned.
+
+A policy that throws fails closed: the value becomes the replacement. The
+diagnostic report lists the failure in `reporting_errors` with
+`stage: 'redact'`; the thrown message is withheld, because it may quote what
+the policy was protecting.
 
 Throws: `APPEX_INVALID_REDACTION_POLICY`
 
 ```ts
 import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
-const redact = createRedactionPolicy({ keys: ['password', /token$/i], values: [/\bsk-[A-Za-z0-9]{8,}\b/] });
+const redact = createRedactionPolicy({
+  keys: ['password', /token$/i],
+  patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
+});
 const report = toDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
-console.log(report.message); // 'bad key [redacted]'
+console.log(report.stack?.[0]); // 'Error: bad key [redacted]'
 ```
 
 ### `toDiagnosticReport`
@@ -159,7 +171,7 @@ optional `context`, and `reporting_errors`. Send it to a trusted sink; it
 contains messages, stacks, and every enumerable property of the error graph.
 With `maxFinalReportSize`, the whole report is bounded by that many UTF-8
 bytes of compact JSON: `context` is dropped, then `reporting_errors` (both
-named in `report_omitted`), then corj's own budget is halved until the
+named in `report_omitted`), then corj's own budget is shrunk until the
 report fits; a budget too small for the envelope throws.
 
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_REPORT_BUDGET_TOO_SMALL`; corj option errors propagate.
@@ -168,7 +180,7 @@ Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_REPORT_BU
 import { toDiagnosticReport } from 'application-exception';
 const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
 const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
-// { "v": "corj/v0.12", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
+// { "v": "corj/v0.13", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
 //   "context": { "runId": "run-1" } }
 console.error(JSON.stringify(report));
 ```
@@ -254,7 +266,7 @@ Re-exported from caught-object-report-json; field meanings: https://github.com/d
 ### `DIAGNOSTIC_REPORT_VERSION`
 
 ```ts signature
-const DIAGNOSTIC_REPORT_VERSION: "corj/v0.12";
+const DIAGNOSTIC_REPORT_VERSION: "corj/v0.13";
 ```
 
 The `v` of every diagnostic report: corj's report version.
@@ -451,14 +463,14 @@ Per-call overrides of the kind's public policy; `details: null` suppresses the p
 ### `RedactionContext`
 
 ```ts signature
-export interface RedactionContext {
-  readonly path: string;
-  readonly key: string | undefined;
-}
+export type RedactionContext = CorjRedactContext;
 ```
 
-How a redaction policy rewrites one value it decided to redact, and what the
-policy was asked about. `path` is a JSON path rooted at `$`.
+What a `transform` is told about a value: `stage` is where corj produced it,
+`key` the report field it is destined for, `prop` the property it was read
+from, and `path` a JSON path rooted at whatever is being serialized — the
+caught value, the `context` object, or the selected public details. Key a
+transform on `prop`: `$.password` is also `context.password`.
 
 ### `RedactionPolicy`
 
@@ -474,20 +486,20 @@ An opaque, reusable redaction policy. Build it once and share it between reports
 
 ```ts signature
 export interface RedactionPolicyOptions {
-  /** Property names redacted wherever they appear, by exact match or pattern. */
+  /** Skip: property names never read, wherever they appear. Exact string or `RegExp`. */
   readonly keys?: readonly (string | RegExp)[];
-  /** Exact JSON paths redacted, such as `$.as_json.token` or `$.children[0].as_json.password`. */
-  readonly paths?: readonly string[];
-  /** String values redacted wherever they appear, including in messages and stack lines. */
-  readonly values?: readonly RegExp[];
-  /** What a redacted value becomes. Defaults to `[redacted]`. */
+  /** Skip: JSON paths into the caught value never read, such as `$.cause.config.headers`. */
+  readonly paths?: readonly (string | RegExp)[];
+  /** Scrub: replaced in every string either report emits. Each must carry the `g` flag. */
+  readonly patterns?: readonly RegExp[];
+  /** What skipped and scrubbed content becomes, inserted literally. Defaults to `[redacted]`. */
   readonly replacement?: string;
-  /** Last word on any value the rules above did not redact; return the value unchanged to keep it. */
-  readonly transform?: (value: CorjJsonValue, context: RedactionContext) => unknown;
+  /** Scrub: runs after `patterns` on every value and property name; return `undefined` to drop the field. It sees raw input, so it must never quote it in an error. */
+  readonly transform?: CorjRedactTransform;
 }
 ```
 
-Input of `createRedactionPolicy`; every rule is optional and they compose.
+Input of `createRedactionPolicy`. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional.
 
 ### `ReportingError`
 

@@ -91,7 +91,7 @@ export function runFlow(appex, { runtime }) {
   const publicReport = toPublicReport(error);
 
   equal(diagnostic.v, DIAGNOSTIC_REPORT_VERSION, 'diagnostic schema version');
-  equal(diagnostic.v, 'corj/v0.12', 'diagnostic schema version literal');
+  equal(diagnostic.v, 'corj/v0.13', 'diagnostic schema version literal');
   equal(publicReport.v, PUBLIC_REPORT_VERSION, 'public schema version');
   equal(publicReport.v, 'appex/public/v3', 'public schema version literal');
 

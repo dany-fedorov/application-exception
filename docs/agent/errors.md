@@ -127,7 +127,7 @@ toPublicReport(new Error('x'), { message: 'Search is temporarily unavailable.' }
 
 ## APPEX_REPORT_BUDGET_TOO_SMALL
 
-When: `options.maxFinalReportSize` cannot hold the report even after `context` and `reporting_errors` are dropped and corj's own budget is halved to its 256-byte floor.
+When: `options.maxFinalReportSize` cannot hold the report even after `context` and `reporting_errors` are dropped and corj's own budget is shrunk to its 256-byte floor.
 Cause: a budget of a few dozen bytes, or one too small for a long `occurrenceId` plus the required corj fields.
 Fix: raise `maxFinalReportSize` (a few hundred bytes hold the smallest report), or shorten the occurrence id.
 
@@ -152,11 +152,11 @@ toPublicReport(new Timeout(), { realm });
 ## APPEX_INVALID_REDACTION_POLICY
 
 When: `createRedactionPolicy` is given malformed options, or a `redact` option is not a policy it produced.
-Cause: `keys` holding something other than strings and regular expressions, `paths` holding a non-string, `values` holding a non-regular-expression, a `replacement` that is not a string of at most 128 characters, a `transform` that is not a function, or a hand-built object passed as `redact`.
-Fix: build the policy once with `createRedactionPolicy` and share that object between reports.
+Cause: a `patterns` entry without the `g` flag (a non-global pattern would replace only its first match), `keys` or `paths` holding something other than strings and regular expressions, `patterns` holding a non-regular-expression, a `replacement` that is not a string of at most 128 characters, a `transform` that is not a function or `null`, an unknown option key, or a hand-built object passed as `redact`.
+Fix: give every pattern the `g` flag, keep the options to `keys`, `paths`, `patterns`, `replacement` and `transform`, and build the policy once with `createRedactionPolicy` and share that object between reports.
 
 ```ts
 import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
-const redact = createRedactionPolicy({ keys: ['password', /token$/i] });
+const redact = createRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
 toDiagnosticReport(new Error('x'), { redact });
 ```

@@ -44,11 +44,13 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
     `reporting_errors` (both named in `report_omitted`) before shrinking corj's
     own budget. A budget too small for the envelope throws rather than emitting
     an over-budget or invalid report.
-11. Build one `createRedactionPolicy({ keys, paths, values })` per service and
-    pass it as `redact` to both reports. It rewrites messages, stacks, `as_json`,
-    `context`, `reporting_errors`, and nested causes. On a public report it runs
-    after the `details` selector, so it can only narrow what was selected — it is
-    not a way to disclose anything.
+11. Build one `createRedactionPolicy({ keys, paths, patterns })` per service and
+    pass it as `redact` to both reports. `keys` and `paths` are skip rules: the
+    property is never read. `patterns` (each needs the `g` flag) and `transform`
+    are scrub rules: they rewrite text wherever it appears. To remove a secret's
+    text use `patterns` — skipping `message` leaves it in `stack`. `paths` reach
+    the caught value only; `keys` match a name everywhere. Redaction never
+    discloses: on a public report it runs on what the `details` selector chose.
 12. Use `snapshotDetails: true` on a kind whose details are mutated after the
     throw, or whose reporting is deferred across an async boundary. It captures a
     deep frozen copy and rejects anything it cannot capture faithfully.
@@ -60,7 +62,7 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
 
 ## Report shapes
 
-Diagnostic report (`v: "corj/v0.12"`): a corj report plus `occurrence_id`,
+Diagnostic report (`v: "corj/v0.13"`): a corj report plus `occurrence_id`,
 optional `context`, optional `reporting_errors`, optional `report_omitted`. A missing corj field holds its
 expected value; `null` means reading it failed. Field meanings:
 https://github.com/dany-fedorov/caught-object-report-json#the-report
@@ -76,7 +78,7 @@ https://github.com/dany-fedorov/caught-object-report-json#the-report
   },
   "stack": ["tools/Unavailable: Tool search is unavailable", "    at runTool (src/tools/search/boundary.ts:12:11)"],
   "children": [{ "id": "0", "path": "$.cause", "level": 1, "stack": ["Error: connection refused", "    at connect (src/tools/search/search.ts:8:9)"] }],
-  "v": "corj/v0.12",
+  "v": "corj/v0.13",
   "context": { "runId": "run-1", "tool": "search" }
 }
 ```

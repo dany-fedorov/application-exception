@@ -43,7 +43,7 @@ describe('toReports', () => {
       );
       expect(captured.occurrence_id).toBe(captured.public.occurrence_id);
       expect(captured.occurrence_id.length).toBeGreaterThan(0);
-      expect(captured.diagnostic.v).toBe('corj/v0.12');
+      expect(captured.diagnostic.v).toBe('corj/v0.13');
       expect(captured.public.v).toBe('appex/public/v3');
     }
   });

@@ -93,7 +93,7 @@ console.log(reports.public.occurrence_id === reports.diagnostic.occurrence_id); 
 
 ### Diagnostic report
 
-The diagnostic report is a corj report object (`v: "corj/v0.12"`). corj
+The diagnostic report is a corj report object (`v: "corj/v0.13"`). corj
 documents every field, omits fields that hold their expected value, and bounds
 the whole report (100,000 bytes by default). This package adds:
 
@@ -198,18 +198,21 @@ const caught: unknown = new Error('connection refused');
 toDiagnosticReport(caught, { context: { runId: 'run-1' }, maxFinalReportSize: 32_768 });
 ```
 
-**Redact once, everywhere.** A policy built by `createRedactionPolicy` applies
-to messages, stacks, `as_json`, `context`, `reporting_errors`, and nested
-causes. On a public report it runs *after* the kind's `details` selector, so it
-can only narrow what was selected — redaction never authorizes disclosure.
-Identity and shape fields are never rewritten, so a redacted report still
-validates against its schema.
+**Redact once, everywhere.** A policy built by `createRedactionPolicy` has two
+kinds of rule. **Skip** rules (`keys`, `paths`) name properties that are never
+read, so an excluded getter never runs. **Scrub** rules (`patterns`,
+`transform`) rewrite text wherever it appears in either report. To remove a
+secret's *text*, use `patterns`: skipping `message` still leaves it in `stack`.
+Redaction never discloses — on a public report it runs on what the kind's
+`details` selector returned. The rule-by-rule table is in
+[docs/agent/recipes.md](docs/agent/recipes.md#keep-secrets-out-of-both-reports);
+the design is in [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
 
 ```ts
 import { createRedactionPolicy, toReports } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const redact = createRedactionPolicy({ keys: ['password', /token$/i], values: [/\bsk-[A-Za-z0-9]{8,}\b/] });
+const redact = createRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
 toReports(caught, { diagnostic: { redact }, public: { redact } });
 ```
 
@@ -261,10 +264,11 @@ contract and its limits are in
 
 ## Schemas
 
-`application-exception/schemas/diagnostic-report-v3.json` embeds corj v0.12's
+`application-exception/schemas/diagnostic-report-v4.json` embeds corj v0.13's
 report definitions and adds the extension fields;
 `application-exception/schemas/public-report-v3.json` is closed. Both are JSON
-Schema 2020-12.
+Schema 2020-12. `schemas/diagnostic-report-v3.json` stays published unchanged
+for readers of 0.3.0 reports, which carry `v: "corj/v0.12"`.
 
 ## Validate a change
 

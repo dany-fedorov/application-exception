@@ -81,6 +81,8 @@ try {
     './package.json': './package.json',
     './schemas/diagnostic-report-v3.json':
       './schemas/diagnostic-report-v3.json',
+    './schemas/diagnostic-report-v4.json':
+      './schemas/diagnostic-report-v4.json',
     './schemas/public-report-v3.json': './schemas/public-report-v3.json',
   });
 
@@ -100,6 +102,7 @@ try {
   for (const relativePath of [
     ...packagedMarkdown,
     'schemas/diagnostic-report-v3.json',
+    'schemas/diagnostic-report-v4.json',
     'schemas/public-report-v3.json',
   ]) {
     assert.equal(
@@ -159,7 +162,7 @@ try {
 
   const diagnostic = api.toDiagnosticReport(error, { context: { runId: 'r' } });
   const publicReport = api.toPublicReport(error);
-  assert.equal(diagnostic.v, 'corj/v0.12');
+  assert.equal(diagnostic.v, 'corj/v0.13');
   assert.equal(diagnostic.occurrence_id, error.occurrenceId);
   assert.equal(publicReport.occurrence_id, error.occurrenceId);
   assert.deepEqual(publicReport, {
@@ -188,7 +191,7 @@ try {
   assert.equal(
     ajv.validate(
       consumerRequire(
-        'application-exception/schemas/diagnostic-report-v3.json',
+        'application-exception/schemas/diagnostic-report-v4.json',
       ),
       JSON.parse(JSON.stringify(diagnostic)),
     ),

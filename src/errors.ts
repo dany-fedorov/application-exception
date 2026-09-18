@@ -59,10 +59,21 @@ export function isAppexError(value: unknown): value is AppexTypeError {
   }
 }
 
-/** A short, never-throwing rendering of any value, for error text. */
-export function describeValue(value: unknown): string {
+/** How much of a described value error text keeps by default. */
+export const DESCRIBE_VALUE_MAX_LENGTH = 256;
+
+/**
+ * A short, never-throwing rendering of any value, for error text. `limit` caps
+ * the result; pass `Number.POSITIVE_INFINITY` to keep the whole string, which
+ * a caller that scrubs the text must do before it cuts (a secret straddling
+ * the cut would otherwise stop matching and leak its head).
+ */
+export function describeValue(
+  value: unknown,
+  limit: number = DESCRIBE_VALUE_MAX_LENGTH,
+): string {
   try {
-    return String(value).slice(0, 256);
+    return String(value).slice(0, limit);
   } catch {
     return '[unprintable value]';
   }

@@ -25,8 +25,8 @@ describe('toDiagnosticReport', () => {
 
     const report = toDiagnosticReport(error);
 
-    expect(report.v).toBe('corj/v0.12');
-    expect(DIAGNOSTIC_REPORT_VERSION).toBe('corj/v0.12');
+    expect(report.v).toBe('corj/v0.13');
+    expect(DIAGNOSTIC_REPORT_VERSION).toBe('corj/v0.13');
     expect(report.occurrence_id).toBe(error.occurrenceId);
     expect(report.as_json).toEqual({
       _tag: 'agent/ToolFailure',
@@ -257,7 +257,7 @@ describe('toDiagnosticReport with maxFinalReportSize', () => {
       maxFinalReportSize: 1024,
     });
     expect(bytes(bounded)).toBeLessThanOrEqual(1024);
-    expect(bounded.v).toBe('corj/v0.12');
+    expect(bounded.v).toBe('corj/v0.13');
     expect(bounded.occurrence_id).toMatch(/^AE_/);
     expect(bounded).not.toHaveProperty('context');
     expect(bounded.report_omitted).toEqual(['context']);
@@ -416,7 +416,7 @@ describe('toDiagnosticReport with maxFinalReportSize', () => {
     });
     expect(bytes(report)).toBeLessThanOrEqual(1_200);
     expect(report.occurrence_id).toBe(occurrenceId);
-    expect(report.v).toBe('corj/v0.12');
+    expect(report.v).toBe('corj/v0.13');
     expect(report.report_omitted).toEqual(['context']);
   });
 
@@ -464,9 +464,13 @@ describe('maxFinalReportSize drop order', () => {
         throw new Error('unreadable');
       },
     };
-    const full = toDiagnosticReport(caught, { context: { text: 'x'.repeat(400) } });
+    const full = toDiagnosticReport(caught, {
+      context: { text: 'x'.repeat(400) },
+    });
     const corjOnly = toDiagnosticReport(caught);
-    const corjBytes = new TextEncoder().encode(JSON.stringify(corjOnly)).byteLength;
+    const corjBytes = new TextEncoder().encode(
+      JSON.stringify(corjOnly),
+    ).byteLength;
     const fullBytes = new TextEncoder().encode(JSON.stringify(full)).byteLength;
 
     expect(fullBytes).toBeGreaterThan(corjBytes);
@@ -529,7 +533,7 @@ describe('APPEX_REPORT_BUDGET_TOO_SMALL', () => {
       toDiagnosticReport(new Error('boom'), {
         maxFinalReportSize: 300,
         redact: createRedactionPolicy({
-          values: [/./],
+          patterns: [/./g],
           replacement: 'x'.repeat(128),
         }),
       }),

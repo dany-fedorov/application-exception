@@ -1,7 +1,7 @@
 # Runtime support
 
-What this page states is what the suites in [`tests/runtime`](../tests/runtime) and
-[`tests/package-smoke.js`](../tests/package-smoke.js) actually observed. Every suite builds the
+What this page states is what the suites in [`tests/runtime`](https://github.com/dany-fedorov/application-exception/blob/main/tests/runtime) and
+[`tests/package-smoke.js`](https://github.com/dany-fedorov/application-exception/blob/main/tests/package-smoke.js) actually observed. Every suite builds the
 real publishable artifact with `prepublish-me`, runs `npm pack` on it, and installs that tarball
 with its real dependency closure (`nanoid`, `caught-object-report-json`) into a throwaway
 directory. No `node_modules` is hand-wired, and no suite imports `src/` or `dist/`.
@@ -18,13 +18,13 @@ directory. No `node_modules` is hand-wired, and no suite imports `src/` or `dist
 `npm run test:runtimes` runs the three non-jest suites in order. They are deliberately out of the
 default `npm test` jest run: they build, pack and install, and the browser one needs Chromium.
 
-All four runtimes run the same file, [`tests/runtime/flow.mjs`](../tests/runtime/flow.mjs), which
+All four runtimes run the same file, [`tests/runtime/flow.mjs`](https://github.com/dany-fedorov/application-exception/blob/main/tests/runtime/flow.mjs), which
 uses no host API beyond the language: it defines a typed exception, builds a diagnostic and a
 public report, decodes the public one after a JSON round trip, and checks that
 
 - `error.occurrenceId`, `diagnostic.occurrence_id`, `publicReport.occurrence_id` and the decoded
   report's `occurrence_id` are the same string, in every runtime;
-- `diagnostic.v` is `corj/v0.12` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
+- `diagnostic.v` is `corj/v0.13` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
 - `publicReport.v` is `appex/public/v3` and equals the exported `PUBLIC_REPORT_VERSION`;
 - the public report does not carry the cause, and an invalid public code still raises
   `APPEX_INVALID_PUBLIC_CODE`.
@@ -55,7 +55,7 @@ across browsers.
 ## No Node shims in the browser
 
 The browser fixture is a plain frontend build. The Vite config
-([`tests/runtime/browser/vite.config.mjs`](../tests/runtime/browser/vite.config.mjs)) installs no
+([`tests/runtime/browser/vite.config.mjs`](https://github.com/dany-fedorov/application-exception/blob/main/tests/runtime/browser/vite.config.mjs)) installs no
 polyfill plugin and instead fails the build if any Node builtin is resolved at all, nothing may be
 left external, and after the build the emitted chunk is scanned for `node:` imports and for
 `require('crypto')`. The page itself refuses to run if `Bun`, `process`, `require`, `Buffer`,

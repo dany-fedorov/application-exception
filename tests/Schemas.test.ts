@@ -7,7 +7,7 @@ import {
 } from '../src/reporting';
 import { defineException } from '../src/typed';
 
-const diagnosticSchema = require('../schemas/diagnostic-report-v3.json') as {
+const diagnosticSchema = require('../schemas/diagnostic-report-v4.json') as {
   $defs: { appexExtension: { properties: { v: { enum: string[] } } } };
 };
 const publicSchema: object = require('../schemas/public-report-v3.json');

@@ -45,7 +45,7 @@ const TASKS = [
   ],
   [
     'Keep secrets out of either report',
-    '`createRedactionPolicy({ keys, paths, values })` passed as `redact`',
+    '`createRedactionPolicy({ keys, paths, patterns })` passed as `redact`',
   ],
   [
     'Freeze details against later mutation',

@@ -2,8 +2,18 @@
 
 ## 0.4.0 — 2026-09-17
 
-Additive. Every 0.3.0 call keeps its behaviour; each feature is opt-in.
+Every new feature is opt-in, but the release is not purely additive: the
+diagnostic report format changes.
 
+- **Breaking.** The diagnostic report's `v` is now `corj/v0.13`, and its
+  schema ships as `schemas/diagnostic-report-v4.json`.
+  `schemas/diagnostic-report-v3.json` stays published unchanged for readers of
+  0.3.0 reports. The runtime dependency is `caught-object-report-json ^10.0.0`.
+  The TypeScript unions widen with it: `ReportingError['stage']` gains
+  `'redact'`, corj's `children_omitted` gains `'not_inspected'` and `'redacted'`,
+  and `as_string_format` gains `'derived'`. The re-exported
+  `restoreExpectedValues` (now corj 10) no longer relabels a stored
+  `corj/v0.12` report as `-full`.
 - `toReports(caught, { occurrenceId, diagnostic, public })` resolves one
   occurrence and returns both reports from it, so `diagnostic.occurrence_id ===
   public.occurrence_id` holds for every caught value, thrown primitives
@@ -12,20 +22,24 @@ Additive. Every 0.3.0 call keeps its behaviour; each feature is opt-in.
   ([#45](https://github.com/dany-fedorov/application-exception/issues/45))
 - `toDiagnosticReport` accepts `maxFinalReportSize`: a UTF-8 byte budget over
   the whole final report, measured on compact JSON. It drops `context`, then
-  `reporting_errors` — both named in the new `report_omitted` field — then halves
+  `reporting_errors` — both named in the new `report_omitted` field — then shrinks
   corj's own budget, and throws `APPEX_REPORT_BUDGET_TOO_SMALL` rather than
   emitting an over-budget or invalid report. Default `null` keeps 0.3.0
-  behaviour; `report_omitted` is additive to the v3 schema.
+  behaviour; `report_omitted` is part of `schemas/diagnostic-report-v4.json`.
   ([#44](https://github.com/dany-fedorov/application-exception/issues/44))
-- `createRedactionPolicy({ keys, paths, values, replacement, transform })`
+- `createRedactionPolicy({ keys, paths, patterns, replacement, transform })`
   builds a reusable policy accepted as `redact` by all three report functions.
-  It covers messages, stacks, `as_json`, `context`, `reporting_errors`, and
-  nested causes. On a public report it runs after the kind's `details` selector,
-  so it can only narrow what was selected; identity and shape fields are never
-  rewritten, and a throwing `transform` drops the value and records the failure
-  in `reporting_errors`. Applied as a transform over the produced report — see
-  [docs/design/redaction-policy.md](docs/design/redaction-policy.md) for the
-  assumption and what changes when corj ships its own mechanism.
+  **Skip** rules (`keys`, `paths`) name properties that are never read — corj
+  applies them while it inspects, so an excluded getter never runs. **Scrub**
+  rules (`patterns`, each with the `g` flag, and `transform`) rewrite strings and
+  property names in both reports, including the public `message` and
+  `reporting_errors`. `replacement` is inserted literally; `paths` address the
+  caught value only. On a public report the policy is given only what the kind's
+  `details` selector returned. A policy that throws fails closed: the value
+  becomes the replacement, the diagnostic report lists the failure with
+  `stage: 'redact'`, and the thrown message is withheld because it can quote
+  what the policy was protecting. See
+  [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
   ([#43](https://github.com/dany-fedorov/application-exception/issues/43))
 - `defineException({ snapshotDetails: true })` captures a deep frozen copy of
   the details at construction, so later mutation of the caller's nested objects
