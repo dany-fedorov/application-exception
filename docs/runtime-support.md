@@ -24,7 +24,7 @@ public report, decodes the public one after a JSON round trip, and checks that
 
 - `error.occurrenceId`, `diagnostic.occurrence_id`, `publicReport.occurrence_id` and the decoded
   report's `occurrence_id` are the same string, in every runtime;
-- `diagnostic.v` is `corj/v0.12` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
+- `diagnostic.v` is `corj/v0.13` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
 - `publicReport.v` is `appex/public/v3` and equals the exported `PUBLIC_REPORT_VERSION`;
 - the public report does not carry the cause, and an invalid public code still raises
   `APPEX_INVALID_PUBLIC_CODE`.

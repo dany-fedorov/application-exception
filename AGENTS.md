@@ -60,7 +60,7 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
 
 ## Report shapes
 
-Diagnostic report (`v: "corj/v0.12"`): a corj report plus `occurrence_id`,
+Diagnostic report (`v: "corj/v0.13"`): a corj report plus `occurrence_id`,
 optional `context`, optional `reporting_errors`, optional `report_omitted`. A missing corj field holds its
 expected value; `null` means reading it failed. Field meanings:
 https://github.com/dany-fedorov/caught-object-report-json#the-report
@@ -76,7 +76,7 @@ https://github.com/dany-fedorov/caught-object-report-json#the-report
   },
   "stack": ["tools/Unavailable: Tool search is unavailable", "    at runTool (src/tools/search/boundary.ts:12:11)"],
   "children": [{ "id": "0", "path": "$.cause", "level": 1, "stack": ["Error: connection refused", "    at connect (src/tools/search/search.ts:8:9)"] }],
-  "v": "corj/v0.12",
+  "v": "corj/v0.13",
   "context": { "runId": "run-1", "tool": "search" }
 }
 ```

@@ -24,7 +24,7 @@ const diagnostic: DiagnosticReport = toDiagnosticReport(error, {
   maxReportSize: 4096,
   stackFormat: 'string',
 });
-const version: 'corj/v0.12' | 'corj/v0.12-full' = diagnostic.v;
+const version: 'corj/v0.13' | 'corj/v0.13-full' = diagnostic.v;
 const stack: string | string[] | null | undefined = diagnostic.stack;
 const restored: DiagnosticReport = restoreExpectedValues(diagnostic);
 void version;

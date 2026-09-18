@@ -168,7 +168,7 @@ Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_REPORT_BU
 import { toDiagnosticReport } from 'application-exception';
 const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
 const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
-// { "v": "corj/v0.12", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
+// { "v": "corj/v0.13", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
 //   "context": { "runId": "run-1" } }
 console.error(JSON.stringify(report));
 ```
@@ -254,7 +254,7 @@ Re-exported from caught-object-report-json; field meanings: https://github.com/d
 ### `DIAGNOSTIC_REPORT_VERSION`
 
 ```ts signature
-const DIAGNOSTIC_REPORT_VERSION: "corj/v0.12";
+const DIAGNOSTIC_REPORT_VERSION: "corj/v0.13";
 ```
 
 The `v` of every diagnostic report: corj's report version.

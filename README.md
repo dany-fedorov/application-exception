@@ -93,7 +93,7 @@ console.log(reports.public.occurrence_id === reports.diagnostic.occurrence_id); 
 
 ### Diagnostic report
 
-The diagnostic report is a corj report object (`v: "corj/v0.12"`). corj
+The diagnostic report is a corj report object (`v: "corj/v0.13"`). corj
 documents every field, omits fields that hold their expected value, and bounds
 the whole report (100,000 bytes by default). This package adds:
 
@@ -261,10 +261,11 @@ contract and its limits are in
 
 ## Schemas
 
-`application-exception/schemas/diagnostic-report-v3.json` embeds corj v0.12's
+`application-exception/schemas/diagnostic-report-v4.json` embeds corj v0.13's
 report definitions and adds the extension fields;
 `application-exception/schemas/public-report-v3.json` is closed. Both are JSON
-Schema 2020-12.
+Schema 2020-12. `schemas/diagnostic-report-v3.json` stays published unchanged
+for readers of 0.3.0 reports, which carry `v: "corj/v0.12"`.
 
 ## Validate a change
 

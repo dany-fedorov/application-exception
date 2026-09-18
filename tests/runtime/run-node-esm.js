@@ -79,7 +79,7 @@ try {
     'toReports',
   ]);
   assert.equal(result.publicVersionNamed, 'appex/public/v3');
-  assert.equal(result.diagnosticVersionNamed, 'corj/v0.12');
+  assert.equal(result.diagnosticVersionNamed, 'corj/v0.13');
   assert.equal(
     result.sameInstance,
     true,

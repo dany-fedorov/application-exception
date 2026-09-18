@@ -2,8 +2,14 @@
 
 ## 0.4.0 — 2026-09-17
 
-Additive. Every 0.3.0 call keeps its behaviour; each feature is opt-in.
+Every new feature is opt-in, but the release is not purely additive: the
+diagnostic report format changes.
 
+- **Breaking.** The diagnostic report's `v` is now `corj/v0.13`, and its
+  schema ships as `schemas/diagnostic-report-v4.json`.
+  `schemas/diagnostic-report-v3.json` stays published unchanged for readers of
+  0.3.0 reports. The runtime dependency becomes
+  `caught-object-report-json ^10.0.0` once that version is published.
 - `toReports(caught, { occurrenceId, diagnostic, public })` resolves one
   occurrence and returns both reports from it, so `diagnostic.occurrence_id ===
   public.occurrence_id` holds for every caught value, thrown primitives

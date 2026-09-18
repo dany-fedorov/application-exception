@@ -7,7 +7,7 @@ import type { RedactionPolicy } from '../src/redaction';
 const code = (value: string) => expect.objectContaining({ code: value });
 
 const ajv = new Ajv2020({ strict: true, allErrors: true });
-const diagnosticSchema: object = require('../schemas/diagnostic-report-v3.json');
+const diagnosticSchema: object = require('../schemas/diagnostic-report-v4.json');
 const publicSchema: object = require('../schemas/public-report-v3.json');
 const compiledDiagnostic = ajv.compile(diagnosticSchema);
 const compiledPublic = ajv.compile(publicSchema);
@@ -131,7 +131,7 @@ describe('createRedactionPolicy', () => {
         }),
       });
 
-      expect(report.v).toBe('corj/v0.12');
+      expect(report.v).toBe('corj/v0.13');
       expect(report.occurrence_id).toMatch(/^AE_/);
     });
 
@@ -346,7 +346,7 @@ describe('createRedactionPolicy', () => {
       });
 
       expect(validateDiagnostic(report)).toBeNull();
-      expect(report.v).toBe('corj/v0.12');
+      expect(report.v).toBe('corj/v0.13');
       expect(report.occurrence_id).toMatch(/^AE_/);
     });
 
@@ -385,7 +385,7 @@ describe('createRedactionPolicy', () => {
         expect(
           new TextEncoder().encode(JSON.stringify(report)).byteLength,
         ).toBeLessThanOrEqual(budget);
-        expect(report.v).toBe('corj/v0.12');
+        expect(report.v).toBe('corj/v0.13');
       }
     });
 
@@ -394,7 +394,7 @@ describe('createRedactionPolicy', () => {
         maxFinalReportSize: 400,
       });
 
-      expect(report.v).toBe('corj/v0.12');
+      expect(report.v).toBe('corj/v0.13');
       expect(validateDiagnostic(report)).toBeNull();
       expect(report.truncated).toBe(true);
     });
