@@ -12,7 +12,7 @@ import type {
   PublicReportVersion,
   ToReportsOptions,
 } from './report-types';
-import type { CorjJsonValue } from 'caught-object-report-json';
+import type { CorjJsonValue, CorjMaker } from 'caught-object-report-json';
 import {
   ID_PATTERN,
   brandedOccurrenceId,
@@ -20,7 +20,7 @@ import {
   trustRealmApi,
   trustedPublicPolicyOf,
 } from './typed-internals';
-import type { PublicPolicyRecord } from './typed-internals';
+import type { PublicPolicyRecord, TrustRealmApi } from './typed-internals';
 import { makerFor } from './corj-maker';
 
 const PUBLIC_DETAILS_MAX_BYTES = 16_384;
@@ -181,17 +181,54 @@ function occurrenceIdFor(caught: unknown, explicit: unknown): string {
   );
 }
 
+/** Everything a diagnostic report is built from, with the caller's bag left behind. */
+interface ResolvedDiagnostic {
+  readonly maker: CorjMaker;
+  readonly context: unknown;
+}
+
+/** Everything a public report is built from, with the caller's bag left behind. */
+interface ResolvedPublic {
+  readonly override: PublicOverride;
+  readonly maker: CorjMaker;
+  readonly realmApi: TrustRealmApi | undefined;
+}
+
+/**
+ * Read a diagnostic bag once and validate it. Every later step works from the
+ * result, so an accessor that answers differently the second time cannot show
+ * the validator one value and the report another, and a bag that throws or is
+ * rejected does so before any report exists.
+ */
+function resolveDiagnostic(
+  options: DiagnosticReportOptions,
+): ResolvedDiagnostic {
+  return {
+    maker: makerFor(options.corj, options.redact),
+    context: options.context,
+  };
+}
+
+/** Read a public bag once and validate it, `realm` included; see `resolveDiagnostic`. */
+function resolvePublic(options: PublicReportOptions): ResolvedPublic {
+  return {
+    override: publicOverrideOf(options.public),
+    maker: makerFor(options.corj, options.redact),
+    realmApi: trustRealmApi(options.realm),
+  };
+}
+
 function diagnosticReportOf(
   caught: unknown,
-  options: DiagnosticReportOptions,
+  resolved: ResolvedDiagnostic,
   occurrenceId: string,
 ): DiagnosticReport {
   // The id is always the call argument: toPublicReport needs the same id
   // without building a corj report, and two loaded copies of corj would each
   // hold their own memo.
-  return makerFor(options.corj, options.redact).makeReportObject(caught, {
+  return resolved.maker.makeReportObject(caught, {
     occurrenceId,
-    context: options.context,
+    context: resolved.context,
   }) as DiagnosticReport;
 }
 
@@ -227,11 +264,8 @@ export function toDiagnosticReport(
   options: DiagnosticReportOptions = {},
 ): DiagnosticReport {
   assertOptions(options, DIAGNOSTIC_OPTION_KEYS);
-  return diagnosticReportOf(
-    caught,
-    options,
-    occurrenceIdFor(caught, options.occurrenceId),
-  );
+  const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
+  return diagnosticReportOf(caught, resolveDiagnostic(options), occurrenceId);
 }
 
 /** The `details` data property of a caught value, never running an accessor and never throwing. */
@@ -310,11 +344,8 @@ export function toPublicReport(
   options: PublicReportOptions = {},
 ): PublicReport {
   assertOptions(options, PUBLIC_OPTION_KEYS);
-  return publicReportOf(
-    caught,
-    options,
-    occurrenceIdFor(caught, options.occurrenceId),
-  );
+  const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
+  return publicReportOf(caught, resolvePublic(options), occurrenceId);
 }
 
 /**
@@ -324,13 +355,12 @@ export function toPublicReport(
  */
 function publicReportOf(
   caught: unknown,
-  options: PublicReportOptions,
+  resolved: ResolvedPublic,
   occurrenceId: string,
   fingerprint?: string | null,
 ): PublicReport {
-  const override = publicOverrideOf(options.public);
-  const maker = makerFor(options.corj, options.redact);
-  const policy = trustedPublicPolicyOf(caught, trustRealmApi(options.realm));
+  const { override, maker } = resolved;
+  const policy = trustedPublicPolicyOf(caught, resolved.realmApi);
   const details = policy === undefined ? {} : ownDetails(caught);
   const effective = effectivePolicy(policy, override);
   const { code } = effective;
@@ -373,11 +403,12 @@ function publicReportOf(
  * once and shared, so `diagnostic.occurrence_id === public.occurrence_id`
  * holds for every caught value, primitives included. The per-report options
  * live in `options.diagnostic` and `options.public`; the occurrence id is
- * overridden for both at the top level. All option bags are validated before
- * either report is built, and a failure to build either one throws instead of
- * returning half a pair. The fingerprint is computed once, for the diagnostic
- * report, and copied into the public one, so the pair always agrees; the
- * public bag's `corj.fingerprintParts` does not change it.
+ * overridden for both at the top level. Every option bag is read once and
+ * validated before either report is built, `realm` included, and a failure to
+ * build either one throws instead of returning half a pair. The fingerprint is
+ * computed once, for the diagnostic report, and copied into the public one, so
+ * the pair always agrees; the public bag's `corj.fingerprintParts` does not
+ * change it.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
@@ -395,23 +426,23 @@ export function toReports(
   options: ToReportsOptions = {},
 ): CapturedReports {
   assertOptions(options, TO_REPORTS_OPTION_KEYS);
-  const diagnosticOptions =
-    options.diagnostic === undefined ? {} : options.diagnostic;
-  const publicOptions = options.public === undefined ? {} : options.public;
+  const diagnosticBag = options.diagnostic;
+  const publicBag = options.public;
+  const diagnosticOptions = diagnosticBag === undefined ? {} : diagnosticBag;
+  const publicOptions = publicBag === undefined ? {} : publicBag;
   assertOptions(diagnosticOptions, NESTED_DIAGNOSTIC_OPTION_KEYS);
   assertOptions(publicOptions, NESTED_PUBLIC_OPTION_KEYS);
-  // Everything that rejects a bag runs before either report exists: the public
-  // override, and both makers, which is where corj rejects its own options. The
+  // Both bags are read and validated here and never read again, so everything
+  // that rejects one — the public override, `realm`, and each maker, which is
+  // where corj rejects its own options — throws before either report exists,
+  // and the reports are built from exactly the values that were validated. The
   // diagnostic report is built first because its fingerprint is the pair's.
-  // The snapshot the public report is built from: the caller's bag is read
-  // here and never again, so both reports see the same override.
-  const override = publicOverrideOf(publicOptions.public);
-  makerFor(diagnosticOptions.corj, diagnosticOptions.redact);
-  makerFor(publicOptions.corj, publicOptions.redact);
+  const resolvedPublic = resolvePublic(publicOptions);
+  const resolvedDiagnostic = resolveDiagnostic(diagnosticOptions);
   const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
   const diagnostic = diagnosticReportOf(
     caught,
-    diagnosticOptions,
+    resolvedDiagnostic,
     occurrenceId,
   );
   return {
@@ -419,7 +450,7 @@ export function toReports(
     diagnostic,
     public: publicReportOf(
       caught,
-      { ...publicOptions, public: override },
+      resolvedPublic,
       occurrenceId,
       diagnostic.fingerprint ?? null,
     ),
@@ -536,11 +567,13 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
         reject('Unexpected field', `$.${key.slice(0, 64)}`);
     }
     const version = publicVersionOf(value['v']);
-    const fingerprint = value['fingerprint'];
-    // `fingerprint` arrived with v4: a v3 report that carries one was built by
-    // something that is not this format, so it is an unexpected field.
-    if (fingerprint !== undefined && version === PUBLIC_REPORT_VERSION_V3)
+    // `fingerprint` arrived with v4: a v3 report that carries the key at all was
+    // built by something that is not that format, so it is an unexpected field,
+    // whatever its value. On a v4 report it is an optional field, and a key
+    // explicitly set to `undefined` reads as absent, as `truncated` does.
+    if ('fingerprint' in value && version === PUBLIC_REPORT_VERSION_V3)
       reject('Unexpected field', '$.fingerprint');
+    const fingerprint = value['fingerprint'];
     const base = {
       v: version,
       occurrence_id: boundedText(

@@ -4,6 +4,7 @@ import {
   DecodePublicReportResult,
   DiagnosticReport,
   PublicReport,
+  PublicReportVersion,
   restoreExpectedValues,
   toDiagnosticReport,
   toPublicReport,
@@ -43,7 +44,12 @@ const publicReport: PublicReport = toPublicReport(error, {
   occurrenceId: diagnostic.occurrence_id,
 });
 const occurrenceId: string = publicReport.occurrence_id;
-const publicVersion: 'appex/public/v3' | 'appex/public/v4' = publicReport.v;
+const publicVersion: PublicReportVersion = publicReport.v;
+const publicVersions: PublicReportVersion[] = [
+  'appex/public/v3',
+  'appex/public/v4',
+];
+void publicVersions;
 const publicFingerprint: string | undefined = publicReport.fingerprint;
 void publicVersion;
 void publicFingerprint;

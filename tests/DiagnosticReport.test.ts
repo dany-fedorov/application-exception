@@ -261,6 +261,32 @@ describe('toDiagnosticReport', () => {
     expect(ran).toBe(0);
   });
 
+  test('reads every option of the bag exactly once', () => {
+    const reads: string[] = [];
+    const report = toDiagnosticReport(new Error('x'), {
+      get occurrenceId() {
+        reads.push('occurrenceId');
+        return 'trace-once';
+      },
+      get corj() {
+        reads.push('corj');
+        return { maxDepth: 1 };
+      },
+      get redact() {
+        reads.push('redact');
+        return undefined;
+      },
+      get context() {
+        reads.push('context');
+        return { runId: 'run-1' };
+      },
+    });
+
+    expect(reads).toEqual(['occurrenceId', 'corj', 'redact', 'context']);
+    expect(report.occurrence_id).toBe('trace-once');
+    expect(report.context).toEqual({ runId: 'run-1' });
+  });
+
   test('rejects malformed options with a coded error', () => {
     for (const options of [null, [], 'x', 42]) {
       expect(() => toDiagnosticReport('x', options as never)).toThrow(

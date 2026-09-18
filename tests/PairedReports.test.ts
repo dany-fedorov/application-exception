@@ -219,6 +219,97 @@ describe('toReports', () => {
     expect(() =>
       toReports(error, { diagnostic: { corj: { maxReportSize: 100 } } }),
     ).toThrow(RangeError);
+    expect(() => toReports(error, { public: { realm: {} as never } })).toThrow(
+      code('APPEX_INVALID_TRUST_REALM'),
+    );
+  });
+
+  test('a bad bag is rejected before any report work, realm included', () => {
+    let ran = 0;
+    class Counting extends Error {
+      override get name() {
+        ran++;
+        return 'Counting';
+      }
+    }
+    const caught = new Counting('plain');
+    const before = ran; // V8 may read `name` while constructing the error
+
+    expect(() => toReports(caught, { public: { realm: {} as never } })).toThrow(
+      code('APPEX_INVALID_TRUST_REALM'),
+    );
+
+    // The diagnostic report reads `name`; nothing was built before the throw.
+    expect(ran).toBe(before);
+  });
+
+  test('reads every option of every bag exactly once, before either report', () => {
+    const reads: string[] = [];
+    const diagnosticBag = {
+      get corj() {
+        reads.push('diagnostic.corj');
+        return { maxDepth: 1 };
+      },
+      get redact() {
+        reads.push('diagnostic.redact');
+        return undefined;
+      },
+      get context() {
+        reads.push('diagnostic.context');
+        return { runId: 'run-1' };
+      },
+    };
+    const publicBag = {
+      get public() {
+        reads.push('public.public');
+        return { code: 'ONCE' };
+      },
+      get corj() {
+        reads.push('public.corj');
+        return {};
+      },
+      get redact() {
+        reads.push('public.redact');
+        return undefined;
+      },
+      get realm() {
+        reads.push('public.realm');
+        return undefined;
+      },
+    };
+
+    const captured = toReports(new Error('plain'), {
+      get occurrenceId() {
+        reads.push('occurrenceId');
+        return 'trace-once';
+      },
+      get diagnostic() {
+        reads.push('diagnostic');
+        return diagnosticBag;
+      },
+      get public() {
+        reads.push('public');
+        return publicBag;
+      },
+    });
+
+    // The order is the contract: both bags are read and validated up front, and
+    // no report is built from a second read.
+    expect(reads).toEqual([
+      'diagnostic',
+      'public',
+      'public.public',
+      'public.corj',
+      'public.redact',
+      'public.realm',
+      'diagnostic.corj',
+      'diagnostic.redact',
+      'diagnostic.context',
+      'occurrenceId',
+    ]);
+    expect(captured.occurrence_id).toBe('trace-once');
+    expect(captured.public.code).toBe('ONCE');
+    expect(captured.diagnostic.context).toEqual({ runId: 'run-1' });
   });
 });
 

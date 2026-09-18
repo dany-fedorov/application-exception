@@ -659,6 +659,44 @@ describe('public report v4', () => {
     expect(ran).toBe(before);
   });
 
+  test('reads every option of the bag exactly once', () => {
+    const reads: string[] = [];
+    const report = toPublicReport(new Error('x'), {
+      get occurrenceId() {
+        reads.push('occurrenceId');
+        return 'trace-once';
+      },
+      get public() {
+        reads.push('public');
+        return { code: 'ONCE' };
+      },
+      get corj() {
+        reads.push('corj');
+        return {};
+      },
+      get redact() {
+        reads.push('redact');
+        return undefined;
+      },
+      get realm() {
+        reads.push('realm');
+        return undefined;
+      },
+    });
+
+    expect(reads).toEqual([
+      'occurrenceId',
+      'public',
+      'corj',
+      'redact',
+      'realm',
+    ]);
+    expect(report).toMatchObject({
+      occurrence_id: 'trace-once',
+      code: 'ONCE',
+    });
+  });
+
   test('under no-invoke, computing it runs no getter', () => {
     let ran = 0;
     class Lazy extends Error {
@@ -692,6 +730,35 @@ describe('decodePublicReport reads v3 and v4', () => {
   test('both versions decode, each keeping its own v', () => {
     expect(decodePublicReport(v4)).toEqual({ ok: true, report: v4 });
     expect(decodePublicReport(v3)).toEqual({ ok: true, report: v3 });
+  });
+
+  test('a v3 report is rejected for carrying the key at all', () => {
+    // Every other stray key is rejected whatever its value; so is this one.
+    expect(decodePublicReport({ ...v3, fingerprint: undefined })).toEqual({
+      ok: false,
+      reason: 'Unexpected field',
+      path: '$.fingerprint',
+    });
+    // On v4 the field is optional, and an explicit `undefined` reads as absent.
+    expect(decodePublicReport({ ...v4, fingerprint: undefined })).toEqual({
+      ok: true,
+      report: {
+        v: v4.v,
+        occurrence_id: v4.occurrence_id,
+        code: 'X',
+        message: 'm',
+      },
+    });
+  });
+
+  test('the decoded report keeps the field order of a fresh one', () => {
+    const decoded = decodePublicReport(v4);
+    if (!decoded.ok) throw new Error(decoded.reason);
+    expect(Object.keys(decoded.report).slice(0, 3)).toEqual([
+      'v',
+      'occurrence_id',
+      'fingerprint',
+    ]);
   });
 
   test('a round trip of a fresh report decodes', () => {

@@ -38,6 +38,7 @@ export type {
   PublicOverride,
   PublicReport,
   PublicReportOptions,
+  PublicReportVersion,
   ReportingError,
   ToReportsOptions,
 } from './report-types';
