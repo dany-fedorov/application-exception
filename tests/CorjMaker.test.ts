@@ -62,6 +62,9 @@ describe('makerFor', () => {
         },
       });
       makerFor({}, undefined).makeReportObject(hostile);
+      // A bag built as `{ onError: config.onError }` with an absent field still
+      // spreads the key: corj would read it as "no handler" and print.
+      makerFor({ onError: undefined }, undefined).makeReportObject(hostile);
       expect(warn).not.toHaveBeenCalled();
       const seen: unknown[] = [];
       makerFor(
@@ -100,5 +103,15 @@ describe('makerFor', () => {
       RangeError,
     );
     expect(() => makerFor({ nope: 1 } as never, undefined)).toThrow(TypeError);
+    expect(() => makerFor({ onError: 5 } as never, undefined)).toThrow(
+      TypeError,
+    );
+    // Forcing `v` on must not launder a metadata value corj rejects.
+    expect(() => makerFor({ metadata: 'yes' } as never, undefined)).toThrow(
+      TypeError,
+    );
+    expect(() => makerFor({ metadata: null } as never, undefined)).toThrow(
+      TypeError,
+    );
   });
 });

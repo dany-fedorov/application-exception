@@ -17,10 +17,11 @@ const compiledPublic = ajv.compile(publicSchema);
 /**
  * Deferred: the diagnostic report is corj's own in format `corj/v0.14`, which
  * `schemas/diagnostic-report-v4.json` predates. Task 4 ships
- * `diagnostic-report-v5.json` and makes this a real check again; until then
- * every call site below stays, so restoring it is one edit.
+ * `diagnostic-report-v5.json` and restores the real validator under the name
+ * `validateDiagnostic`; until then every call site below stays, so bringing the
+ * check back is one edit.
  */
-const validateDiagnostic = (_report: unknown): unknown => null;
+const validateDiagnosticDeferredToTask4 = (_report: unknown): unknown => null;
 /** `null` when the report validates, otherwise the ajv errors, so a failure names what broke. */
 const validatePublic = (report: unknown): unknown =>
   compiledPublic(JSON.parse(JSON.stringify(report)))
@@ -45,7 +46,7 @@ const secretPolicy = () =>
   });
 
 describe('createRedactionPolicy', () => {
-  // Every `validateDiagnostic` call site below is inert until Task 4.
+  // Every `validateDiagnosticDeferredToTask4` call site below is inert.
   test.todo('validates against v5 (Task 4)');
 
   describe('diagnostic reports', () => {
@@ -204,7 +205,7 @@ describe('createRedactionPolicy', () => {
 
       expect(report.children_omitted).toBe('redacted');
       expect(report.children).toBeUndefined();
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
   });
 
@@ -438,7 +439,7 @@ describe('createRedactionPolicy', () => {
           error: '[redacted]',
         },
       ]);
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('a transform that always throws blanks the report without recursing', () => {
@@ -464,7 +465,7 @@ describe('createRedactionPolicy', () => {
         expect(entry.error).toBe('[redacted]');
       }
       expect(JSON.stringify(report)).not.toContain('policy exploded');
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test("the text of the policy's own failure is never emitted", () => {
@@ -485,7 +486,7 @@ describe('createRedactionPolicy', () => {
       }
       expect(JSON.stringify(report)).not.toContain('failed on');
       expect(JSON.stringify(report)).not.toContain('sk-abcdef');
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('withholds a message that quotes the raw input a transform choked on', () => {
@@ -508,7 +509,7 @@ describe('createRedactionPolicy', () => {
       expect(report.reporting_errors).toEqual([
         expect.objectContaining({ stage: 'redact', error: '[redacted]' }),
       ]);
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test.each([
@@ -545,7 +546,7 @@ describe('createRedactionPolicy', () => {
               expect.objectContaining({ stage: 'redact', error: '[redacted]' }),
             ]),
           );
-          expect(validateDiagnostic(report)).toBeNull();
+          expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
         }
       },
     );
@@ -572,7 +573,7 @@ describe('createRedactionPolicy', () => {
         expect(entry.stage).not.toBe('redact');
         expect(entry.error).toBe('[gone]');
       }
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('keeps the public report safe and observable', () => {
@@ -607,7 +608,7 @@ describe('createRedactionPolicy', () => {
       );
 
       expect(report.as_json).toEqual({ note: { narrowed: true } });
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('keeps a value the transform returned unchanged', () => {
@@ -631,7 +632,7 @@ describe('createRedactionPolicy', () => {
 
       expect(report.as_json).toEqual({ user: 'ada' });
       expect(JSON.stringify(report)).not.toContain('hunter2');
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('may narrow a value it is asked about', () => {
@@ -683,7 +684,7 @@ describe('createRedactionPolicy', () => {
     expect(new TextEncoder().encode(json).byteLength).toBeLessThanOrEqual(
       1_024,
     );
-    expect(validateDiagnostic(report)).toBeNull();
+    expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
   });
 
   test('a report stays valid when the policy is bypassed, and the secret returns', () => {
@@ -691,7 +692,7 @@ describe('createRedactionPolicy', () => {
       details: { user: 'ada', password: 'hunter2' },
     });
 
-    expect(validateDiagnostic(toDiagnosticReport(failure))).toBeNull();
+    expect(validateDiagnosticDeferredToTask4(toDiagnosticReport(failure))).toBeNull();
     expect(validatePublic(toPublicReport(failure))).toBeNull();
     expect(JSON.stringify(toDiagnosticReport(failure))).toContain('hunter2');
     expect(JSON.stringify(toPublicReport(failure))).toContain('hunter2');
@@ -732,7 +733,7 @@ describe('createRedactionPolicy', () => {
         redact: everything(),
       });
 
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
       expect(report.v).toBe('corj/v0.14');
       expect(report.occurrence_id).toMatch(/^AE_/);
     });
@@ -752,7 +753,7 @@ describe('createRedactionPolicy', () => {
       const policy = createRedactionPolicy({ transform });
 
       expect(
-        validateDiagnostic(toDiagnosticReport(caught, { redact: policy })),
+        validateDiagnosticDeferredToTask4(toDiagnosticReport(caught, { redact: policy })),
       ).toBeNull();
       expect(
         validatePublic(toPublicReport(caught, { redact: policy })),
@@ -770,7 +771,7 @@ describe('createRedactionPolicy', () => {
           },
         );
 
-        expect(validateDiagnostic(report)).toBeNull();
+        expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
         expect(
           new TextEncoder().encode(JSON.stringify(report)).byteLength,
         ).toBeLessThanOrEqual(budget);
@@ -784,7 +785,7 @@ describe('createRedactionPolicy', () => {
       });
 
       expect(report.v).toBe('corj/v0.14');
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
       expect(report.truncated).toBe(true);
     });
 
@@ -819,7 +820,7 @@ describe('createRedactionPolicy', () => {
       });
 
       expect(JSON.stringify(report)).not.toMatch(/sk-[a-z]+/);
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('redacts them by key rule too', () => {
@@ -837,7 +838,7 @@ describe('createRedactionPolicy', () => {
         level: '[redacted]',
         truncated: '[redacted]',
       });
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('redacts a public field the selector called code', () => {
@@ -876,7 +877,7 @@ describe('createRedactionPolicy', () => {
       expect(report.children?.[0]?.path).toBe('$.cause');
       expect(report.children?.[0]?.level).toBe(1);
       expect(JSON.stringify(report)).not.toMatch(/a1|b2|c3/);
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
   });
 
@@ -903,7 +904,7 @@ describe('createRedactionPolicy', () => {
         expect(entry.error.length).toBeLessThanOrEqual(256);
       }
       expect(JSON.stringify(report)).not.toContain('sk-');
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('a secret straddling character 4,096 of the public message leaves nothing', () => {
@@ -940,7 +941,7 @@ describe('createRedactionPolicy', () => {
       expect(entries.length).toBeGreaterThan(0);
       for (const entry of entries)
         expect(entry.error.length).toBeLessThanOrEqual(256);
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
   });
 
@@ -978,7 +979,7 @@ describe('createRedactionPolicy', () => {
       expect(inContext.reporting_errors).toEqual([row]);
       for (const report of [caught, inContext]) {
         expect(JSON.stringify(report)).not.toContain('sk-abcdefghij');
-        expect(validateDiagnostic(report)).toBeNull();
+        expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
       }
     });
 
@@ -1013,7 +1014,7 @@ describe('createRedactionPolicy', () => {
         expect(JSON.stringify(report.reporting_errors)).not.toContain(
           'secretname',
         );
-        expect(validateDiagnostic(report)).toBeNull();
+        expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
       }
     });
 
@@ -1045,7 +1046,7 @@ describe('createRedactionPolicy', () => {
         if (entry.key !== undefined) expect(entry.key).toMatch(/^[a-z_]+$/);
       }
       expect(entries.map((entry) => entry.key)).toContain('as_json');
-      expect(validateDiagnostic(report)).toBeNull();
+      expect(validateDiagnosticDeferredToTask4(report)).toBeNull();
     });
 
     test('a context value is offered to the policy at $context', () => {
