@@ -76,6 +76,14 @@ Both repos' release workflows are failing on npm credentials: appex's `npm publi
 
 ## Phase A — corj: audit and ship the existing work
 
+**Status 2026-09-18:** A1 done. A3's commits were made *before* A2, out of order, on purpose (see the incident note): the audited tree is committed on `feat/redaction-and-no-invoke` as `ac55b9c` (feat!, #211+#212 in one commit — they interleave in `access()` in `src/index.ts`), `2edb402` (test, #213), `aa27d8f` (docs), `16f0a52` (ci); `npm run test-ci` at that HEAD: 19 suites, 1189 tests, 100% on all four metrics. A2 lands as further commits on top.
+
+**A1 result:** every acceptance criterion of #211, #212 and #213 maps to a named test; no MISSING and no weak verdicts. Both #211 claims were proved by breaking the source: disabling the redactor fails 45 of 67 tests in `tests/redaction.test.ts`; forcing a read before the `excludes` check fails exactly the four counting-getter tests. Two README claims had no test and move to A2: the `as_json` key collapse (README ~520) and "a custom `onError` receives the caught object unchanged" (README ~512).
+
+**Release flow (A1, confirmed by reading the workflows):** `test-and-release.yml` runs on push to `main` and its `release` job runs semantic-release, now gated on `[test, build, gen_docs, consumers]`. **Merging to `main` publishes automatically.** The owner has said they will publish corj themselves, so Phase A ends with the PR open and green; the merge is the owner's.
+
+> **Incident, and the rule it produced.** A1's prompt told the agent to revert a temporary edit with `git checkout -- <file>`. In a tree where every modified file holds uncommitted work, that command *destroys* the work: it reverted `src/index.ts` to HEAD and deleted the +514-line change. The agent recovered it byte-exact from ts-jest's transform cache (inline `sourcesContent`), proved by hash and by `test-ci` returning to 100%; the file's hash, line count and diff stat were then verified independently. **Rule: never run a break-and-restore experiment in a tree with uncommitted work. Commit (or copy the tree) first.** That is why A3 ran before A2.
+
 ### Task A1: Audit the uncommitted tree (read-only)
 
 **Files:** none modified.
@@ -116,9 +124,8 @@ new CorjRedactor(policy: CorjRedactPolicy, onFailure: (caught: unknown, ctx: Cor
 
 ### Task A4: Merge and produce an installable artifact
 
-- [ ] Merge the PR to `main` (owner preference on record: merge without asking).
-- [ ] If the release workflow publishes `10.0.0`, record the version and skip the rest of this task.
-- [ ] If it fails on credentials (expected until corj#208 is fixed): `npm run prepublish-me && cd npm-module-build && npm pack`, note the tarball path for Phase B, and report the exact publish error. Do not attempt to work around the token.
+- [ ] **Do not merge.** Merging to `main` runs semantic-release and publishes `10.0.0`; the owner publishes corj themselves. Leave the PR open, green, and mergeable, and report that the merge is the publish.
+- [ ] For Phase B development before `10.0.0` is on npm: after `npm run test-consumers` has finished (it deletes `dist/` and `npm-module-build/`), run `npm run prepublish-me && cd npm-module-build && npm pack` and note the tarball path.
 
 ---
 
