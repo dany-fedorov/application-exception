@@ -33,6 +33,20 @@
 7. **appex `main` carries a live leak in its interim implementation:** `redactStringValues` passes `replacement` to `String.prototype.replace` as a string, so `replacement: '<$&>'` re-inserts the secret (`'key <sk-abcdefghij> here'`). 0.4.0 never published (see blocker below), so no user has it. This plan deletes that code path; do not patch it separately.
 8. appex 0.4.0 is merged on `main` (`a2fd205`) but **unpublished** — the option shape of `createRedactionPolicy` is therefore free to change without breaking anyone.
 
+## Handoff from the session that wrote the corj tree (2026-09-18)
+
+The `caught-object-report-json-08` session stopped editing and handed over. It reports: two independent review passes ran and every blocker has a regression test; 1189 tests at 100% coverage; tsc, eslint, prettier and build clean; `npm run test-consumers` passes all five checks (node-cjs, node-esm, bun, types, Vite→Chromium) against the packed tarball. Task A1 verifies these claims independently — treat them as claims until it does.
+
+What it deliberately left out, and what this plan does about each:
+
+- **A custom `onError` gets no redaction help.** Warning-line scrubbing happens only inside `defaultOnError`; a custom handler receives the raw caught object. appex installs its own handler (`recorder` in `src/reporting.ts`), so without action its `reporting_errors[].error` text would be unredacted. **Covered by D2 + Task B5:** appex scrubs that text itself with the exported `CorjRedactor#text`. The alternative the session suggested — a bound `redact(text)` on `CorjErrorContext` — is not taken: it widens corj's callback contract for every consumer to save appex one constructor call.
+- **`CorjRedactor#apply` returns the `CORJ_REDACT_DROP` symbol** to mean "drop the field"; callers must map it. appex only ever calls `#text`, which already maps DROP and any non-string to the replacement. Do not call `#apply` from appex. A private `failing` flag stops a throwing policy from being re-consulted while its own failure is reported; appex passes a no-op `onFailure`, so a throwing `transform` fails closed to the replacement.
+- **`resolveRedactPolicy` accepts an already-resolved policy as input** (corj's `with()` relies on it). appex may therefore resolve once in `createRedactionPolicy` and hand the frozen result to every `CorjMaker`.
+- **No `exports` map in corj.** Every internal module is deep-importable today (`caught-object-report-json/redaction` already exposes `Redactor`), and the README says a future major will close that. **Not in scope for 10.0.0 in this plan:** it changes the #213 consumer contract and the default-import matrix in `tests/consumers/run.mjs` would need re-checking. It is flagged to the owner as a separable decision to take before publishing. appex must import only from the package root regardless.
+- **Inherent limits, documented and pinned by tests (not bugs):** under the default inspection `keys: ['message']` cannot stop the object's own `toString` or V8's stack formatting from reading `message`, so the text stays in `stack` — `patterns` removes content, `keys` + `no-invoke` gives zero reads. appex docs (Task B7) must say the same.
+- **Not verified anywhere:** the CI edits (Node 20+24 matrix, Playwright cache keyed on `run.mjs`, Bun pinned to 1.4.2) have never run on GitHub.
+- **Gotcha:** `npm run test-consumers` runs `prepublish-me`, which deletes `dist/`, and deletes `npm-module-build/` on exit. Never run it while another step needs either directory; in Task A4, pack the tarball *after* it, not before.
+
 ## Blocker on the critical path (owner action, not an agent task)
 
 Both repos' release workflows are failing on npm credentials: appex's `npm publish` returns `E404` on `PUT` (token lacks publish rights or expired; the previous `main` run failed identically), and corj has open issue #208 "The automated release is failing". **appex cannot depend on a corj version that is not on npm.** All development below proceeds against a locally packed corj tarball; Task B1 swaps in the registry version once it exists. If the token is still unfixed when Task B8 is reached, stop after B7, leave the appex branch unmerged, and report.
@@ -82,7 +96,9 @@ Both repos' release workflows are failing on npm credentials: appex's `npm publi
 - [ ] In `src/index.ts`, add public exports (D2): `export { resolveRedactPolicy as resolveCorjRedactPolicy, Redactor as CorjRedactor } from './redaction';`
 - [ ] Update the exported-names list in `tests/exports-assertions.test.ts` (it snapshot-asserts the surface; `CORJ_REDACTED_MARKER` is at about line 107).
 - [ ] Add to `tests/redaction.test.ts`: `CorjRedactor#text` scrubs with a literal replacement (`replacement: '<$&>'` must yield `'<$&>'`, never the match); `resolveCorjRedactPolicy(null)` and `(undefined)` return `null`; a non-global pattern is rejected.
-- [ ] Document both exports in the README's "Redacting what the report emits" section: one paragraph, one ```typescript example showing a consumer scrubbing its own string with the same policy.
+- [ ] Document both exports in the README's "Redacting what the report emits" section: one paragraph, one ```typescript example showing a consumer with a **custom `onError`** scrubbing its own text with the same policy — that is the gap the exports exist to close. State that `#apply` may return `CORJ_REDACT_DROP` and that `#text` never does.
+- [ ] The README's "Report schema history" and "Upgrading from v8" sections were written as a 9.x change. This ships as **10.0.0**: rewrite those passages to name 10.0.0, and add an "Upgrading from v9" note (format `corj/v0.13`; a reader validating against the v0.12 schema URL must move to v0.13; new `children_omitted` / `as_string_format` values; `CorjErrorStage` gains `'redact'`).
+- [ ] There is no lint script in `package.json`, but the tree is eslint- and prettier-clean and must stay so: run `npx eslint . --ext .ts` and `npx prettier --check .` (or whatever invocation the repo's config supports — discover it, do not add tooling) before finishing.
 - [ ] `npm run test-ci` green at 100%.
 
 **Interfaces produced (appex depends on these exact names):**
