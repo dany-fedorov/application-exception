@@ -164,7 +164,7 @@ makeCorj(caught, options?, call?); makeCorjArray(caught, options?, call?);
 - `context` is rendered with the JSON view at root `$context`, capped by the new option
   `maxContextSize` (default `16_384`, `null` for no separate cap), and counted inside
   `maxReportSize`.
-- Over budget, corj drops the container whole and sets `context_omitted: 'max_size'`;
+- Over budget, corj drops the container whole, however small it is, and sets `context_omitted: 'max_size'`;
   then drops `reporting_errors` and sets `reporting_errors_omitted: 'max_size'`; only then
   trims error content. That is application-exception's order today.
 - Fixed root fields are counted and never trimmed: `occurrence_id`, `fingerprint`, and `v`
@@ -234,9 +234,10 @@ maker.makeFingerprint(caught: unknown): string | undefined;
 - Nested values (objects, arrays) go through a key-sorted JSON view with a fixed
   16,384-unit cap, so key order and the report budget cannot move the hash.
 - Hash input: `JSON.stringify(['fp1', labels, rows])`, where `rows` is
-  `[path, values]` per node and a missing value is `null`. A root whose values are all
-  `null` or `''` appends `[typeof, as_string]`, so thrown primitives do not all share one
-  fingerprint.
+  `[path, values]` per node and a missing value is `null`. A root without a string stack
+  (a thrown primitive or plain object), or whose values are all `null` or `''`, appends
+  `[typeof, as_string]`, so thrown primitives do not all share one fingerprint. A thrown
+  string has `constructor_name: "String"`, so an "all empty" rule alone would not catch it.
 - Output: `fp1_` plus the first 32 hex characters of SHA-256. SHA-256 is bundled as
   pure JavaScript: the web platform has no synchronous digest and corj has no dependencies.
   Measured cost: about 80 µs per 4 KB of input.

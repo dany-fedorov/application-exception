@@ -1016,12 +1016,21 @@ describe('limiter drop order', () => {
     expect(bytes(report)).toBeLessThanOrEqual(600);
   });
 
-  test('a context that fits is never touched, even in a trimmed report', () => {
+  test('context goes before any error content is trimmed, however small it is', () => {
     const report = makeCorj(new Error('m'.repeat(5000)), { maxReportSize: 1024 }, {
       context: { runId: 'run-1' },
     });
     expect(report.truncated).toBe(true);
+    expect(report).not.toHaveProperty('context');
+    expect(report.context_omitted).toBe('max_size');
+  });
+
+  test('a report that fits keeps its context untouched', () => {
+    const report = makeCorj(new Error('small'), { maxReportSize: 100_000 }, {
+      context: { runId: 'run-1' },
+    });
     expect(report.context).toEqual({ runId: 'run-1' });
+    expect(report).not.toHaveProperty('context_omitted');
   });
 
   test('v survives the tightest budget', () => {
@@ -1750,6 +1759,7 @@ export function fingerprintOf(
   labels: readonly string[],
   rows: readonly (readonly [path: string, values: readonly FingerprintValue[]])[],
   rootFallback: readonly [typeofValue: string, asString: string | null],
+  forceFallback?: boolean,   // true when the root has no string stack
 ): string;
 ```
 
@@ -2029,6 +2039,17 @@ describe('fingerprintOf', () => {
     );
   });
 
+  test('a root without a stack always carries the fallback, even when a part has a value', () => {
+    // A thrown string has constructor_name "String", so its row is not empty.
+    const row = [['$', ['String', null]] as const];
+    expect(fingerprintOf(labels, row, ['string', 'socket closed'], true)).not.toBe(
+      fingerprintOf(labels, row, ['string', 'disk full'], true),
+    );
+    expect(fingerprintOf(labels, row, ['string', 'a'], false)).toBe(
+      fingerprintOf(labels, row, ['string', 'b'], false),
+    );
+  });
+
   test('the exact input format is pinned', () => {
     // sha256 of JSON.stringify(['fp1', ['constructor_name','stack'], [['$', ['Error','f']]]])
     const input = JSON.stringify(['fp1', labels, [['$', ['Error', 'f']]]]);
@@ -2128,12 +2149,16 @@ export function fingerprintOf(
   labels: readonly string[],
   rows: readonly (readonly [path: string, values: readonly FingerprintValue[]])[],
   rootFallback: readonly [typeofValue: string, asString: string | null],
+  /** Set when the root has no string stack: a thrown primitive or plain object, whose only identity is its string form. */
+  forceFallback = false,
 ): string {
   const root = rows[0];
   const rootIsEmpty =
     root !== undefined && root[1].every((value) => value === null || value === '');
   const hashed = rows.map((row, index) =>
-    index === 0 && rootIsEmpty ? [row[0], row[1], rootFallback] : [row[0], row[1]],
+    index === 0 && (rootIsEmpty || forceFallback)
+      ? [row[0], row[1], rootFallback]
+      : [row[0], row[1]],
   );
   const input = JSON.stringify([FINGERPRINT_VERSION, labels, hashed]);
   return `${FINGERPRINT_VERSION}_${sha256Hex(input).slice(0, 32)}`;
@@ -2467,6 +2492,8 @@ function computeFingerprint(
     parts.map((part) => part.label),
     rows,
     [rootFields.values.typeof, rootFields.values.as_string ?? null],
+    // A thrown primitive or plain object has no stack; its string form is its identity.
+    typeof rootFields.rawStack !== 'string',
   );
 }
 ```
