@@ -387,7 +387,7 @@ describe('createRedactionPolicy', () => {
       expect(validateDiagnostic(report)).toBeNull();
     });
 
-    test('a transform that always throws blanks the report without recursing', () => {
+    test('a transform that always throws blanks the report without recursing, and says why', () => {
       const throwing = createRedactionPolicy({
         transform: () => {
           throw new Error('policy exploded');
@@ -399,9 +399,61 @@ describe('createRedactionPolicy', () => {
       });
 
       expect(JSON.stringify(report)).not.toContain('boom');
-      expect(report.reporting_errors?.length).toBeGreaterThan(0);
-      for (const entry of report.reporting_errors ?? [])
+      // The policy is reported once per value, so a transform that always
+      // throws produces several entries, not one.
+      expect(report.reporting_errors?.length).toBeGreaterThan(1);
+      for (const entry of report.reporting_errors ?? []) {
         expect(entry.stage).toBe('redact');
+        // The failing transform is not re-consulted to describe its own
+        // failure: the operator can still read why the policy broke.
+        expect(entry.error).toContain('policy exploded');
+      }
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test("patterns still scrub the text of the policy's own failure", () => {
+      const leaky = createRedactionPolicy({
+        patterns: [/sk-[a-z]+/g],
+        transform: () => {
+          throw new Error('failed on sk-abcdef');
+        },
+      });
+
+      const report = toDiagnosticReport(new Error('boom'), { redact: leaky });
+      const entries = report.reporting_errors ?? [];
+
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries) {
+        expect(entry.stage).toBe('redact');
+        expect(entry.error).toContain('failed on');
+        expect(entry.error).not.toContain('sk-abcdef');
+      }
+      expect(JSON.stringify(report)).not.toContain('sk-abcdef');
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test('a failure at any other stage is still scrubbed by the transform', () => {
+      const caught = {
+        get boom(): string {
+          throw new Error('getter exploded');
+        },
+      };
+
+      const report = toDiagnosticReport(caught, {
+        redact: createRedactionPolicy({
+          transform: (value) =>
+            typeof value === 'string' && value.includes('getter exploded')
+              ? '[gone]'
+              : value,
+        }),
+      });
+      const entries = report.reporting_errors ?? [];
+
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries) {
+        expect(entry.stage).not.toBe('redact');
+        expect(entry.error).toBe('[gone]');
+      }
       expect(validateDiagnostic(report)).toBeNull();
     });
 

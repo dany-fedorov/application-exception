@@ -1,4 +1,8 @@
-import { CorjMaker, CorjRedactor } from 'caught-object-report-json';
+import {
+  CorjMaker,
+  CorjRedactor,
+  resolveCorjRedactPolicy,
+} from 'caught-object-report-json';
 import type {
   CorjErrorContext,
   CorjJsonValue,
@@ -135,16 +139,28 @@ function occurrenceIdFor(caught: unknown, explicit: unknown): string {
  * here. `stage` is never scrubbed: it is this package's own enum, and
  * `CorjErrorStage` is wider than the redaction stages, so the entry is scrubbed
  * as the `warning` text it is.
+ *
+ * A `stage: 'redact'` entry describes the policy's own failure, so it is
+ * scrubbed with {@link Scrubbers.forRedactFailures} instead: running the
+ * failing `transform` over the description of its own failure would blank the
+ * one line that says why the policy broke. Patterns still apply, and they are
+ * enough: corj applies `patterns` before it calls `transform`, and a value
+ * excluded by `keys` or `paths` never reaches `transform` at all, so the text
+ * of a transform's error can only embed content that was already scrubbed.
  */
 function recorder(
   errors: ReportingError[],
   prefix: string,
-  redactor: CorjRedactor | undefined,
+  scrubbers: Scrubbers | undefined,
 ): OnError {
   return (caught, context) => {
     if (errors.length >= MAX_REPORTING_ERRORS) return;
     const path = prefix + context.path.slice(1);
     const error = describeValue(caught);
+    const redactor =
+      context.stage === 'redact'
+        ? scrubbers?.forRedactFailures
+        : scrubbers?.full;
     errors.push(
       compact({
         stage: context.stage,
@@ -160,12 +176,36 @@ function recorder(
   };
 }
 
-/** The scrubber for the strings corj never sees, built once per report. */
+/** The scrubbers for the strings corj never sees, built once per report. */
+interface Scrubbers {
+  /** The whole policy: patterns and then the application's `transform`. */
+  readonly full: CorjRedactor;
+  /** The same policy with no `transform`, for the policy's own failures. */
+  readonly forRedactFailures: CorjRedactor;
+}
+
+/**
+ * A failure of appex's own scrubbing needs no report: the value fails closed to
+ * the replacement, and corj reports the same policy's failures through `onError`.
+ */
+function ignoreScrubFailure(): undefined {
+  return undefined;
+}
+
 function redactorFor(
   policy: CompiledRedactionPolicy | undefined,
-): CorjRedactor | undefined {
+): Scrubbers | undefined {
   if (policy === undefined) return undefined;
-  return new CorjRedactor(policy.forViews, () => undefined);
+  return {
+    full: new CorjRedactor(policy.forViews, ignoreScrubFailure),
+    forRedactFailures: new CorjRedactor(
+      resolveCorjRedactPolicy({
+        ...policy.forViews,
+        transform: null,
+      }) as CorjRedactPolicy,
+      ignoreScrubFailure,
+    ),
+  };
 }
 
 /** corj's bounded JSON view of any value: `as_json` of a childless report. */
@@ -213,7 +253,7 @@ function corjReportOf(
   maxReportSize: number | null | undefined,
   errors: ReportingError[],
   policy: CompiledRedactionPolicy | undefined,
-  redactor: CorjRedactor | undefined,
+  redactor: Scrubbers | undefined,
 ): CorjReport {
   return new CorjMaker({
     ...compact({
@@ -277,7 +317,7 @@ function shrinkToBudget(
   context: ContextField | undefined,
   errors: readonly ReportingError[],
   policy: CompiledRedactionPolicy | undefined,
-  redactor: CorjRedactor | undefined,
+  redactor: Scrubbers | undefined,
 ): DiagnosticReport {
   const omitted: OmittedField[] = [];
   if (context !== undefined) {
@@ -518,7 +558,7 @@ function publicReportOf(
   const message =
     redactor === undefined
       ? rendered
-      : redactor.text(rendered, {
+      : redactor.full.text(rendered, {
           stage: 'as_string',
           path: '$.message',
           key: 'message',
