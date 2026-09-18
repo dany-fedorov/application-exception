@@ -47,9 +47,14 @@ What it deliberately left out, and what this plan does about each:
 - **Not verified anywhere:** the CI edits (Node 20+24 matrix, Playwright cache keyed on `run.mjs`, Bun pinned to 1.4.2) have never run on GitHub.
 - **Gotcha:** `npm run test-consumers` runs `prepublish-me`, which deletes `dist/`, and deletes `npm-module-build/` on exit. Never run it while another step needs either directory; in Task A4, pack the tarball *after* it, not before.
 
-## Blocker on the critical path (owner action, not an agent task)
+## Publishing (corrected 2026-09-18)
 
-Both repos' release workflows are failing on npm credentials: appex's `npm publish` returns `E404` on `PUT` (token lacks publish rights or expired; the previous `main` run failed identically), and corj has open issue #208 "The automated release is failing". **appex cannot depend on a corj version that is not on npm.** All development below proceeds against a locally packed corj tarball; Task B1 swaps in the registry version once it exists. If the token is still unfixed when Task B8 is reached, stop after B7, leave the appex branch unmerged, and report.
+An earlier version of this section called the npm credentials a blocker. That was wrong in an important way. **CI publishing is broken in both repos, and has been on every recent run** — corj's last three release runs failed at the `Release` step (corj#208 is live, not stale), appex's `npm publish` step returns `E404` on `PUT`. But neither package is blocked: every recent version (corj 9.0.0, 9.0.1; appex 0.3.0) was published from the owner's machine — npm shows publisher `danyfedorov` with no provenance attestation, minutes after each failed CI run. The owner has since supplied a token and authorised publishing with it. It authenticates as `danyfedorov` with read-write on both packages.
+
+Handling rules for that token: it is passed only through the environment of the publish command, with an npmrc that contains the literal text `${NPM_TOKEN}`; it is never written to a file, a commit, a repo secret, or memory; the owner revokes it after both packages are out.
+
+- **corj 10.0.0:** merge PR #214 with a *merge commit* (a squash can lose the `BREAKING CHANGE:` footer the commit analyzer needs). CI will run and fail at `Release` as usual, after pushing its badge and docs commits to `main`. Once it has finished, pull `main`, `npm run prepublish-me` (semantic-release's `pkgRoot` is `./npm-module-build`), dry-run, then `npx semantic-release --no-ci` with `NPM_TOKEN` and `GITHUB_TOKEN` in the environment. It must compute `10.0.0`.
+- **appex 0.4.0:** after Task B8's gate, review and merge — `npm run prepublish-me`, then `npm publish` from `npm-module-build` with the same environment.
 
 ## Decisions (made — state them in commit messages and docs, do not ask)
 
@@ -231,7 +236,7 @@ Add, because they are the point of this migration:
 ### Task B8: Gate, review, merge
 
 - [ ] `npm run test:all` — everything green, including the Node ESM, Bun and Chromium suites.
-- [ ] `package.json` must name a **registry** corj version. If corj `10.x` is still unpublished, stop here and report (see Blocker).
+- [ ] `package.json` must name a **registry** corj version: `npm install caught-object-report-json@^10.0.0` once it is published (see Publishing), and commit `package.json` + `package-lock.json`.
 - [ ] Adversarial review by a Fable subagent before merge, with this brief: hunt for (1) any path where a policy-excluded value reaches either report, including through `reporting_errors`, the default `onError` warning line, and `toReports`; (2) any input that makes a redacted or budgeted report fail `diagnostic-report-v4.json` or `public-report-v3.json`; (3) any 0.3.0 call whose output changed with `redact` absent, other than `v`; (4) tests that still pass with the forwarding removed from each of the three `CorjMaker` sites — break each one in turn and confirm a test fails; (5) docs that claim more than the tests establish. Verify by running code; report CONFIRMED vs SUSPECTED; fix nothing.
 - [ ] Fix confirmed findings, each with a test. Re-run `npm run test:all`.
 - [ ] Merge to `main` via a PR whose body has `Closes #43`, push. Comment on appex #44–#48 with the commits that implemented them (`38c7f7c`, `b62ddbf`, merged as `a2fd205`) and close them.
