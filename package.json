@@ -13,7 +13,9 @@
     "./package.json": "./package.json",
     "./schemas/diagnostic-report-v3.json": "./schemas/diagnostic-report-v3.json",
     "./schemas/diagnostic-report-v4.json": "./schemas/diagnostic-report-v4.json",
-    "./schemas/public-report-v3.json": "./schemas/public-report-v3.json"
+    "./schemas/diagnostic-report-v5.json": "./schemas/diagnostic-report-v5.json",
+    "./schemas/public-report-v3.json": "./schemas/public-report-v3.json",
+    "./schemas/public-report-v4.json": "./schemas/public-report-v4.json"
   },
   "sideEffects": false,
   "engines": {
