@@ -1,5 +1,6 @@
 import {
   CapturedReports,
+  createRedactionPolicy,
   DecodePublicReportResult,
   DiagnosticReport,
   PublicReport,
@@ -8,6 +9,7 @@ import {
   toPublicReport,
   toReports,
 } from '../src';
+import type { RedactionContext, RedactionPolicy } from '../src';
 import { defineException } from '../src/typed';
 
 const Failure = defineException({
@@ -79,3 +81,21 @@ toReports(error, { diagnostic: { occurrenceId: 'trace-1' } });
 toReports(error, { public: { occurrenceId: 'trace-1' } });
 // @ts-expect-error per-report options are nested, never flat.
 toReports(error, { context: { requestId: 'req' } });
+
+const redact: RedactionPolicy = createRedactionPolicy({
+  keys: ['password', /token$/i],
+  paths: ['$.config.headers', /^\$\.cause\./],
+  patterns: [/sk-[a-z]+/g],
+  replacement: '[redacted]',
+  transform: (value: unknown, context: RedactionContext) =>
+    context.key === 'message' ? value : undefined,
+});
+const redacted: DiagnosticReport = toDiagnosticReport(error, { redact });
+const redactedPublic: PublicReport = toPublicReport(error, { redact });
+void redacted;
+void redactedPublic;
+
+// @ts-expect-error `values` was renamed `patterns` when the policy moved into corj.
+createRedactionPolicy({ values: [/sk-[a-z]+/g] });
+// @ts-expect-error a policy is opaque: only createRedactionPolicy mints one.
+toDiagnosticReport(error, { redact: { keys: ['password'] } });

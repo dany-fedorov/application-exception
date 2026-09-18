@@ -1,7 +1,8 @@
-import { CorjMaker } from 'caught-object-report-json';
+import { CorjMaker, CorjRedactor } from 'caught-object-report-json';
 import type {
   CorjErrorContext,
   CorjJsonValue,
+  CorjRedactPolicy,
   CorjReport,
 } from 'caught-object-report-json';
 import { describeValue, invalid } from './errors';
@@ -27,11 +28,7 @@ import {
   trustedPublicPolicyOf,
 } from './typed-internals';
 import type { PublicPolicyRecord } from './typed-internals';
-import {
-  PUBLIC_PROTECTED,
-  applyRedaction,
-  compiledPolicy,
-} from './redaction';
+import { compiledPolicy } from './redaction';
 import type { CompiledRedactionPolicy } from './redaction';
 
 const CONTEXT_MAX_BYTES = 16_384;
@@ -132,19 +129,43 @@ function occurrenceIdFor(caught: unknown, explicit: unknown): string {
   );
 }
 
-function recorder(errors: ReportingError[], prefix: string): OnError {
+/**
+ * corj hands a custom `onError` the caught object unchanged, so the text of a
+ * reporting failure is one of the two strings the policy has to be applied to
+ * here. `stage` is never scrubbed: it is this package's own enum, and
+ * `CorjErrorStage` is wider than the redaction stages, so the entry is scrubbed
+ * as the `warning` text it is.
+ */
+function recorder(
+  errors: ReportingError[],
+  prefix: string,
+  redactor: CorjRedactor | undefined,
+): OnError {
   return (caught, context) => {
     if (errors.length >= MAX_REPORTING_ERRORS) return;
+    const path = prefix + context.path.slice(1);
+    const error = describeValue(caught);
     errors.push(
       compact({
         stage: context.stage,
-        path: prefix + context.path.slice(1),
+        path,
         key: context.key,
         prop: context.prop,
-        error: describeValue(caught),
+        error:
+          redactor === undefined
+            ? error
+            : redactor.text(error, { stage: 'warning', path }),
       }) as ReportingError,
     );
   };
+}
+
+/** The scrubber for the strings corj never sees, built once per report. */
+function redactorFor(
+  policy: CompiledRedactionPolicy | undefined,
+): CorjRedactor | undefined {
+  if (policy === undefined) return undefined;
+  return new CorjRedactor(policy.forViews, () => undefined);
 }
 
 /** corj's bounded JSON view of any value: `as_json` of a childless report. */
@@ -152,6 +173,7 @@ function jsonView(
   value: unknown,
   maxBytes: number,
   onError: OnError,
+  redact: CorjRedactPolicy | null,
 ): { readonly value: CorjJsonValue | null; readonly truncated: boolean } {
   const view = new CorjMaker({
     childrenSources: [],
@@ -159,45 +181,11 @@ function jsonView(
     maxReportSize: maxBytes,
     metadata: false,
     onError,
+    redact,
   }).makeReportObject(value);
   return {
     value: view.as_json === undefined ? {} : view.as_json,
     truncated: view.truncated === true,
-  };
-}
-
-/**
- * Rewrite an assembled diagnostic report through a policy. Failures of a
- * throwing `transform` are appended as `reporting_errors` and are not
- * themselves redacted: re-running the broken transform over them would erase
- * the only record that it broke. A transform that puts the value it was given
- * into its own error message therefore surfaces it here — the policy owns its
- * error text.
- */
-function redactDiagnostic(
-  report: DiagnosticReport,
-  policy: CompiledRedactionPolicy | undefined,
-): DiagnosticReport {
-  if (policy === undefined) return report;
-  const failures: ReportingError[] = [];
-  const redacted = applyRedaction(
-    report as unknown as CorjJsonValue,
-    policy,
-    (path, error) => {
-      if (failures.length < MAX_REPORTING_ERRORS)
-        failures.push({ stage: 'other', path, error });
-    },
-  ) as unknown as DiagnosticReport;
-  // A budget that already dropped `reporting_errors` says so in
-  // `report_omitted`; re-adding records here would contradict it.
-  if (failures.length === 0 || redacted.report_omitted?.includes('reporting_errors'))
-    return redacted;
-  return {
-    ...redacted,
-    reporting_errors: [
-      ...(redacted.reporting_errors ?? []),
-      ...failures,
-    ].slice(0, MAX_REPORTING_ERRORS),
   };
 }
 
@@ -224,6 +212,8 @@ function corjReportOf(
   options: DiagnosticReportOptions,
   maxReportSize: number | null | undefined,
   errors: ReportingError[],
+  policy: CompiledRedactionPolicy | undefined,
+  redactor: CorjRedactor | undefined,
 ): CorjReport {
   return new CorjMaker({
     ...compact({
@@ -232,7 +222,8 @@ function corjReportOf(
       maxChildren: options.maxChildren,
       stackFormat: options.stackFormat,
     }),
-    onError: recorder(errors, '$'),
+    onError: recorder(errors, '$', redactor),
+    redact: policy === undefined ? null : policy.forCaught,
   }).makeReportObject(caught);
 }
 
@@ -256,21 +247,6 @@ function assembleDiagnostic(
     ...(errors.length > 0 ? { reporting_errors: errors } : {}),
     ...(omitted.length > 0 ? { report_omitted: omitted } : {}),
   } as DiagnosticReport;
-}
-
-/** The final object as it will be emitted: assembled, then redacted, so every size measurement sees what a sink receives. */
-function assembleRedacted(
-  occurrenceId: string,
-  report: CorjReport,
-  context: ContextField | undefined,
-  errors: readonly ReportingError[],
-  omitted: readonly OmittedField[],
-  policy: CompiledRedactionPolicy | undefined,
-): DiagnosticReport {
-  return redactDiagnostic(
-    assembleDiagnostic(occurrenceId, report, context, errors, omitted),
-    policy,
-  );
 }
 
 /** The corj budget the halving starts from: the effective one, never above the final budget. */
@@ -301,29 +277,28 @@ function shrinkToBudget(
   context: ContextField | undefined,
   errors: readonly ReportingError[],
   policy: CompiledRedactionPolicy | undefined,
+  redactor: CorjRedactor | undefined,
 ): DiagnosticReport {
   const omitted: OmittedField[] = [];
   if (context !== undefined) {
     omitted.push('context');
-    const next = assembleRedacted(
+    const next = assembleDiagnostic(
       occurrenceId,
       report,
       undefined,
       errors,
       omitted,
-      policy,
     );
     if (finalReportSize(next) <= budget) return next;
   }
   if (errors.length > 0) {
     omitted.push('reporting_errors');
-    const next = assembleRedacted(
+    const next = assembleDiagnostic(
       occurrenceId,
       report,
       undefined,
       [],
       omitted,
-      policy,
     );
     if (finalReportSize(next) <= budget) return next;
   }
@@ -336,18 +311,24 @@ function shrinkToBudget(
         Math.min(limit - 1, Math.floor((limit * budget) / overshot)),
       );
     const retryErrors: ReportingError[] = [];
-    const smaller = corjReportOf(caught, options, limit, retryErrors);
+    const smaller = corjReportOf(
+      caught,
+      options,
+      limit,
+      retryErrors,
+      policy,
+      redactor,
+    );
     const marks =
       retryErrors.length > 0 && !omitted.includes('reporting_errors')
         ? [...omitted, 'reporting_errors' as const]
         : omitted;
-    const next = assembleRedacted(
+    const next = assembleDiagnostic(
       occurrenceId,
       smaller,
       undefined,
       [],
       marks,
-      policy,
     );
     const size = finalReportSize(next);
     if (size <= budget) return next;
@@ -368,8 +349,16 @@ function diagnosticReportOf(
 ): DiagnosticReport {
   const budget = finalBudgetOf(options.maxFinalReportSize);
   const policy = compiledPolicy(options.redact);
+  const redactor = redactorFor(policy);
   const errors: ReportingError[] = [];
-  const report = corjReportOf(caught, options, options.maxReportSize, errors);
+  const report = corjReportOf(
+    caught,
+    options,
+    options.maxReportSize,
+    errors,
+    policy,
+    redactor,
+  );
   const context =
     options.context === undefined
       ? undefined
@@ -377,16 +366,16 @@ function diagnosticReportOf(
           context: jsonView(
             options.context,
             CONTEXT_MAX_BYTES,
-            recorder(errors, '$.context'),
+            recorder(errors, '$.context', redactor),
+            policy === undefined ? null : policy.forViews,
           ).value,
         };
-  const assembled = assembleRedacted(
+  const assembled = assembleDiagnostic(
     occurrenceId,
     report,
     context,
     errors,
     [],
-    policy,
   );
   if (budget === null || finalReportSize(assembled) <= budget) return assembled;
   return shrinkToBudget(
@@ -398,6 +387,7 @@ function diagnosticReportOf(
     context,
     errors,
     policy,
+    redactor,
   );
 }
 
@@ -514,13 +504,25 @@ function publicReportOf(
   if (options.message !== undefined && typeof options.message !== 'string')
     throw invalid('APPEX_INVALID_PUBLIC_MESSAGE', 'message must be a string');
   const redact = compiledPolicy(options.redact);
+  const redactor = redactorFor(redact);
   const policy = trustedPublicPolicyOf(caught, trustRealmApi(options.realm));
   const details = policy === undefined ? {} : ownDetails(caught);
   const code =
     options.code === undefined
       ? (policy?.code ?? GENERIC_CODE)
       : boundedIdentifier(options.code, 'APPEX_INVALID_PUBLIC_CODE', 'code');
-  const message = options.message ?? renderPublicMessage(policy, details);
+  const rendered = options.message ?? renderPublicMessage(policy, details);
+  // The public message is one of the two strings corj never sees. It is scrubbed
+  // before the length bound is applied, so a replacement longer than what it
+  // replaced can never push the message past it.
+  const message =
+    redactor === undefined
+      ? rendered
+      : redactor.text(rendered, {
+          stage: 'as_string',
+          path: '$.message',
+          key: 'message',
+        });
   const selected =
     options.details === undefined
       ? selectPublicDetails(policy, details)
@@ -528,32 +530,23 @@ function publicReportOf(
   const view =
     selected === undefined
       ? undefined
-      : jsonView(selected, PUBLIC_DETAILS_MAX_BYTES, () => undefined);
+      : jsonView(
+          selected,
+          PUBLIC_DETAILS_MAX_BYTES,
+          () => undefined,
+          redact === undefined ? null : redact.forViews,
+        );
   const cut = message.length > PUBLIC_MESSAGE_MAX_LENGTH;
   const truncated = cut || view?.truncated === true;
-  const report: PublicReport = {
+  // Redaction runs after selection: it can only narrow what the kind's selector
+  // chose, never disclose a field the selector left out.
+  return {
     v: PUBLIC_REPORT_VERSION,
     occurrence_id: occurrenceId,
     code,
     message: cut ? message.slice(0, PUBLIC_MESSAGE_MAX_LENGTH) : message,
     ...(view === undefined ? {} : { as_json: view.value }),
     ...(truncated ? { truncated: true } : {}),
-  };
-  if (redact === undefined) return report;
-  // Redaction runs after selection: it can only narrow what the policy chose,
-  // never disclose a field the selector left out. A replacement can be longer
-  // than what it replaced, so the message bound is re-applied afterwards.
-  const redacted = applyRedaction(
-    report as unknown as CorjJsonValue,
-    redact,
-    () => undefined,
-    PUBLIC_PROTECTED,
-  ) as unknown as PublicReport;
-  if (redacted.message.length <= PUBLIC_MESSAGE_MAX_LENGTH) return redacted;
-  return {
-    ...redacted,
-    message: redacted.message.slice(0, PUBLIC_MESSAGE_MAX_LENGTH),
-    truncated: true,
   };
 }
 

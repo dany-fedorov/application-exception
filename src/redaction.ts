@@ -1,27 +1,30 @@
+import { resolveCorjRedactPolicy } from 'caught-object-report-json';
+import type {
+  CorjRedactContext,
+  CorjRedactPolicy,
+  CorjRedactTransform,
+} from 'caught-object-report-json';
 import { describeValue, invalid } from './errors';
-import type { CorjJsonValue } from 'caught-object-report-json';
 
 /**
- * How a redaction policy rewrites one value it decided to redact, and what the
- * policy was asked about. `path` is a JSON path rooted at `$`.
+ * What a policy was asked about: `stage` is where corj produced the value,
+ * `path` is a JSON path rooted at the caught value's `$`, `key` is the report
+ * field it is destined for, and `prop` the property it was read from.
  */
-export interface RedactionContext {
-  readonly path: string;
-  readonly key: string | undefined;
-}
+export type RedactionContext = CorjRedactContext;
 
 /** Input of `createRedactionPolicy`; every rule is optional and they compose. */
 export interface RedactionPolicyOptions {
-  /** Property names redacted wherever they appear, by exact match or pattern. */
+  /** Property names never read, by exact match or pattern. */
   readonly keys?: readonly (string | RegExp)[];
-  /** Exact JSON paths redacted, such as `$.as_json.token` or `$.children[0].as_json.password`. */
-  readonly paths?: readonly string[];
-  /** String values redacted wherever they appear, including in messages and stack lines. */
-  readonly values?: readonly RegExp[];
-  /** What a redacted value becomes. Defaults to `[redacted]`. */
+  /** JSON paths never read, rooted at the caught value, such as `$.cause.config.headers`. */
+  readonly paths?: readonly (string | RegExp)[];
+  /** Patterns replaced in every string the report emits. Each must carry the `g` flag. */
+  readonly patterns?: readonly RegExp[];
+  /** What a redacted value becomes, used literally. Defaults to `[redacted]`. */
   readonly replacement?: string;
-  /** Last word on any value the rules above did not redact; return the value unchanged to keep it. */
-  readonly transform?: (value: CorjJsonValue, context: RedactionContext) => unknown;
+  /** Last word on every emitted value; returning `undefined` drops the field. */
+  readonly transform?: CorjRedactTransform;
 }
 
 /** An opaque, reusable redaction policy. Build it once and share it between reports. */
@@ -32,158 +35,96 @@ export interface RedactionPolicy {
 /** Module-private mark: only `createRedactionPolicy` can mint a policy. */
 export const REDACTION_POLICY = Symbol('application-exception/RedactionPolicy');
 
-const DEFAULT_REPLACEMENT = '[redacted]';
+const MAX_REPLACEMENT_LENGTH = 128;
 
-/**
- * Fields of a report node that carry its identity, version, or shape. Protection
- * is positional, never by name: a value the application happens to call `id`,
- * `code`, or `path` inside `as_json` or `context` is ordinary data and stays
- * redactable, while the report's own fields at those positions do not.
- */
-const NODE_KEYS =
-  'v|\\$schema|id|path|level|child_ids|typeof|instanceof_error|truncated|as_json_format|as_string_format|children_omitted|stack|children';
-
-/**
- * Positions in a diagnostic report a policy may not replace. Containers are
- * listed so an array is never swapped for a string; their items are still
- * walked, except where the schema pins them to an enum.
- */
-const DIAGNOSTIC_PROTECTED = new RegExp(
-  `^\\$$` +
-    `|^\\$\\.(?:${NODE_KEYS}|occurrence_id|report_omitted|reporting_errors)$` +
-    `|^\\$\\.report_omitted\\[\\d+\\]$` +
-    `|^\\$(?:\\.children\\[\\d+\\])?\\.child_ids\\[\\d+\\]$` +
-    `|^\\$\\.children\\[\\d+\\](?:\\.(?:${NODE_KEYS}))?$` +
-    `|^\\$\\.reporting_errors\\[\\d+\\](?:\\.stage)?$`,
-);
-
-/** Positions in a public report a policy may not replace. */
-const PUBLIC_PROTECTED = /^\$$|^\$\.(?:v|occurrence_id|code|truncated)$/;
-
-/**
- * Depth past which the walk stops descending and replaces the subtree. corj
- * bounds a report by bytes, not by nesting, so a hostile caught value can
- * produce an `as_json` thousands of levels deep; replacing is the safe
- * outcome, since it can only narrow what is disclosed.
- */
-const MAX_REDACTION_DEPTH = 512;
-
+/** The two resolved corj policies a minted policy carries. */
 export interface CompiledRedactionPolicy {
-  readonly keys: readonly (string | RegExp)[];
-  readonly paths: ReadonlySet<string>;
-  readonly values: readonly RegExp[];
-  readonly replacement: string;
-  readonly transform:
-    | ((value: CorjJsonValue, context: RedactionContext) => unknown)
-    | undefined;
+  /** Forwarded to the diagnostic report's inspection of the caught value. */
+  readonly forCaught: CorjRedactPolicy;
+  /** Forwarded to `context` and to the public `as_json`: the same policy without `paths`. */
+  readonly forViews: CorjRedactPolicy;
 }
 
-function assertArrayOf(
-  value: unknown,
-  name: string,
-  ok: (item: unknown) => boolean,
-  expected: string,
-): readonly unknown[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value))
-    throw invalid('APPEX_INVALID_REDACTION_POLICY', `${name} must be an array`);
-  for (const item of value) {
-    if (!ok(item))
-      throw invalid(
-        'APPEX_INVALID_REDACTION_POLICY',
-        `${name} must contain only ${expected}`,
-      );
-  }
-  return value;
+/** corj's own explanation, without the `TypeError:` prefix `String` adds. */
+function corjMessage(failure: unknown): string {
+  return describeValue(failure).replace(/^TypeError: /, '');
 }
 
 /**
  * Build a reusable redaction policy for `toDiagnosticReport`, `toPublicReport`,
  * and `toReports`.
  *
- * The policy rewrites values in the produced report: messages, stacks,
- * `as_json`, `context`, `reporting_errors`, and every nested cause. On a public
- * report it runs **after** the kind's `public.details` selector, so redaction
- * can only narrow what was selected — it never authorizes disclosure, and a
- * field the selector did not choose stays absent.
+ * The policy is applied by corj **while it inspects** the caught value: a
+ * property excluded by `keys` or `paths` is never read, so an excluded getter
+ * never runs and the size budget is spent only on what survives. `patterns` and
+ * `transform` then run over every string and value the report emits — messages,
+ * stacks, `as_json`, `context`, every nested cause — and over the two strings
+ * corj never sees, the public `message` and `reporting_errors[].error`.
  *
- * Identity and shape fields (`v`, `occurrence_id`, `code`, and corj's
- * structural keys) are walked but never replaced, so a redacted report still
- * validates against its schema.
+ * `keys` and `paths` select *properties*, not content: error text is duplicated
+ * into `stack` and `as_string`, so removing content needs `patterns` or
+ * `transform`. Each pattern must carry the `g` flag, or the policy is rejected.
+ * `replacement` is literal — `$&` and `$1` are not expanded. `paths` address the
+ * caught value only; they never match inside `context` or selected public
+ * details.
+ *
+ * On a public report the policy runs over the output of the kind's
+ * `public.details` selector, so redaction can only narrow what was selected — it
+ * never authorizes disclosure of a field the selector did not choose.
  *
  * @throws `APPEX_INVALID_REDACTION_POLICY`
  * @example
  * ```ts
  * import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
- * const redact = createRedactionPolicy({ keys: ['password', /token$/i], values: [/\bsk-[A-Za-z0-9]{8,}\b/] });
+ * const redact = createRedactionPolicy({
+ *   keys: ['password', /token$/i],
+ *   patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
+ * });
  * const report = toDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
- * console.log(report.message); // 'bad key [redacted]'
+ * console.log(report.stack?.[0]); // 'Error: bad key [redacted]'
  * ```
  */
 export function createRedactionPolicy(
   options: RedactionPolicyOptions = {},
 ): RedactionPolicy {
-  if (
-    typeof options !== 'object' ||
-    options === null ||
-    Array.isArray(options)
-  )
+  if (typeof options !== 'object' || options === null || Array.isArray(options))
     throw invalid(
       'APPEX_INVALID_REDACTION_POLICY',
       'redaction policy options must be an object',
     );
-  const keys = assertArrayOf(
-    options.keys,
-    'keys',
-    (item) => typeof item === 'string' || item instanceof RegExp,
-    'strings and regular expressions',
-  ) as readonly (string | RegExp)[];
-  const paths = assertArrayOf(
-    options.paths,
-    'paths',
-    (item) => typeof item === 'string',
-    'strings',
-  ) as readonly string[];
-  const values = assertArrayOf(
-    options.values,
-    'values',
-    (item) => item instanceof RegExp,
-    'regular expressions',
-  ) as readonly RegExp[];
-  for (const pattern of values) {
-    // A sticky pattern anchors at lastIndex and would silently match nothing.
-    if (pattern.flags.includes('y'))
-      throw invalid(
-        'APPEX_INVALID_REDACTION_POLICY',
-        `values must not use the sticky flag; ${String(pattern)} would match nothing`,
-      );
-  }
-  const { replacement, transform } = options;
+  const { replacement } = options;
+  // corj puts no bound on the replacement; the public message bound depends on
+  // one, so a replacement can never blow a budget open on its own.
   if (
     replacement !== undefined &&
-    (typeof replacement !== 'string' || replacement.length > 128)
+    (typeof replacement !== 'string' ||
+      replacement.length > MAX_REPLACEMENT_LENGTH)
   )
     throw invalid(
       'APPEX_INVALID_REDACTION_POLICY',
-      'replacement must be a string of at most 128 characters',
+      `replacement must be a string of at most ${MAX_REPLACEMENT_LENGTH} characters`,
     );
-  if (transform !== undefined && typeof transform !== 'function')
-    throw invalid(
-      'APPEX_INVALID_REDACTION_POLICY',
-      'transform must be a function',
-    );
-  const compiled: CompiledRedactionPolicy = {
-    keys,
-    paths: new Set(paths),
-    values,
-    replacement: replacement ?? DEFAULT_REPLACEMENT,
-    transform,
-  };
+  let compiled: CompiledRedactionPolicy;
+  try {
+    compiled = {
+      forCaught: resolveCorjRedactPolicy(options) as CorjRedactPolicy,
+      // D5: `paths` address the caught value; they must not also match inside
+      // `context` or the selected public details.
+      forViews: resolveCorjRedactPolicy({
+        ...options,
+        paths: [],
+      }) as CorjRedactPolicy,
+    };
+  } catch (failure: unknown) {
+    throw invalid('APPEX_INVALID_REDACTION_POLICY', corjMessage(failure));
+  }
   return Object.freeze({ [REDACTION_POLICY]: Object.freeze(compiled) });
 }
 
 /** The compiled policy behind a value, or `undefined` for `undefined`; anything else throws. */
-export function compiledPolicy(policy: unknown): CompiledRedactionPolicy | undefined {
+export function compiledPolicy(
+  policy: unknown,
+): CompiledRedactionPolicy | undefined {
   if (policy === undefined) return undefined;
   let compiled: unknown;
   try {
@@ -201,128 +142,3 @@ export function compiledPolicy(policy: unknown): CompiledRedactionPolicy | undef
     );
   return compiled as CompiledRedactionPolicy;
 }
-
-function matchesKey(policy: CompiledRedactionPolicy, key: string): boolean {
-  for (const rule of policy.keys) {
-    if (typeof rule === 'string' ? rule === key : reTest(rule, key))
-      return true;
-  }
-  return false;
-}
-
-/** `RegExp.test` without letting a `g`/`y` flag's `lastIndex` make results depend on call order. */
-function reTest(pattern: RegExp, text: string): boolean {
-  pattern.lastIndex = 0;
-  return pattern.test(text);
-}
-
-function redactStringValues(
-  policy: CompiledRedactionPolicy,
-  text: string,
-): string | undefined {
-  let output = text;
-  for (const pattern of policy.values) {
-    const global = new RegExp(
-      pattern.source,
-      pattern.flags.includes('g') ? pattern.flags : `${pattern.flags}g`,
-    );
-    output = output.replace(global, policy.replacement);
-  }
-  return output === text ? undefined : output;
-}
-
-/** A never-throwing report of a redaction failure, so a broken policy is observable rather than silent. */
-export type RedactionFailure = (path: string, error: string) => void;
-
-/**
- * Rewrite a report tree through a policy. Positions the schema pins survive; a
- * throwing `transform` drops the value it was asked about and reports the
- * failure, which is always safe because dropping can only narrow disclosure.
- */
-export function applyRedaction(
-  value: CorjJsonValue,
-  policy: CompiledRedactionPolicy,
-  onFailure: RedactionFailure,
-  protectedAt: RegExp = DIAGNOSTIC_PROTECTED,
-): CorjJsonValue {
-  const walk = (
-    node: CorjJsonValue,
-    path: string,
-    key: string | undefined,
-    depth: number,
-  ): CorjJsonValue => {
-    const structural = protectedAt.test(path);
-    if (!structural) {
-      if (
-        depth > MAX_REDACTION_DEPTH ||
-        policy.paths.has(path) ||
-        (key !== undefined && matchesKey(policy, key))
-      )
-        return typeof node === 'object' && node !== null
-          ? policy.replacement
-          : blankOf(node, policy.replacement);
-    }
-    if (Array.isArray(node))
-      return node.map((item, index) =>
-        walk(item as CorjJsonValue, `${path}[${index}]`, undefined, depth + 1),
-      );
-    if (typeof node === 'object' && node !== null) {
-      const output: Record<string, CorjJsonValue> = {};
-      for (const [childKey, childValue] of Object.entries(node)) {
-        output[childKey] = walk(
-          childValue as CorjJsonValue,
-          `${path}.${childKey}`,
-          childKey,
-          depth + 1,
-        );
-      }
-      return output;
-    }
-    if (structural) return node;
-    if (typeof node === 'string') {
-      const replaced = redactStringValues(policy, node);
-      if (replaced !== undefined) return replaced;
-    }
-    if (policy.transform === undefined) return node;
-    try {
-      const produced = policy.transform(node, { path, key });
-      if (produced === node) return node;
-      return narrowTo(node, produced, policy.replacement);
-    } catch (failure: unknown) {
-      onFailure(path, describeValue(failure));
-      return blankOf(node, policy.replacement);
-    }
-  };
-  return walk(value, '$', undefined, 0);
-}
-
-/**
- * What a transform is allowed to put in place of one value. It may return a
- * JSON scalar of the same type, which is the narrowing case, and nothing else:
- * a report pins types positionally (stack lines are strings, `level` is a
- * number), so a substitution of a different type would make the report fail its
- * own schema. Anything else collapses to a blank of the original's type, which
- * carries no information.
- */
-function narrowTo(
-  original: CorjJsonValue,
-  produced: unknown,
-  replacement: string,
-): CorjJsonValue {
-  if (original === null) return null;
-  if (typeof produced === typeof original) {
-    if (typeof produced !== 'number') return produced as CorjJsonValue;
-    if (Number.isFinite(produced)) return produced;
-  }
-  return blankOf(original, replacement);
-}
-
-/** The information-free value of the same JSON type, used when a transform cannot be honoured. */
-function blankOf(original: CorjJsonValue, replacement: string): CorjJsonValue {
-  if (typeof original === 'number') return 0;
-  if (typeof original === 'boolean') return false;
-  if (original === null) return null;
-  return replacement;
-}
-
-export { DIAGNOSTIC_PROTECTED, PUBLIC_PROTECTED };

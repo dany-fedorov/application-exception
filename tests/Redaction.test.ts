@@ -1,6 +1,10 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { createRedactionPolicy, defineException } from '../src/index';
-import { toDiagnosticReport, toPublicReport, toReports } from '../src/reporting';
+import {
+  toDiagnosticReport,
+  toPublicReport,
+  toReports,
+} from '../src/reporting';
 import { REDACTION_POLICY } from '../src/redaction';
 import type { RedactionPolicy } from '../src/redaction';
 
@@ -14,9 +18,13 @@ const compiledPublic = ajv.compile(publicSchema);
 
 /** `null` when the report validates, otherwise the ajv errors, so a failure names what broke. */
 const validateDiagnostic = (report: unknown): unknown =>
-  compiledDiagnostic(JSON.parse(JSON.stringify(report))) ? null : ajv.errorsText(compiledDiagnostic.errors);
+  compiledDiagnostic(JSON.parse(JSON.stringify(report)))
+    ? null
+    : ajv.errorsText(compiledDiagnostic.errors);
 const validatePublic = (report: unknown): unknown =>
-  compiledPublic(JSON.parse(JSON.stringify(report))) ? null : ajv.errorsText(compiledPublic.errors);
+  compiledPublic(JSON.parse(JSON.stringify(report)))
+    ? null
+    : ajv.errorsText(compiledPublic.errors);
 
 const Rejected = defineException({
   tag: 'auth/Rejected',
@@ -32,7 +40,7 @@ const Rejected = defineException({
 const secretPolicy = () =>
   createRedactionPolicy({
     keys: ['password', /token$/i],
-    values: [/\bsk-[A-Za-z0-9]{8,}\b/],
+    patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
   });
 
 describe('createRedactionPolicy', () => {
@@ -48,6 +56,24 @@ describe('createRedactionPolicy', () => {
       expect(report.as_json).toMatchObject({
         details: { user: 'ada', password: '[redacted]' },
       });
+    });
+
+    test('never reads a property the policy excluded', () => {
+      let reads = 0;
+      const caught = {
+        get password(): string {
+          reads++;
+          return 'hunter2';
+        },
+        user: 'ada',
+      };
+
+      const report = toDiagnosticReport(caught, {
+        redact: createRedactionPolicy({ keys: ['password'] }),
+      });
+
+      expect(reads).toBe(0);
+      expect(report.as_json).toEqual({ password: '[redacted]', user: 'ada' });
     });
 
     test('redacts a secret value inside the message and the stack', () => {
@@ -92,33 +118,50 @@ describe('createRedactionPolicy', () => {
       });
     });
 
-    test('redacts reporting_errors', () => {
+    test('redacts reporting_errors although the onError handler is this package’s own', () => {
+      // corj scrubs the line only inside its default `onError`; a custom handler
+      // receives the caught object unchanged, so this package scrubs the text.
       const hostile = {
-        get password(): never {
+        get detail(): never {
           throw new Error('sk-abcdefghij leaked');
         },
       };
 
       const report = toDiagnosticReport(hostile, { redact: secretPolicy() });
 
-      expect(report.reporting_errors).toBeDefined();
-      expect(JSON.stringify(report.reporting_errors)).not.toContain(
-        'sk-abcdefghij',
-      );
+      expect(report.reporting_errors).toEqual([
+        expect.objectContaining({ error: 'Error: [redacted] leaked' }),
+      ]);
+      expect(JSON.stringify(report)).not.toContain('sk-abcdefghij');
+      expect(
+        toDiagnosticReport(hostile).reporting_errors?.[0]?.error,
+      ).toContain('sk-abcdefghij');
     });
 
-    test('redacts an exact path', () => {
-      const report = toDiagnosticReport(
-        new Rejected({ details: { user: 'ada', password: 'hunter2' } }),
-        {
-          redact: createRedactionPolicy({
-            paths: ['$.as_json.details.user'],
-          }),
+    test('never rewrites the stage of a reporting error', () => {
+      const hostile = {
+        get detail(): never {
+          throw new Error('unreadable');
         },
+      };
+
+      const report = toDiagnosticReport(hostile, {
+        redact: createRedactionPolicy({ patterns: [/[\s\S]+/g] }),
+      });
+
+      expect(report.reporting_errors?.[0]?.stage).toBe('as_json');
+      expect(report.reporting_errors?.[0]?.error).toBe('[redacted]');
+    });
+
+    test('redacts an exact path into the caught value', () => {
+      const report = toDiagnosticReport(
+        { user: 'ada', password: 'hunter2' },
+        { redact: createRedactionPolicy({ paths: ['$.user'] }) },
       );
 
-      expect(report.as_json).toMatchObject({
-        details: { user: '[redacted]', password: 'hunter2' },
+      expect(report.as_json).toEqual({
+        user: '[redacted]',
+        password: 'hunter2',
       });
     });
 
@@ -126,7 +169,7 @@ describe('createRedactionPolicy', () => {
       const report = toDiagnosticReport(new Error('boom'), {
         redact: createRedactionPolicy({
           keys: [/.*/],
-          values: [/.*/],
+          patterns: [/[\s\S]*/g],
           replacement: 'X',
         }),
       });
@@ -138,10 +181,107 @@ describe('createRedactionPolicy', () => {
     test('uses a custom replacement', () => {
       const report = toDiagnosticReport(
         new Rejected({ details: { user: 'ada', password: 'hunter2' } }),
-        { redact: createRedactionPolicy({ keys: ['password'], replacement: '***' }) },
+        {
+          redact: createRedactionPolicy({
+            keys: ['password'],
+            replacement: '***',
+          }),
+        },
       );
 
       expect(report.as_json).toMatchObject({ details: { password: '***' } });
+    });
+
+    test('a redacted children source is reported as such and still validates', () => {
+      const report = toDiagnosticReport(
+        new AggregateError([new Error('a'), new Error('b')], 'agg'),
+        { redact: createRedactionPolicy({ keys: ['errors'] }) },
+      );
+
+      expect(report.children_omitted).toBe('redacted');
+      expect(report.children).toBeUndefined();
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+  });
+
+  describe('D5: `paths` address the caught value only', () => {
+    const caught = () => ({ user: 'ada', password: 'hunter2' });
+
+    test('a path leaves an identically named context field alone', () => {
+      const report = toDiagnosticReport(caught(), {
+        context: { password: 'ctx-secret' },
+        redact: createRedactionPolicy({ paths: ['$.password'] }),
+      });
+
+      expect(report.as_json).toEqual({ user: 'ada', password: '[redacted]' });
+      expect(report.context).toEqual({ password: 'ctx-secret' });
+    });
+
+    test('a key rule redacts both', () => {
+      const report = toDiagnosticReport(caught(), {
+        context: { password: 'ctx-secret' },
+        redact: createRedactionPolicy({ keys: ['password'] }),
+      });
+
+      expect(report.as_json).toEqual({ user: 'ada', password: '[redacted]' });
+      expect(report.context).toEqual({ password: '[redacted]' });
+    });
+
+    test('a path never reaches selected public details', () => {
+      const failure = new Rejected({
+        details: { user: 'ada', password: 'hunter2' },
+      });
+
+      const report = toPublicReport(failure, {
+        redact: createRedactionPolicy({ paths: ['$.password'] }),
+      });
+
+      expect(report.as_json).toEqual({ user: 'ada', password: 'hunter2' });
+    });
+  });
+
+  describe('a replacement is literal', () => {
+    const literal = () =>
+      createRedactionPolicy({
+        keys: ['password'],
+        patterns: [/sk-[a-z]+/g],
+        replacement: '<$&>',
+      });
+
+    test('in the diagnostic report and in the context', () => {
+      const report = toDiagnosticReport(
+        { password: 'hunter2', note: 'key sk-abcdefghij here' },
+        { context: { note: 'key sk-abcdefghij here' }, redact: literal() },
+      );
+
+      expect(report.as_json).toEqual({
+        password: '<$&>',
+        note: 'key <$&> here',
+      });
+      expect(report.context).toEqual({ note: 'key <$&> here' });
+      expect(JSON.stringify(report)).not.toContain('sk-abcdefghij');
+    });
+
+    test('in the public as_json and message', () => {
+      const Leaky = defineException({
+        tag: 'auth/Leaky',
+        message: 'leaky',
+        public: {
+          code: 'LEAKY',
+          message: ({ note }: { note: string }) => `rejected ${note}`,
+          details: ({ note }) => ({ note }),
+        },
+      });
+
+      const report = toPublicReport(
+        new Leaky({ details: { note: 'sk-abcdefghij' } }),
+        { redact: literal() },
+      );
+
+      expect(report.message).toBe('rejected <$&>');
+      expect(report.as_json).toEqual({ note: '<$&>' });
+      expect(JSON.stringify(report)).not.toContain('sk-abcdefghij');
+      expect(validatePublic(report)).toBeNull();
     });
   });
 
@@ -157,16 +297,20 @@ describe('createRedactionPolicy', () => {
       expect(report.as_json).toEqual({ user: 'ada', password: '[redacted]' });
     });
 
-    test('does not authorize disclosure of a field the selector never chose', () => {
+    test('D8: does not authorize disclosure of a field the selector never chose', () => {
       const Quiet = defineException({
         tag: 'auth/Quiet',
         message: 'quiet',
         public: { code: 'QUIET' },
       });
 
-      const report = toPublicReport(new Quiet(), { redact: secretPolicy() });
-
-      expect(report.as_json).toBeUndefined();
+      for (const redact of [
+        secretPolicy(),
+        createRedactionPolicy({ transform: (value) => value }),
+        createRedactionPolicy({ keys: [/.*/] }),
+      ]) {
+        expect(toPublicReport(new Quiet(), { redact }).as_json).toBeUndefined();
+      }
     });
 
     test('leaves an unknown failure generic', () => {
@@ -185,36 +329,80 @@ describe('createRedactionPolicy', () => {
       });
 
       const report = toPublicReport(failure, {
-        redact: createRedactionPolicy({ keys: [/.*/], values: [/.*/] }),
+        redact: createRedactionPolicy({
+          keys: [/.*/],
+          patterns: [/[\s\S]*/g],
+        }),
       });
 
       expect(report.code).toBe('AUTH_REJECTED');
       expect(report.occurrence_id).toBe(failure.occurrenceId);
       expect(report.v).toBe('appex/public/v3');
     });
+
+    test('scrubs the message before the length bound is applied', () => {
+      // The scrub runs first, so a replacement longer than the text it replaced
+      // is bounded by the cut rather than escaping it.
+      const report = toPublicReport(new Error('boom'), {
+        message: `sk-abcdefghij${'A'.repeat(4_090)}`,
+        redact: createRedactionPolicy({
+          patterns: [/sk-[a-z]+/g],
+          replacement: 'x'.repeat(128),
+        }),
+      });
+
+      expect(report.message).toHaveLength(4_096);
+      expect(report.message.startsWith('x'.repeat(128))).toBe(true);
+      expect(report.truncated).toBe(true);
+      expect(report.message).not.toContain('sk-abcdefghij');
+      expect(validatePublic(report)).toBeNull();
+    });
   });
 
   describe('a throwing transform', () => {
-    const throwing = createRedactionPolicy({
-      transform: () => {
-        throw new Error('policy exploded');
-      },
+    test('fails closed and records the failure once for the value it was asked about', () => {
+      const selective = createRedactionPolicy({
+        transform: (value) => {
+          if (value === 'hunter2') throw new Error('policy exploded');
+          return value;
+        },
+      });
+
+      const report = toDiagnosticReport(
+        { user: 'ada', password: 'hunter2' },
+        { redact: selective },
+      );
+
+      expect(report.as_json).toEqual({ user: 'ada', password: '[redacted]' });
+      expect(JSON.stringify(report)).not.toContain('hunter2');
+      expect(report.reporting_errors).toEqual([
+        {
+          stage: 'redact',
+          path: '$.password',
+          key: 'as_json',
+          prop: 'password',
+          error: 'Error: policy exploded',
+        },
+      ]);
+      expect(validateDiagnostic(report)).toBeNull();
     });
 
-    test('drops the value and records the failure in the diagnostic report', () => {
+    test('a transform that always throws blanks the report without recursing', () => {
+      const throwing = createRedactionPolicy({
+        transform: () => {
+          throw new Error('policy exploded');
+        },
+      });
+
       const report = toDiagnosticReport(new Error('boom'), {
         redact: throwing,
       });
 
       expect(JSON.stringify(report)).not.toContain('boom');
-      expect(report.reporting_errors).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            stage: 'other',
-            error: expect.stringContaining('policy exploded'),
-          }),
-        ]),
-      );
+      expect(report.reporting_errors?.length).toBeGreaterThan(0);
+      for (const entry of report.reporting_errors ?? [])
+        expect(entry.stage).toBe('redact');
+      expect(validateDiagnostic(report)).toBeNull();
     });
 
     test('keeps the public report safe and observable', () => {
@@ -222,22 +410,34 @@ describe('createRedactionPolicy', () => {
         details: { user: 'ada', password: 'hunter2' },
       });
 
-      const report = toPublicReport(failure, { redact: throwing });
-
-      expect(JSON.stringify(report)).not.toContain('hunter2');
-      expect(report.code).toBe('AUTH_REJECTED');
-    });
-  });
-
-  describe('a transform that tries to widen', () => {
-    test('cannot return a structure in place of a scalar', () => {
-      const report = toDiagnosticReport(new Error('boom'), {
+      const report = toPublicReport(failure, {
         redact: createRedactionPolicy({
-          transform: () => ({ leaked: 'everything' }),
+          transform: () => {
+            throw new Error('policy exploded');
+          },
         }),
       });
 
-      expect(JSON.stringify(report)).not.toContain('leaked');
+      expect(JSON.stringify(report)).not.toContain('hunter2');
+      expect(report.code).toBe('AUTH_REJECTED');
+      expect(report.message).toBe('[redacted]');
+    });
+  });
+
+  describe('what a transform may return', () => {
+    test('a structure in place of a scalar is emitted, and the report stays valid', () => {
+      const report = toDiagnosticReport(
+        { note: 'plain' },
+        {
+          redact: createRedactionPolicy({
+            transform: (value) =>
+              value === 'plain' ? { narrowed: true } : value,
+          }),
+        },
+      );
+
+      expect(report.as_json).toEqual({ note: { narrowed: true } });
+      expect(validateDiagnostic(report)).toBeNull();
     });
 
     test('keeps a value the transform returned unchanged', () => {
@@ -248,24 +448,19 @@ describe('createRedactionPolicy', () => {
       expect(report.stack?.[0]).toBe('Error: boom');
     });
 
-    test('substitutes only within the JSON type it was given', () => {
-      // A report pins types positionally, so a transform may narrow a number to
-      // another number but never turn one into a string.
+    test('dropping a field leaves it out of the report', () => {
       const report = toDiagnosticReport(
-        { count: 1, flag: true, nothing: null, bad: 2 },
+        { user: 'ada', password: 'hunter2' },
         {
           redact: createRedactionPolicy({
-            transform: (value) => (value === 2 ? Number.POSITIVE_INFINITY : 9),
+            transform: (value, { prop }) =>
+              prop === 'password' ? undefined : value,
           }),
         },
       );
 
-      expect(report.as_json).toMatchObject({
-        count: 9,
-        flag: false,
-        nothing: null,
-        bad: 0,
-      });
+      expect(report.as_json).toEqual({ user: 'ada' });
+      expect(JSON.stringify(report)).not.toContain('hunter2');
       expect(validateDiagnostic(report)).toBeNull();
     });
 
@@ -320,7 +515,11 @@ describe('createRedactionPolicy', () => {
 
   describe('a policy can never break a report schema', () => {
     const everything = () =>
-      createRedactionPolicy({ keys: [/.*/], values: [/.*/], paths: ['$'] });
+      createRedactionPolicy({
+        keys: [/.*/],
+        patterns: [/[\s\S]*/g],
+        paths: ['$'],
+      });
 
     test.each([
       ['a plain error', () => new Error('boom'), {}],
@@ -338,7 +537,11 @@ describe('createRedactionPolicy', () => {
         }),
         {},
       ],
-      ['a nested cause chain', () => new Error('a', { cause: new Error('b') }), {}],
+      [
+        'a nested cause chain',
+        () => new Error('a', { cause: new Error('b') }),
+        {},
+      ],
     ])('survives %s', (_name, make, options) => {
       const report = toDiagnosticReport(make(), {
         ...options,
@@ -367,7 +570,9 @@ describe('createRedactionPolicy', () => {
       expect(
         validateDiagnostic(toDiagnosticReport(caught, { redact: policy })),
       ).toBeNull();
-      expect(validatePublic(toPublicReport(caught, { redact: policy }))).toBeNull();
+      expect(
+        validatePublic(toPublicReport(caught, { redact: policy })),
+      ).toBeNull();
     });
 
     test('survives redaction composed with a tight budget', () => {
@@ -410,7 +615,7 @@ describe('createRedactionPolicy', () => {
     });
   });
 
-  describe('protection is positional, not by name', () => {
+  describe('application data is redacted whatever it is named', () => {
     const named = () => {
       const caught = new Error('boom');
       return Object.assign(caught, {
@@ -426,7 +631,7 @@ describe('createRedactionPolicy', () => {
     test('redacts report-shaped names carrying application data', () => {
       const report = toDiagnosticReport(named(), {
         context: { id: 'sk-cid', code: 'sk-ccode', path: 'sk-cpath' },
-        redact: createRedactionPolicy({ values: [/sk-[a-z]+/] }),
+        redact: createRedactionPolicy({ patterns: [/sk-[a-z]+/g] }),
       });
 
       expect(JSON.stringify(report)).not.toMatch(/sk-[a-z]+/);
@@ -435,14 +640,20 @@ describe('createRedactionPolicy', () => {
 
     test('redacts them by key rule too', () => {
       const report = toDiagnosticReport(named(), {
-        redact: createRedactionPolicy({ keys: ['id', 'code', 'path'] }),
+        redact: createRedactionPolicy({
+          keys: ['id', 'code', 'path', 'stage', 'level', 'truncated'],
+        }),
       });
 
       expect(report.as_json).toMatchObject({
         id: '[redacted]',
         code: '[redacted]',
         path: '[redacted]',
+        stage: '[redacted]',
+        level: '[redacted]',
+        truncated: '[redacted]',
       });
+      expect(validateDiagnostic(report)).toBeNull();
     });
 
     test('redacts a public field the selector called code', () => {
@@ -456,7 +667,7 @@ describe('createRedactionPolicy', () => {
       });
 
       const report = toPublicReport(new Named(), {
-        redact: createRedactionPolicy({ values: [/sk-[a-z]+/] }),
+        redact: createRedactionPolicy({ patterns: [/sk-[a-z]+/g] }),
       });
 
       expect(report.code).toBe('AUTH_NAMED');
@@ -467,53 +678,62 @@ describe('createRedactionPolicy', () => {
       expect(validatePublic(report)).toBeNull();
     });
 
-    test('leaves the report\'s own link graph intact', () => {
+    test('leaves the positions corj generates itself intact', () => {
+      // `path` and `level` are corj's own structure and are never emitted
+      // through the policy; `id` is, because `makeReportId` may have built it
+      // from the caught object. The report stays valid either way.
       const report = toDiagnosticReport(
         new Error('a', { cause: new Error('b') }),
-        { redact: createRedactionPolicy({ values: [/.*/] }) },
+        { redact: createRedactionPolicy({ patterns: [/[\s\S]*/g] }) },
       );
 
-      expect(report.children?.[0]?.id).toBe('0');
       expect(report.children?.[0]?.path).toBe('$.cause');
+      expect(report.children?.[0]?.level).toBe(1);
+      expect(report.children?.[0]?.id).toBe('[redacted][redacted]');
       expect(validateDiagnostic(report)).toBeNull();
     });
-  });
-
-  test('replaces a subtree nested past the walk depth instead of overflowing', () => {
-    let deep: unknown = 'leaf';
-    for (let level = 0; level < 3_000; level++) deep = [deep];
-
-    const report = toDiagnosticReport({ deep }, { redact: secretPolicy() });
-
-    expect(validateDiagnostic(report)).toBeNull();
-    expect(JSON.stringify(report)).toContain('[redacted]');
   });
 
   describe('validation', () => {
     const rejects = (options: unknown) =>
       expect(() =>
-        createRedactionPolicy(options as Parameters<typeof createRedactionPolicy>[0]),
+        createRedactionPolicy(
+          options as Parameters<typeof createRedactionPolicy>[0],
+        ),
       );
 
     test('rejects malformed options', () => {
       rejects('policy').toThrow(code('APPEX_INVALID_REDACTION_POLICY'));
       rejects(null).toThrow(code('APPEX_INVALID_REDACTION_POLICY'));
-      rejects([]).toThrow(code('APPEX_INVALID_REDACTION_POLICY'));
-      rejects({ keys: 'password' }).toThrow(/keys must be an array/);
-      rejects({ keys: [7] }).toThrow(
-        /keys must contain only strings and regular expressions/,
+      rejects([]).toThrow(/redaction policy options must be an object/);
+      rejects({ keys: 'password' }).toThrow(
+        /redact\.keys must be an array of strings or RegExps/,
       );
-      rejects({ paths: [7] }).toThrow(/paths must contain only strings/);
-      rejects({ values: ['x'] }).toThrow(
-        /values must contain only regular expressions/,
+      rejects({ keys: [7] }).toThrow(/redact\.keys must be an array/);
+      rejects({ paths: [7] }).toThrow(
+        /redact\.paths must be an array of strings or RegExps/,
       );
-      rejects({ replacement: 7 }).toThrow(/replacement must be a string/);
+      rejects({ patterns: ['x'] }).toThrow(
+        /redact\.patterns must be an array of RegExps/,
+      );
+      rejects({ replacement: 7 }).toThrow(
+        /replacement must be a string of at most 128 characters/,
+      );
       rejects({ replacement: 'x'.repeat(129) }).toThrow(
-        /replacement must be a string/,
+        /replacement must be a string of at most 128 characters/,
       );
-      rejects({ transform: 'x' }).toThrow(/transform must be a function/);
-      rejects({ values: [/sk-[a-z]/y] }).toThrow(
-        /values must not use the sticky flag/,
+      rejects({ transform: 'x' }).toThrow(
+        /redact\.transform must be a function/,
+      );
+      rejects({ unknown: true }).toThrow(/Unknown redact option "unknown"/);
+    });
+
+    test('rejects a pattern that is not global, and says why', () => {
+      rejects({ patterns: [/sk-[a-z]+/] }).toThrow(
+        code('APPEX_INVALID_REDACTION_POLICY'),
+      );
+      rejects({ patterns: [/sk-[a-z]+/] }).toThrow(
+        /redact\.patterns must all be global; \/sk-\[a-z\]\+\/ would replace only its first match/,
       );
     });
 
@@ -552,12 +772,12 @@ describe('createRedactionPolicy', () => {
       ).toThrow(code('APPEX_INVALID_REDACTION_POLICY'));
     });
 
-    test('is unaffected by a global regex flag reused across calls', () => {
-      // Several matching keys in one walk: a stale lastIndex would let the
-      // second and third escape.
+    test('is unaffected by a matcher reused across calls', () => {
+      // Several matching keys in one inspection: a stale `lastIndex` would let
+      // the second and third escape.
       const policy = createRedactionPolicy({
         keys: [/password/g],
-        values: [/secret/g],
+        patterns: [/secret/g],
       });
       const make = () =>
         toDiagnosticReport(

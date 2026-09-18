@@ -464,9 +464,13 @@ describe('maxFinalReportSize drop order', () => {
         throw new Error('unreadable');
       },
     };
-    const full = toDiagnosticReport(caught, { context: { text: 'x'.repeat(400) } });
+    const full = toDiagnosticReport(caught, {
+      context: { text: 'x'.repeat(400) },
+    });
     const corjOnly = toDiagnosticReport(caught);
-    const corjBytes = new TextEncoder().encode(JSON.stringify(corjOnly)).byteLength;
+    const corjBytes = new TextEncoder().encode(
+      JSON.stringify(corjOnly),
+    ).byteLength;
     const fullBytes = new TextEncoder().encode(JSON.stringify(full)).byteLength;
 
     expect(fullBytes).toBeGreaterThan(corjBytes);
@@ -529,7 +533,7 @@ describe('APPEX_REPORT_BUDGET_TOO_SMALL', () => {
       toDiagnosticReport(new Error('boom'), {
         maxFinalReportSize: 300,
         redact: createRedactionPolicy({
-          values: [/./],
+          patterns: [/./g],
           replacement: 'x'.repeat(128),
         }),
       }),
