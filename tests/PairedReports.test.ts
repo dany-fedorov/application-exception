@@ -90,10 +90,10 @@ describe('toReports', () => {
         context: { runId: 'run-1' },
         corj: { maxReportSize: 4_096 },
       },
-      public: { message: 'Search is down.' },
+      public: { public: { message: 'Search is down.' } },
     });
     expect(captured.public).toEqual(
-      toPublicReport(error, { message: 'Search is down.' }),
+      toPublicReport(error, { public: { message: 'Search is down.' } }),
     );
     expect(captured.diagnostic).toEqual(
       toDiagnosticReport(error, {
@@ -123,9 +123,11 @@ describe('toReports', () => {
         },
       },
       public: {
-        code: 'SOCKET_CLOSED',
-        message: 'Try again.',
-        details: { a: 1 },
+        public: {
+          code: 'SOCKET_CLOSED',
+          message: 'Try again.',
+          details: () => ({ a: 1 }),
+        },
       },
     });
     expect(captured.diagnostic.context).toEqual({ runId: 'run-1' });
@@ -177,9 +179,9 @@ describe('toReports', () => {
     expect(() =>
       toReports('x', { public: { occurrenceId: 'a' } } as never),
     ).toThrow(
-      /unknown option "occurrenceId"; known options: code, message, details/,
+      /unknown option "occurrenceId"; known options: public, redact, realm, corj/,
     );
-    expect(() => toReports('x', { public: { messag: 'a' } } as never)).toThrow(
+    expect(() => toReports('x', { publi: { message: 'a' } } as never)).toThrow(
       code('APPEX_INVALID_OPTIONS'),
     );
   });
@@ -187,11 +189,11 @@ describe('toReports', () => {
   test('throws instead of returning half a pair', () => {
     const error = new Error('plain');
     expect(() =>
-      toReports(error, { public: { message: 42 } as never }),
+      toReports(error, { public: { public: { message: 42 } } as never }),
     ).toThrow(code('APPEX_INVALID_PUBLIC_MESSAGE'));
-    expect(() => toReports(error, { public: { code: '' } })).toThrow(
-      code('APPEX_INVALID_PUBLIC_CODE'),
-    );
+    expect(() =>
+      toReports(error, { public: { public: { code: '' } } }),
+    ).toThrow(code('APPEX_INVALID_PUBLIC_CODE'));
     expect(() =>
       toReports(error, { diagnostic: { corj: { maxDepth: -1 } } }),
     ).toThrow(RangeError);

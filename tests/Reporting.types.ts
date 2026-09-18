@@ -39,9 +39,7 @@ void stack;
 void restored;
 
 const publicReport: PublicReport = toPublicReport(error, {
-  code: 'X',
-  message: 'x',
-  details: { a: 1 },
+  public: { code: 'X', message: 'x', details: () => ({ a: 1 }) },
   occurrenceId: diagnostic.occurrence_id,
 });
 const occurrenceId: string = publicReport.occurrence_id;
@@ -55,6 +53,10 @@ publicReport.children;
 toDiagnosticReport(error, { redactKeys: [] });
 // @ts-expect-error public options do not include a stack switch.
 toPublicReport(error, { includeStack: true });
+// @ts-expect-error the per-call override lives in the public bag, never flat.
+toPublicReport(error, { code: 'X' });
+// @ts-expect-error public.details is a selector function or null, never a value.
+toPublicReport(error, { public: { details: { a: 1 } } });
 
 function consume(result: DecodePublicReportResult): PublicReport | null {
   if (result.ok) return result.report;
@@ -72,7 +74,7 @@ const captured: CapturedReports = toReports(error, {
     context: { requestId: 'req' },
     corj: { maxReportSize: 4096 },
   },
-  public: { code: 'X', message: 'x' },
+  public: { public: { code: 'X', message: () => 'x', details: null } },
 });
 const capturedId: string = captured.occurrence_id;
 const capturedDiagnostic: DiagnosticReport = captured.diagnostic;

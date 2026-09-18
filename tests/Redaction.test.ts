@@ -376,7 +376,7 @@ describe('createRedactionPolicy', () => {
       // The redaction context of the public message is part of the contract: a
       // policy keyed on it must fire here exactly as it does inside corj.
       const report = toPublicReport(new Error('boom'), {
-        message: 'hello',
+        public: { message: 'hello' },
         redact: createRedactionPolicy({
           transform: (value, { stage, path, key, prop }) =>
             stage === 'warning' &&
@@ -395,7 +395,7 @@ describe('createRedactionPolicy', () => {
       // The scrub runs first, so a replacement longer than the text it replaced
       // is bounded by the cut rather than escaping it.
       const report = toPublicReport(new Error('boom'), {
-        message: `sk-abcdefghij${'A'.repeat(4_090)}`,
+        public: { message: `sk-abcdefghij${'A'.repeat(4_090)}` },
         redact: createRedactionPolicy({
           patterns: [/sk-[a-z]+/g],
           replacement: 'x'.repeat(128),
@@ -908,7 +908,7 @@ describe('createRedactionPolicy', () => {
 
     test('a secret straddling character 4,096 of the public message leaves nothing', () => {
       const report = toPublicReport(new Error('boom'), {
-        message: `${'A'.repeat(4_089)} sk-abcdefghijklmnop`,
+        public: { message: `${'A'.repeat(4_089)} sk-abcdefghijklmnop` },
         redact: createRedactionPolicy({
           patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
         }),

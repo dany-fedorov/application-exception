@@ -35,6 +35,7 @@ export type {
   DecodePublicReportResult,
   DiagnosticReport,
   DiagnosticReportOptions,
+  PublicOverride,
   PublicReport,
   PublicReportOptions,
   ReportingError,

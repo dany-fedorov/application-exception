@@ -20,7 +20,9 @@ describe('shipped schemas', () => {
 
   test('accept generated public reports and reject additions', () => {
     const error = new ToolUnavailable({ details: { tool: 'search' } });
-    const report = toPublicReport(error, { message: 'm'.repeat(5000) });
+    const report = toPublicReport(error, {
+      public: { message: 'm'.repeat(5000) },
+    });
     expect(validatePublic(JSON.parse(JSON.stringify(report)))).toBe(true);
     expect(validatePublic(toPublicReport('x'))).toBe(true);
     expect(validatePublic({ ...report, stack: [] })).toBe(false);

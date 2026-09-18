@@ -9,9 +9,11 @@ describe('agent recovery example', () => {
   };
   const report = toPublicReport(new Error('x'), {
     occurrenceId: 'AE_retry',
-    code: 'TOOL_UNAVAILABLE',
-    message: 'The requested tool is temporarily unavailable.',
-    details: { tool: 'search' },
+    public: {
+      code: 'TOOL_UNAVAILABLE',
+      message: 'The requested tool is temporarily unavailable.',
+      details: () => ({ tool: 'search' }),
+    },
   });
   const received = () => JSON.parse(JSON.stringify(report)) as unknown;
 

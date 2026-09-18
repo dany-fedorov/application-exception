@@ -73,9 +73,11 @@ describe('toPublicReport', () => {
     });
     expect(
       toPublicReport(error, {
-        code: 'SEARCH_DOWN',
-        message: 'Search is down.',
-        details: { retryAfterSeconds: 30 },
+        public: {
+          code: 'SEARCH_DOWN',
+          message: 'Search is down.',
+          details: () => ({ retryAfterSeconds: 30 }),
+        },
         occurrenceId: 'trace-9',
       }),
     ).toEqual({
@@ -85,10 +87,12 @@ describe('toPublicReport', () => {
       message: 'Search is down.',
       as_json: { retryAfterSeconds: 30 },
     });
-    expect(toPublicReport(error, { details: null }).as_json).toBeNull();
+    expect(
+      toPublicReport(error, { public: { details: () => null } }).as_json,
+    ).toBeNull();
     expect(
       toPublicReport(new NoPolicy({ details: { tool: 'x' } }), {
-        code: 'TOOL_FAILED',
+        public: { code: 'TOOL_FAILED' },
       }),
     ).toMatchObject({ code: 'TOOL_FAILED', message: 'Something went wrong' });
   });
@@ -131,22 +135,28 @@ describe('toPublicReport', () => {
     const error = new ToolUnavailable({
       details: { tool: 'search', secret: 's' },
     });
-    const long = toPublicReport(error, { message: 'm'.repeat(5000) });
+    const long = toPublicReport(error, {
+      public: { message: 'm'.repeat(5000) },
+    });
     expect(long.message).toHaveLength(4096);
     expect(long.truncated).toBe(true);
     const large = toPublicReport(error, {
-      details: { blob: 'x'.repeat(40_000), note: 'keep' },
+      public: { details: () => ({ blob: 'x'.repeat(40_000), note: 'keep' }) },
     });
     expect(large.truncated).toBe(true);
     expect(Buffer.byteLength(JSON.stringify(large))).toBeLessThan(17_000);
     expect(JSON.stringify(large.as_json)).toContain('[truncated]');
     const cyclic: Record<string, unknown> = { a: 1 };
     cyclic['self'] = cyclic;
-    expect(toPublicReport(error, { details: cyclic }).as_json).toEqual({
+    expect(
+      toPublicReport(error, { public: { details: () => cyclic } }).as_json,
+    ).toEqual({
       a: 1,
       self: '[circular]',
     });
-    expect(toPublicReport(error, { details: {} }).as_json).toEqual({});
+    expect(
+      toPublicReport(error, { public: { details: () => ({}) } }).as_json,
+    ).toEqual({});
   });
 
   test('discloses nothing and stays silent when details cannot be serialized', () => {
@@ -157,10 +167,12 @@ describe('toPublicReport', () => {
       details: { tool: 'search', secret: 's' },
     });
     const report = toPublicReport(error, {
-      details: {
-        get secret() {
-          throw new Error('getter boom');
-        },
+      public: {
+        details: () => ({
+          get secret() {
+            throw new Error('getter boom');
+          },
+        }),
       },
     });
     expect(warn).not.toHaveBeenCalled();
@@ -172,21 +184,24 @@ describe('toPublicReport', () => {
   test('rejects invalid overrides with coded errors', () => {
     const error = new Error('x');
     for (const value of ['', 'x'.repeat(129), 42]) {
-      expect(() => toPublicReport(error, { code: value } as never)).toThrow(
-        code('APPEX_INVALID_PUBLIC_CODE'),
-      );
+      expect(() =>
+        toPublicReport(error, { public: { code: value } } as never),
+      ).toThrow(code('APPEX_INVALID_PUBLIC_CODE'));
     }
-    expect(() => toPublicReport(error, { message: 42 } as never)).toThrow(
-      code('APPEX_INVALID_PUBLIC_MESSAGE'),
-    );
+    expect(() =>
+      toPublicReport(error, { public: { message: 42 } } as never),
+    ).toThrow(code('APPEX_INVALID_PUBLIC_MESSAGE'));
     expect(() => toPublicReport(error, { occurrenceId: '' })).toThrow(
       code('APPEX_INVALID_OCCURRENCE_ID'),
     );
     expect(() => toPublicReport(error, { stack: true } as never)).toThrow(
-      /APPEX_INVALID_OPTIONS: unknown option "stack"; known options: occurrenceId, code, message, details/,
+      /APPEX_INVALID_OPTIONS: unknown option "stack"; known options: occurrenceId, public, redact, realm, corj/,
     );
     expect(() => toPublicReport(error, null as never)).toThrow(
       code('APPEX_INVALID_OPTIONS'),
+    );
+    expect(() => toPublicReport(error, { public: 5 } as never)).toThrow(
+      /APPEX_INVALID_OPTIONS: public must be an object/,
     );
   });
 });
@@ -412,5 +427,127 @@ describe('toPublicReport reads details defensively', () => {
     expect(report.code).toBe('HOSTILE');
     expect(report.message).toBe('Hostile.');
     expect(report.as_json).toEqual({ ok: true });
+  });
+});
+
+describe('the public option', () => {
+  const Kind = defineException({
+    tag: 'tools/Unavailable',
+    message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+    public: {
+      code: 'TOOL_UNAVAILABLE',
+      message: 'The tool is unavailable.',
+      details: ({ tool }) => ({ tool }),
+    },
+  });
+  const caught = new Kind({ details: { tool: 'search' } });
+
+  test('each field overrides on its own; the rest comes from the kind', () => {
+    expect(
+      toPublicReport(caught, { public: { message: 'Try later.' } }),
+    ).toMatchObject({
+      code: 'TOOL_UNAVAILABLE',
+      message: 'Try later.',
+      as_json: { tool: 'search' },
+    });
+    expect(toPublicReport(caught, { public: { code: 'RETRY' } })).toMatchObject(
+      {
+        code: 'RETRY',
+        message: 'The tool is unavailable.',
+      },
+    );
+  });
+
+  test("message and details may be functions of the kind's details", () => {
+    const report = toPublicReport(caught, {
+      public: {
+        message: ({ tool }: { tool?: string }) => `No ${tool}.`,
+        details: ({ tool }: { tool?: string }) => ({ name: tool }),
+      },
+    });
+    expect(report).toMatchObject({
+      message: 'No search.',
+      as_json: { name: 'search' },
+    });
+  });
+
+  test("details: null suppresses the kind's selector", () => {
+    expect(
+      toPublicReport(caught, { public: { details: null } }),
+    ).not.toHaveProperty('as_json');
+  });
+
+  test('a value without a trusted policy can be given one at the call; its functions get {}', () => {
+    const seen: unknown[] = [];
+    const report = toPublicReport(new Error('internal secret'), {
+      public: {
+        code: 'UPSTREAM_DOWN',
+        message: (details) => {
+          seen.push(details);
+          return 'Upstream is down.';
+        },
+      },
+    });
+    expect(report).toMatchObject({
+      code: 'UPSTREAM_DOWN',
+      message: 'Upstream is down.',
+    });
+    expect(seen).toEqual([{}]);
+    expect(JSON.stringify(report)).not.toContain('internal secret');
+  });
+
+  test('an override function that throws or returns a non-string fails closed to the generic message', () => {
+    const thrown = toPublicReport(caught, {
+      public: {
+        message: () => {
+          throw new Error('bug');
+        },
+      },
+    });
+    expect(thrown.message).toBe('Something went wrong');
+    expect(
+      toPublicReport(caught, { public: { message: (() => 42) as never } })
+        .message,
+    ).toBe('Something went wrong');
+  });
+
+  test.each([
+    [{ public: 5 }, 'APPEX_INVALID_OPTIONS'],
+    [{ public: { nope: 1 } }, 'APPEX_INVALID_OPTIONS'],
+    [{ public: { code: '' } }, 'APPEX_INVALID_PUBLIC_CODE'],
+    [{ public: { message: 5 } }, 'APPEX_INVALID_PUBLIC_MESSAGE'],
+    [{ public: { details: { tool: 'x' } } }, 'APPEX_INVALID_OPTIONS'],
+    [{ code: 'OLD_STYLE' }, 'APPEX_INVALID_OPTIONS'],
+    [{ message: 'old style' }, 'APPEX_INVALID_OPTIONS'],
+    [{ details: {} }, 'APPEX_INVALID_OPTIONS'],
+  ])('%j throws %s', (options, code) => {
+    expect(() => toPublicReport(caught, options as never)).toThrow(code);
+  });
+
+  test('corj options reach the JSON of the selected details', () => {
+    const details = () => ({
+      get token() {
+        return 'sk-live';
+      },
+    });
+    expect(
+      JSON.stringify(toPublicReport(caught, { public: { details } })),
+    ).toContain('sk-live');
+    expect(
+      JSON.stringify(
+        toPublicReport(caught, {
+          public: { details },
+          corj: { inspection: 'no-invoke' },
+        }),
+      ),
+    ).not.toContain('sk-live');
+  });
+
+  test('public.details that is not a function says what to pass', () => {
+    expect(() =>
+      toPublicReport(caught, { public: { details: { tool: 'x' } } as never }),
+    ).toThrow(
+      /public\.details must be a function that selects the JSON to disclose, or null/,
+    );
   });
 });

@@ -1,6 +1,7 @@
 import { CORJ_VERSION } from 'caught-object-report-json';
 import type { AppexCorjOptions } from './corj-maker';
 import type { RedactionPolicy } from './redaction';
+import type { DetailsRecord } from './typed';
 import type { TrustRealm } from './typed-internals';
 import type {
   CorjJsonValue,
@@ -60,21 +61,38 @@ export interface PublicReport {
   readonly truncated?: true;
 }
 
-/** Per-call overrides of the kind's public policy; `details: null` suppresses the policy's selection. */
+/**
+ * A per-call override of a kind's public policy, merged field by field: a
+ * field the override leaves out keeps what the kind's policy says. `message`
+ * and `details` are read exactly as a policy's are, so a function is given the
+ * kind's details record, and `details: null` suppresses the kind's selector.
+ */
+export type PublicOverride = {
+  readonly code?: string;
+  readonly message?: string | ((details: DetailsRecord<object>) => string);
+  readonly details?: ((details: DetailsRecord<object>) => unknown) | null;
+};
+
+/**
+ * Options of `toPublicReport`. `occurrenceId` overrides the occurrence id.
+ * `public` overrides the kind's public policy for this call. `redact` is the
+ * policy both reports share, `realm` is the trust realm to read a foreign
+ * value's policy from, and `corj` carries the options of
+ * caught-object-report-json used to inspect the selected details.
+ */
 export interface PublicReportOptions {
   readonly occurrenceId?: string;
-  readonly code?: string;
-  readonly message?: string;
-  readonly details?: unknown;
+  readonly public?: PublicOverride;
   readonly redact?: RedactionPolicy;
   readonly realm?: TrustRealm;
+  readonly corj?: AppexCorjOptions;
 }
 
 /**
  * Options of `toReports`. `occurrenceId` overrides the occurrence id of both
  * reports. `diagnostic` and `public` are the per-report option bags, each
- * without its own `occurrenceId`, so that `message` and `context` stay
- * unambiguous.
+ * without its own `occurrenceId`, so that the shared id stays unambiguous;
+ * the public bag's own `public` key is the per-call policy override.
  */
 export interface ToReportsOptions {
   readonly occurrenceId?: string;

@@ -6,6 +6,7 @@ import type {
   DecodePublicReportResult,
   DiagnosticReport,
   DiagnosticReportOptions,
+  PublicOverride,
   PublicReport,
   PublicReportOptions,
   ToReportsOptions,
@@ -33,12 +34,16 @@ const DIAGNOSTIC_OPTION_KEYS = [
 ] satisfies readonly (keyof DiagnosticReportOptions)[];
 const PUBLIC_OPTION_KEYS = [
   'occurrenceId',
+  'public',
+  'redact',
+  'realm',
+  'corj',
+] satisfies readonly (keyof PublicReportOptions)[];
+const PUBLIC_OVERRIDE_KEYS = [
   'code',
   'message',
   'details',
-  'redact',
-  'realm',
-] satisfies readonly (keyof PublicReportOptions)[];
+] satisfies readonly (keyof PublicOverride)[];
 const NESTED_DIAGNOSTIC_OPTION_KEYS = DIAGNOSTIC_OPTION_KEYS.filter(
   (key) => key !== 'occurrenceId',
 );
@@ -64,9 +69,10 @@ const DECODE_MAX_VALUES = 10_000;
 function assertOptions(
   options: unknown,
   known: readonly string[],
+  name = 'options',
 ): asserts options is object {
   if (typeof options !== 'object' || options === null || Array.isArray(options))
-    throw invalid('APPEX_INVALID_OPTIONS', 'options must be an object');
+    throw invalid('APPEX_INVALID_OPTIONS', `${name} must be an object`);
   for (const key of Object.keys(options)) {
     if (!known.includes(key))
       throw invalid(
@@ -81,9 +87,53 @@ function publicCodeOf(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 128)
     throw invalid(
       'APPEX_INVALID_PUBLIC_CODE',
-      'code must be a nonempty string of at most 128 characters',
+      'public.code must be a nonempty string of at most 128 characters',
     );
   return value;
+}
+
+/** The call's `public` override, validated field by field before anything is built. */
+function publicOverrideOf(value: unknown): PublicOverride {
+  if (value === undefined) return {};
+  assertOptions(value, PUBLIC_OVERRIDE_KEYS, 'public');
+  const { code, message, details } = value as Record<string, unknown>;
+  if (code !== undefined) publicCodeOf(code);
+  if (
+    message !== undefined &&
+    typeof message !== 'string' &&
+    typeof message !== 'function'
+  )
+    throw invalid(
+      'APPEX_INVALID_PUBLIC_MESSAGE',
+      'public.message must be a string or a function of the details',
+    );
+  if (
+    details !== undefined &&
+    details !== null &&
+    typeof details !== 'function'
+  )
+    throw invalid(
+      'APPEX_INVALID_OPTIONS',
+      'public.details must be a function that selects the JSON to disclose, or null',
+    );
+  return value as PublicOverride;
+}
+
+/** The kind's policy with the call's override laid over it, field by field. */
+function effectivePolicy(
+  policy: PublicPolicyRecord | undefined,
+  override: PublicOverride,
+): {
+  readonly code: string;
+  readonly message: PublicPolicyRecord['message'];
+  readonly details: PublicPolicyRecord['details'] | null;
+} {
+  return {
+    code: override.code ?? policy?.code ?? GENERIC_CODE,
+    message: override.message ?? policy?.message,
+    details:
+      override.details === undefined ? policy?.details : override.details,
+  };
 }
 
 /**
@@ -177,13 +227,13 @@ function ownDetails(caught: unknown): object {
 }
 
 function renderPublicMessage(
-  policy: PublicPolicyRecord | undefined,
+  message: PublicPolicyRecord['message'],
   details: object,
 ): string {
-  if (policy?.message === undefined) return GENERIC_MESSAGE;
-  if (typeof policy.message === 'string') return policy.message;
+  if (message === undefined) return GENERIC_MESSAGE;
+  if (typeof message === 'string') return message;
   try {
-    const rendered = policy.message(details);
+    const rendered = message(details);
     return typeof rendered === 'string' ? rendered : GENERIC_MESSAGE;
   } catch {
     return GENERIC_MESSAGE;
@@ -191,12 +241,12 @@ function renderPublicMessage(
 }
 
 function selectPublicDetails(
-  policy: PublicPolicyRecord | undefined,
+  select: PublicPolicyRecord['details'] | null,
   details: object,
 ): unknown {
-  if (policy?.details === undefined) return undefined;
+  if (select === undefined || select === null) return undefined;
   try {
-    return policy.details(details);
+    return select(details);
   } catch {
     return undefined;
   }
@@ -208,7 +258,12 @@ function selectPublicDetails(
  * diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
  * generic message. Nothing is read from the error except its policy inputs.
  *
- * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
+ * The `public` option overrides that policy for this call, field by field:
+ * `code`, `message` (a string or a function of the details) and `details` (a
+ * selector function, or `null` to disclose nothing). A field left out keeps
+ * what the kind says.
+ *
+ * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
  * ```ts
  * import { defineException, toPublicReport } from 'application-exception';
@@ -216,8 +271,9 @@ function selectPublicDetails(
  *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
  *   public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
  * });
- * const report = toPublicReport(new ToolUnavailable({ details: { tool: 'search' } }));
- * // { v: 'appex/public/v3', occurrence_id: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
+ * const failure = new ToolUnavailable({ details: { tool: 'search' } });
+ * const report = toPublicReport(failure, { public: { message: 'Search is down.' } });
+ * // { v: 'appex/public/v3', occurrence_id: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Search is down.',
  * //   as_json: { tool: 'search' } }
  * console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
  * ```
@@ -239,16 +295,13 @@ function publicReportOf(
   options: PublicReportOptions,
   occurrenceId: string,
 ): PublicReport {
-  if (options.message !== undefined && typeof options.message !== 'string')
-    throw invalid('APPEX_INVALID_PUBLIC_MESSAGE', 'message must be a string');
-  const maker = makerFor(undefined, options.redact);
+  const override = publicOverrideOf(options.public);
+  const maker = makerFor(options.corj, options.redact);
   const policy = trustedPublicPolicyOf(caught, trustRealmApi(options.realm));
   const details = policy === undefined ? {} : ownDetails(caught);
-  const code =
-    options.code === undefined
-      ? (policy?.code ?? GENERIC_CODE)
-      : publicCodeOf(options.code);
-  const rendered = options.message ?? renderPublicMessage(policy, details);
+  const effective = effectivePolicy(policy, override);
+  const { code } = effective;
+  const rendered = renderPublicMessage(effective.message, details);
   // The public message is one of the two strings corj never sees. It is scrubbed
   // before the length bound is applied, so a replacement longer than what it
   // replaced can never push the message past it.
@@ -256,10 +309,7 @@ function publicReportOf(
     path: '$public.message',
     key: 'message',
   });
-  const selected =
-    options.details === undefined
-      ? selectPublicDetails(policy, details)
-      : options.details;
+  const selected = selectPublicDetails(effective.details, details);
   const view =
     selected === undefined
       ? undefined
