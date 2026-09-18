@@ -198,18 +198,15 @@ const caught: unknown = new Error('connection refused');
 toDiagnosticReport(caught, { context: { runId: 'run-1' }, maxFinalReportSize: 32_768 });
 ```
 
-**Redact once, everywhere.** A policy built by `createRedactionPolicy` is
-applied by corj *while it inspects* the caught value: a property excluded by
-`keys` or `paths` is never read, so an excluded getter never runs and the size
-budget is spent only on what survives. `patterns` and `transform` then run over
-every string and value the reports emit — messages, stacks, `as_json`,
-`context`, nested causes — and over the two strings corj never sees, the public
-`message` and `reporting_errors`. Each pattern must carry the `g` flag;
-`replacement` is used literally, so `$&` is never expanded; `paths` address the
-caught value only. On a public report the policy runs *after* the kind's
-`details` selector, so it can only narrow what was selected — redaction never
-authorizes disclosure. See
-[docs/design/redaction-policy.md](docs/design/redaction-policy.md).
+**Redact once, everywhere.** A policy built by `createRedactionPolicy` has two
+kinds of rule. **Skip** rules (`keys`, `paths`) name properties that are never
+read, so an excluded getter never runs. **Scrub** rules (`patterns`,
+`transform`) rewrite text wherever it appears in either report. To remove a
+secret's *text*, use `patterns`: skipping `message` still leaves it in `stack`.
+Redaction never discloses — on a public report it runs on what the kind's
+`details` selector returned. The rule-by-rule table is in
+[docs/agent/recipes.md](docs/agent/recipes.md#keep-secrets-out-of-both-reports);
+the design is in [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
 
 ```ts
 import { createRedactionPolicy, toReports } from 'application-exception';

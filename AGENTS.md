@@ -45,13 +45,12 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
     own budget. A budget too small for the envelope throws rather than emitting
     an over-budget or invalid report.
 11. Build one `createRedactionPolicy({ keys, paths, patterns })` per service and
-    pass it as `redact` to both reports. corj applies it while inspecting, so a
-    property excluded by `keys`/`paths` is never read; `patterns` (each needs the
-    `g` flag) and `transform` cover messages, stacks, `as_json`, `context`,
-    `reporting_errors`, and nested causes. `replacement` is literal, and `paths`
-    address the caught value only. On a public report it runs after the
-    `details` selector, so it can only narrow what was selected — it is not a way
-    to disclose anything.
+    pass it as `redact` to both reports. `keys` and `paths` are skip rules: the
+    property is never read. `patterns` (each needs the `g` flag) and `transform`
+    are scrub rules: they rewrite text wherever it appears. To remove a secret's
+    text use `patterns` — skipping `message` leaves it in `stack`. `paths` reach
+    the caught value only; `keys` match a name everywhere. Redaction never
+    discloses: on a public report it runs on what the `details` selector chose.
 12. Use `snapshotDetails: true` on a kind whose details are mutated after the
     throw, or whose reporting is deferred across an async boundary. It captures a
     deep frozen copy and rejects anything it cannot capture faithfully.

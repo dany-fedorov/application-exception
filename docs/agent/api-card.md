@@ -126,31 +126,24 @@ console.log(toPublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
 function createRedactionPolicy(options?: RedactionPolicyOptions): RedactionPolicy;
 ```
 
-Build a reusable redaction policy for `toDiagnosticReport`, `toPublicReport`,
-and `toReports`.
+Build a reusable redaction policy, accepted as `redact` by
+`toDiagnosticReport`, `toPublicReport`, and `toReports`.
 
-The policy is applied by corj **while it inspects** the caught value: a
-property excluded by `keys` or `paths` is never read, so an excluded getter
-never runs and the size budget is spent only on what survives. `patterns` and
-`transform` then run over every string and value the report emits — messages,
-stacks, `as_json`, `context`, every nested cause — and over the two strings
-corj never sees, the public `message` and `reporting_errors[].error`.
+A policy has two kinds of rule. **Skip** rules (`keys`, `paths`) name
+properties corj never reads, so an excluded getter never runs. **Scrub** rules
+(`patterns`, `transform`) rewrite text wherever it appears in either report:
+messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
 
-`keys` and `paths` select *properties*, not content: error text is duplicated
-into `stack` and `as_string`, so removing content needs `patterns` or
-`transform`. Each pattern must carry the `g` flag, or the policy is rejected.
-`replacement` is literal — `$&` and `$1` are not expanded. `paths` address the
-caught value only; they never match inside `context` or selected public
-details.
+- To remove a secret's *text*, use `patterns`. Skipping a property does not
+  remove its text elsewhere: `keys: ['message']` leaves it in `stack`.
+- `keys` match a name everywhere; `paths` reach the caught value only, never
+  `context` or selected public details.
+- Every pattern needs the `g` flag; `replacement` is inserted literally.
+- Redaction never discloses: on a public report it runs on what the kind's
+  `public.details` selector returned.
 
-On a public report the policy runs over the output of the kind's
-`public.details` selector, so redaction can only narrow what was selected — it
-never authorizes disclosure of a field the selector did not choose.
-
-A `transform` or matcher that throws fails closed — the value becomes the
-replacement — and is recorded in `reporting_errors` with `stage: 'redact'`,
-once per value. That entry's text is scrubbed by `patterns` alone, so why the
-policy broke stays readable.
+A policy that throws fails closed — the value becomes the replacement — and
+is listed in `reporting_errors` with `stage: 'redact'`, its reason readable.
 
 Throws: `APPEX_INVALID_REDACTION_POLICY`
 
@@ -488,20 +481,20 @@ An opaque, reusable redaction policy. Build it once and share it between reports
 
 ```ts signature
 export interface RedactionPolicyOptions {
-  /** Property names never read, by exact match or pattern. */
+  /** Skip: property names never read, wherever they appear. Exact string or `RegExp`. */
   readonly keys?: readonly (string | RegExp)[];
-  /** JSON paths never read, rooted at the caught value, such as `$.cause.config.headers`. */
+  /** Skip: JSON paths into the caught value never read, such as `$.cause.config.headers`. */
   readonly paths?: readonly (string | RegExp)[];
-  /** Patterns replaced in every string the report emits. Each must carry the `g` flag. */
+  /** Scrub: replaced in every string either report emits. Each must carry the `g` flag. */
   readonly patterns?: readonly RegExp[];
-  /** What a redacted value becomes, used literally. Defaults to `[redacted]`. */
+  /** What skipped and scrubbed content becomes, inserted literally. Defaults to `[redacted]`. */
   readonly replacement?: string;
-  /** Last word on every emitted value; returning `undefined` drops the field. */
+  /** Scrub: runs last on every emitted value; return `undefined` to drop the field. */
   readonly transform?: CorjRedactTransform;
 }
 ```
 
-Input of `createRedactionPolicy`; every rule is optional and they compose.
+Input of `createRedactionPolicy`. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional.
 
 ### `ReportingError`
 

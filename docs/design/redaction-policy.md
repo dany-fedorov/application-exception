@@ -3,6 +3,26 @@
 Status: **implemented** as `createRedactionPolicy`, applied by
 `caught-object-report-json` while it inspects the caught value.
 
+## The rules in one minute
+
+A policy has two kinds of rule. **Skip** rules name properties that are never
+read; **scrub** rules rewrite text wherever it appears.
+
+| Rule | Kind | Reach |
+| --- | --- | --- |
+| `keys` | skip | a property name, in the caught value, `context`, and selected public details |
+| `paths` | skip | one property of the caught value; never `context` or public details |
+| `patterns` | scrub | every emitted string and property name, in both reports; each needs the `g` flag |
+| `transform` | scrub | every emitted value, last; `undefined` drops the field |
+| `replacement` | — | what skipped and scrubbed content becomes, inserted literally |
+
+Skipping a property does not remove its text elsewhere — an error's message is
+also in its `stack` — so removing a secret's *text* is a job for `patterns`.
+Redaction never discloses: on a public report it runs on what the kind's
+`details` selector returned. How to use it is in
+[../agent/recipes.md](../agent/recipes.md#keep-secrets-out-of-both-reports); the
+rest of this page is why it is built this way.
+
 ## History, in two sentences
 
 An unreleased 0.4.0 draft applied redaction as a post-production walk over the
@@ -98,9 +118,10 @@ across `message`, `stack` and `as_string`, and neither the object's own
 `keys: ['message']` leaves the text in `stack`. Removing *content* needs
 `patterns` or `transform`.
 
-**A secret in a key position stays a key.** `patterns` apply to emitted strings;
-a secret used as a property *name* (`{ 'sk-live-abc': 1 }`) is removed by `keys`
-or `paths`, not by matching values.
+**Property names are scrubbed too, and can collide.** `patterns` apply to
+property names inside `as_json` as well as to values, so `{ 'sk-live-abc': 1 }`
+becomes `{ '[redacted]': 1 }`. Two names that scrub to the same text collapse
+into one key and the last write wins; corj documents and tests this.
 
 **Selection and redaction stay distinct (D8).** On a public report the policy
 runs over the output of the kind's `public.details` selector. It can only narrow

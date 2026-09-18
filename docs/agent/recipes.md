@@ -223,20 +223,30 @@ const reports = toReports(new Rejected({ details: { user: 'ada', password: 'hunt
 console.log(JSON.stringify(reports).includes('hunter2')); // false
 ```
 
-Build the policy once and share it. corj applies it while inspecting the caught
-value, so a property excluded by `keys` or `paths` is never read and its getter
-never runs; `patterns` and `transform` then cover messages, stacks, `as_json`,
-`context`, `reporting_errors`, and nested causes. Each pattern must carry the
-`g` flag. `replacement` is used literally — `$&` is never expanded back into the
-text. `paths` address the caught value only, so `$.password` never matches
-inside `context` or inside selected public details; use `keys` for a name that
-is sensitive wherever it appears. `keys` and `paths` select properties, not
-content: error text is duplicated into `stack`, so removing content needs
-`patterns` or `transform`. On a public report the policy runs after the kind's
-`details` selector, so it can only narrow what was already selected — it is not
-a way to disclose a field the selector left out. A `transform` that throws fails
-closed: the value becomes the replacement and the failure is recorded in
-`reporting_errors` with `stage: 'redact'`, once per value it was asked about.
+Build the policy once and pass it to both reports. It has two kinds of rule.
+**Skip** rules (`keys`, `paths`) name properties that are never read, so their
+getters never run. **Scrub** rules (`patterns`, `transform`) rewrite text
+wherever it appears in either report.
+
+| To… | Use | Reach |
+| --- | --- | --- |
+| remove a secret's text wherever it shows up | `patterns: [/\bsk-\w+/g]` | every string in both reports: message, stack, `as_json`, `context`, `reporting_errors`, nested causes |
+| never read a property, wherever it appears | `keys: ['password', /token$/i]` | the name, in the caught value, `context`, and selected public details |
+| never read one property of the caught value | `paths: ['$.cause.config.headers']` | the caught value only, never `context` or public details |
+| decide value by value | `transform: (value, { path, key }) => value` | runs last on every emitted value; return `undefined` to drop the field |
+
+Three things to remember:
+
+1. **Skipping a property does not remove its text elsewhere.** An error's message
+   is also in its `stack`, so `keys: ['message']` leaves it there. To remove
+   text, use `patterns`.
+2. **Every pattern needs the `g` flag**, and `replacement` (default `[redacted]`)
+   is inserted literally: `$&` is not expanded.
+3. **Redaction never discloses.** On a public report it runs on what the kind's
+   `details` selector returned; it cannot add a field the selector left out.
+
+If the policy itself throws, the value becomes the replacement and the failure
+is listed in `reporting_errors` with `stage: 'redact'`, its reason still readable.
 
 ## Capture details that outlive the throw
 
