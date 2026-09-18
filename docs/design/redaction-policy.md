@@ -139,12 +139,12 @@ policy. A transform that throws for *every* value therefore produces **several**
 `stage: 'redact'` entries, not one (*a transform that always throws blanks the
 report without recursing, and says why*).
 
-**A catch-all pattern also rewrites a child report's `id`.** corj emits `id`
-through the policy, because `makeReportId` may have built it from the caught
-object; `path` and `level` are corj's own structure and are not. So
-`patterns: [/[\s\S]*/g]` rewrites `children[0].id` and the `child_ids` linkage
-stops identifying anything (*leaves the positions corj generates itself
-intact*). Write targeted patterns.
+**Default report ids are never rewritten.** `id`, `path` and `level` are corj's
+own structure. A default id carries nothing from the caught object, so corj
+never emits it through the policy: a policy that redacts every digit still
+leaves ids `"0"`, `"1"` and the `child_ids` linkage intact (*leaves the positions
+corj generates itself intact*). Only an id from a caller-supplied `makeReportId`
+is scrubbed, which appex does not set.
 
 **Report-shaped names are ordinary data.** A value the application calls `id`,
 `code`, `path`, `stage`, `level` or `truncated` inside `as_json` or `context` is

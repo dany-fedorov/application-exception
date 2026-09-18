@@ -731,17 +731,19 @@ describe('createRedactionPolicy', () => {
     });
 
     test('leaves the positions corj generates itself intact', () => {
-      // `path` and `level` are corj's own structure and are never emitted
-      // through the policy; `id` is, because `makeReportId` may have built it
-      // from the caught object. The report stays valid either way.
+      // `id`, `path` and `level` are corj's own structure: a default id is
+      // never emitted through the policy, so even a policy that redacts every
+      // digit keeps the cause tree linked.
       const report = toDiagnosticReport(
-        new Error('a', { cause: new Error('b') }),
-        { redact: createRedactionPolicy({ patterns: [/[\s\S]*/g] }) },
+        new Error('a1', { cause: new Error('b2', { cause: new Error('c3') }) }),
+        { redact: createRedactionPolicy({ patterns: [/\d/g] }) },
       );
 
+      expect(report.children?.map((child) => child.id)).toEqual(['0', '1']);
+      expect(report.children?.[0]?.child_ids).toEqual(['1']);
       expect(report.children?.[0]?.path).toBe('$.cause');
       expect(report.children?.[0]?.level).toBe(1);
-      expect(report.children?.[0]?.id).toBe('[redacted][redacted]');
+      expect(JSON.stringify(report)).not.toMatch(/a1|b2|c3/);
       expect(validateDiagnostic(report)).toBeNull();
     });
   });
