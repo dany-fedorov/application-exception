@@ -127,7 +127,7 @@ toPublicReport(new Error('x'), { message: 'Search is temporarily unavailable.' }
 
 ## APPEX_REPORT_BUDGET_TOO_SMALL
 
-When: `options.maxFinalReportSize` cannot hold the report even after `context` and `reporting_errors` are dropped and corj's own budget is halved to its 256-byte floor.
+When: `options.maxFinalReportSize` cannot hold the report even after `context` and `reporting_errors` are dropped and corj's own budget is shrunk to its 256-byte floor.
 Cause: a budget of a few dozen bytes, or one too small for a long `occurrenceId` plus the required corj fields.
 Fix: raise `maxFinalReportSize` (a few hundred bytes hold the smallest report), or shorten the occurrence id.
 

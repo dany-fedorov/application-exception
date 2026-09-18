@@ -195,7 +195,7 @@ console.log(report.report_omitted); // e.g. ['context'] when it did not fit
 
 `maxFinalReportSize` bounds the UTF-8 bytes of the whole compact report, not
 just corj's part. It drops `context`, then `reporting_errors`, naming each in
-`report_omitted`, then halves corj's own budget until the report fits. A budget
+`report_omitted`, then shrinks corj's own budget until the report fits. A budget
 too small for the required envelope throws `APPEX_REPORT_BUDGET_TOO_SMALL`
 rather than emitting an over-budget or invalid report. Omit the option to keep
 the unbounded 0.3.0 behaviour.
@@ -230,23 +230,30 @@ wherever it appears in either report.
 
 | To… | Use | Reach |
 | --- | --- | --- |
-| remove a secret's text wherever it shows up | `patterns: [/\bsk-\w+/g]` | every string in both reports: message, stack, `as_json`, `context`, `reporting_errors`, nested causes |
+| remove a secret's text wherever it shows up | `patterns: [/\bsk-\w+/g]` | strings and property names in both reports: message, stack, `as_json`, `context`, `reporting_errors`, nested causes |
 | never read a property, wherever it appears | `keys: ['password', /token$/i]` | the name, in the caught value, `context`, and selected public details |
 | never read one property of the caught value | `paths: ['$.cause.config.headers']` | the caught value only, never `context` or public details |
-| decide value by value | `transform: (value, { path, key }) => value` | runs last on every emitted value; return `undefined` to drop the field |
+| decide value by value | `transform: (value, { prop }) => value` | runs after `patterns` on every value and property name; return `undefined` to drop the field |
 
-Three things to remember:
+Four things to remember:
 
 1. **Skipping a property does not remove its text elsewhere.** An error's message
    is also in its `stack`, so `keys: ['message']` leaves it there. To remove
    text, use `patterns`.
-2. **Every pattern needs the `g` flag**, and `replacement` (default `[redacted]`)
+2. **A skip rule hides the value, not the name.** `keys: [/^sk-/]` gives
+   `{ "sk-live-abc": "[redacted]" }`. A secret *name* needs `patterns`.
+3. **Every pattern needs the `g` flag**, and `replacement` (default `[redacted]`)
    is inserted literally: `$&` is not expanded.
-3. **Redaction never discloses.** On a public report it runs on what the kind's
-   `details` selector returned; it cannot add a field the selector left out.
+4. **Redaction never discloses.** On a public report the policy is given only
+   what the kind's `details` selector returned. `occurrence_id` and `code` are
+   identifiers you choose; no rule rewrites them.
 
-If the policy itself throws, the value becomes the replacement and the failure
-is listed in `reporting_errors` with `stage: 'redact'`, its reason still readable.
+A `transform` sees raw input — whole objects, including members a skip rule
+excludes — so key it on `prop` and never quote its input in an error. If the
+policy throws, the value becomes the replacement and the diagnostic report lists
+the failure in `reporting_errors` with `stage: 'redact'`; the thrown message is
+withheld, because it may quote what the policy was protecting. `toReports`
+redacts each report with the policy in its own bag, so pass `redact` in both.
 
 ## Capture details that outlive the throw
 

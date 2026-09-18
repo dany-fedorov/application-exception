@@ -22,25 +22,23 @@ diagnostic report format changes.
   ([#45](https://github.com/dany-fedorov/application-exception/issues/45))
 - `toDiagnosticReport` accepts `maxFinalReportSize`: a UTF-8 byte budget over
   the whole final report, measured on compact JSON. It drops `context`, then
-  `reporting_errors` — both named in the new `report_omitted` field — then halves
+  `reporting_errors` — both named in the new `report_omitted` field — then shrinks
   corj's own budget, and throws `APPEX_REPORT_BUDGET_TOO_SMALL` rather than
   emitting an over-budget or invalid report. Default `null` keeps 0.3.0
   behaviour; `report_omitted` is part of `schemas/diagnostic-report-v4.json`.
   ([#44](https://github.com/dany-fedorov/application-exception/issues/44))
 - `createRedactionPolicy({ keys, paths, patterns, replacement, transform })`
   builds a reusable policy accepted as `redact` by all three report functions.
-  corj applies it **while it inspects** the caught value, so a property excluded
-  by `keys` or `paths` is never read — an excluded getter never runs and the
-  size budget is spent only on what survives. `patterns` (each must carry the
-  `g` flag) and `transform` cover messages, stacks, `as_json`, `context`, nested
-  causes, and the two strings corj never sees, the public `message` and
-  `reporting_errors`. `replacement` is used literally, so `$&` is never expanded
-  back into the text; `paths` address the caught value only. On a public report
-  the policy runs after the kind's `details` selector, so it can only narrow
-  what was selected. A throwing `transform` fails closed to the replacement and
-  is recorded in `reporting_errors` with `stage: 'redact'`, once per value. Such
-  an entry's own message is withheld — its `error` is the replacement — because
-  the failure's text can quote what the policy was protecting. See
+  **Skip** rules (`keys`, `paths`) name properties that are never read — corj
+  applies them while it inspects, so an excluded getter never runs. **Scrub**
+  rules (`patterns`, each with the `g` flag, and `transform`) rewrite strings and
+  property names in both reports, including the public `message` and
+  `reporting_errors`. `replacement` is inserted literally; `paths` address the
+  caught value only. On a public report the policy is given only what the kind's
+  `details` selector returned. A policy that throws fails closed: the value
+  becomes the replacement, the diagnostic report lists the failure with
+  `stage: 'redact'`, and the thrown message is withheld because it can quote
+  what the policy was protecting. See
   [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
   ([#43](https://github.com/dany-fedorov/application-exception/issues/43))
 - `defineException({ snapshotDetails: true })` captures a deep frozen copy of

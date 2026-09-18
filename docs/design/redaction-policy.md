@@ -12,14 +12,15 @@ read; **scrub** rules rewrite text wherever it appears.
 | --- | --- | --- |
 | `keys` | skip | a property name, in the caught value, `context`, and selected public details |
 | `paths` | skip | one property of the caught value; never `context` or public details |
-| `patterns` | scrub | every emitted string and property name, in both reports; each needs the `g` flag |
-| `transform` | scrub | every emitted value, last; `undefined` drops the field |
+| `patterns` | scrub | strings and property names in both reports; each needs the `g` flag |
+| `transform` | scrub | every value and property name, after `patterns`; `undefined` drops the field |
 | `replacement` | — | what skipped and scrubbed content becomes, inserted literally |
 
 Skipping a property does not remove its text elsewhere — an error's message is
 also in its `stack` — so removing a secret's *text* is a job for `patterns`.
-Redaction never discloses: on a public report it runs on what the kind's
-`details` selector returned. How to use it is in
+Redaction never discloses: on a public report the policy is given only what the
+kind's `details` selector returned. `occurrence_id` and `code` are identifiers
+the application chooses; no rule rewrites them. How to use it is in
 [../agent/recipes.md](../agent/recipes.md#keep-secrets-out-of-both-reports); the
 rest of this page is why it is built this way.
 
@@ -55,12 +56,15 @@ two resolved corj policies for them:
   `CorjMaker` that renders `context`, and to the one that renders the public
   report's `as_json`.
 
-**D5: `paths` address the caught value only.** A path such as `$.password` is
-documented as a path into the caught value, rooted at its `$`. Letting the same
-path also match inside `context` or inside the details a kind's selector chose
-would be an accident of implementation rather than a policy anyone wrote.
-`keys` still match everywhere, and are the rule to reach for when a name is
+**`paths` address the caught value only.** A path such as `$.password` is a path
+into the caught value. Letting it also match inside `context` or inside the
+details a selector chose would be an accident of implementation, not a policy
+anyone wrote. `keys` match everywhere, and are the rule for a name that is
 sensitive wherever it appears.
+
+A `transform` is different. The `path` it is told is rooted at whatever is being
+serialized — the caught value, the `context` object, or the selected details — so
+inside `context` it also sees `$.password`. Key a transform on `prop`.
 
 ## The two flat strings corj never sees
 
@@ -69,21 +73,21 @@ handler receives the caught object unchanged. This package installs its own
 handler, so it scrubs those strings itself, with corj's exported `CorjRedactor`
 — the same traversal and the same policy, not a second implementation:
 
-- the public report's `message`, scrubbed **before** the 4,096-character cut, so
-  a replacement longer than the text it replaced is bounded by the cut rather
-  than escaping it;
-- `reporting_errors[].error`, scrubbed before the entry is pushed. `stage` is
-  never scrubbed: it is this package's own enum.
+- the public report's `message`, scrubbed **before** the 4,096-character cut;
+- each `reporting_errors` entry: its `error`, `path` and `prop` go through the
+  full policy with the context corj gave, and `error` is cut to 256 characters
+  only **after** scrubbing. Cutting first would let a secret that straddles the
+  cut lose its tail, stop matching, and leak its head. `stage` and `key` are
+  corj's own vocabulary and are never scrubbed.
 
-**The `stage: 'redact'` exception.** An entry at `stage: 'redact'` describes the
-policy's *own* failure. Scrubbing it with the full policy ran the application's
-throwing `transform` over the description of its own failure, so the text became
-`[redacted]` and the operator could no longer see why the policy broke. Such an
-entry is scrubbed with the same policy minus its `transform`; every other stage
-keeps the full policy. This is safe, not a hole: corj applies `patterns` before
-it calls `transform`, and a value excluded by `keys` or `paths` never reaches
-`transform` at all, so the text of a transform's error can only embed content
-that was already scrubbed.
+**A policy failure's own message is withheld.** An entry at `stage: 'redact'`
+records that the application's `transform` or matcher threw. Its `error` is the
+replacement, never the thrown text: that text is written by the failing policy
+and can quote exactly what the policy was protecting — a `transform` that is a
+field's only protection, or one handed a whole object whose excluded members are
+still inside. No scrub can be trusted there, because the only thing that knew how
+to protect the content just failed. The entry, its stage and its scrubbed `path`
+remain, so the failure is observable. corj's default handler does the same.
 
 ## What this design gains
 
@@ -123,10 +127,20 @@ property names inside `as_json` as well as to values, so `{ 'sk-live-abc': 1 }`
 becomes `{ '[redacted]': 1 }`. Two names that scrub to the same text collapse
 into one key and the last write wins; corj documents and tests this.
 
-**Selection and redaction stay distinct (D8).** On a public report the policy
-runs over the output of the kind's `public.details` selector. It can only narrow
-what the selector chose; a kind with no selector still emits no `as_json`, and an
-unknown failure keeps the generic `INTERNAL_ERROR` shape.
+**Selection and redaction stay distinct.** On a public report the policy is
+given only the output of the kind's `public.details` selector; the library never
+feeds it anything the selector left out. A kind with no selector emits no
+`as_json`, and an unknown failure keeps the generic `INTERNAL_ERROR` shape. A
+`transform` is application code and can rewrite what it is given, so keep it free
+of outside data.
+
+**A `transform` sees raw input.** corj hands it whole objects, including members
+a skip rule excludes, and property names as well as values. It must never quote
+its input in an error it throws. It also does not quite run last: corj re-applies
+`patterns` to a string it returns.
+
+**A policy failure shows only in the diagnostic report.** `toPublicReport` has no
+`reporting_errors`; there the value is simply the replacement.
 
 ## corj behaviours worth knowing
 
@@ -137,7 +151,7 @@ matcher fails closed — the value becomes the replacement — and the failure i
 recorded once for the value it was asked about, without re-consulting the
 policy. A transform that throws for *every* value therefore produces **several**
 `stage: 'redact'` entries, not one (*a transform that always throws blanks the
-report without recursing, and says why*).
+report without recursing*).
 
 **Default report ids are never rewritten.** `id`, `path` and `level` are corj's
 own structure. A default id carries nothing from the caught object, so corj
@@ -155,13 +169,13 @@ the fields most likely to hold a session id or a file path.
 from yields `children_omitted: 'redacted'`, and the report still validates
 against `schemas/diagnostic-report-v4.json`.
 
-**No policy means no change.** Reports without `redact` behave exactly as they
-did in 0.3.0, apart from the format version; the test suite asserts the secret
-comes back when the policy is bypassed.
+**No policy means no change.** Reports without `redact` take the same path as
+before, apart from the format version; the suite asserts the secret comes back
+when the policy is bypassed.
 
 ## Follow-up, not done
 
 corj 10.0.0 also offers `inspection: 'no-invoke'`, which reads nothing from the
 caught object that could run application code. Exposing it through this package
-is **D7: out of scope** here — it changes what every report contains, not just a
+is **out of scope** here — it changes what every report contains, not just a
 redacted one, and deserves its own decision.

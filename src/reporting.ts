@@ -277,7 +277,7 @@ function corjReportOf(
 /**
  * The final object in field order. corj drops `v` when its own budget cannot
  * hold the metadata, so the version is restored here: the report identifies
- * itself even at the smallest size the halving loop reaches.
+ * itself even at the smallest size the shrink loop reaches.
  */
 function assembleDiagnostic(
   occurrenceId: string,
@@ -296,7 +296,7 @@ function assembleDiagnostic(
   } as DiagnosticReport;
 }
 
-/** The corj budget the halving starts from: the effective one, never above the final budget. */
+/** The corj budget the shrink loop starts from: the effective one, never above the final budget. */
 function startingCorjLimit(
   maxReportSize: number | null | undefined,
   budget: number,
@@ -444,7 +444,7 @@ function diagnosticReportOf(
  * contains messages, stacks, and every enumerable property of the error graph.
  * With `maxFinalReportSize`, the whole report is bounded by that many UTF-8
  * bytes of compact JSON: `context` is dropped, then `reporting_errors` (both
- * named in `report_omitted`), then corj's own budget is halved until the
+ * named in `report_omitted`), then corj's own budget is shrunk until the
  * report fits; a budget too small for the envelope throws.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_REPORT_BUDGET_TOO_SMALL`; corj option errors propagate.
@@ -585,8 +585,8 @@ function publicReportOf(
         );
   const cut = message.length > PUBLIC_MESSAGE_MAX_LENGTH;
   const truncated = cut || view?.truncated === true;
-  // Redaction runs after selection: it can only narrow what the kind's selector
-  // chose, never disclose a field the selector left out.
+  // Redaction runs after selection: the policy is only ever given what the
+  // kind's selector returned, never anything the selector left out.
   return {
     v: PUBLIC_REPORT_VERSION,
     occurrence_id: occurrenceId,

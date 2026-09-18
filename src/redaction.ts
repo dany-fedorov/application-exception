@@ -7,9 +7,11 @@ import type {
 import { describeValue, invalid } from './errors';
 
 /**
- * What a policy was asked about: `stage` is where corj produced the value,
- * `path` is a JSON path rooted at the caught value's `$`, `key` is the report
- * field it is destined for, and `prop` the property it was read from.
+ * What a `transform` is told about a value: `stage` is where corj produced it,
+ * `key` the report field it is destined for, `prop` the property it was read
+ * from, and `path` a JSON path rooted at whatever is being serialized — the
+ * caught value, the `context` object, or the selected public details. Key a
+ * transform on `prop`: `$.password` is also `context.password`.
  */
 export type RedactionContext = CorjRedactContext;
 
@@ -23,7 +25,7 @@ export interface RedactionPolicyOptions {
   readonly patterns?: readonly RegExp[];
   /** What skipped and scrubbed content becomes, inserted literally. Defaults to `[redacted]`. */
   readonly replacement?: string;
-  /** Scrub: runs last on every emitted value; return `undefined` to drop the field. */
+  /** Scrub: runs after `patterns` on every value and property name; return `undefined` to drop the field. It sees raw input, so it must never quote it in an error. */
   readonly transform?: CorjRedactTransform;
 }
 
@@ -64,13 +66,14 @@ function corjMessage(failure: unknown): string {
  * - `keys` match a name everywhere; `paths` reach the caught value only, never
  *   `context` or selected public details.
  * - Every pattern needs the `g` flag; `replacement` is inserted literally.
- * - Redaction never discloses: on a public report it runs on what the kind's
- *   `public.details` selector returned.
+ * - A skip rule hides the value, not the name: a secret *name* needs `patterns`.
+ * - Redaction never discloses: on a public report the policy is given only what
+ *   the kind's `public.details` selector returned.
  *
- * A policy that throws fails closed — the value becomes the replacement — and
- * is listed in `reporting_errors` with `stage: 'redact'`. Its own message is
- * withheld, because it may quote what the policy was protecting: the `error` of
- * such an entry is the replacement.
+ * A policy that throws fails closed: the value becomes the replacement. The
+ * diagnostic report lists the failure in `reporting_errors` with
+ * `stage: 'redact'`; the thrown message is withheld, because it may quote what
+ * the policy was protecting.
  *
  * @throws `APPEX_INVALID_REDACTION_POLICY`
  * @example
@@ -108,7 +111,7 @@ export function createRedactionPolicy(
   try {
     compiled = {
       forCaught: resolveCorjRedactPolicy(options) as CorjRedactPolicy,
-      // D5: `paths` address the caught value; they must not also match inside
+      // `paths` address the caught value; they must not also match inside
       // `context` or the selected public details.
       forViews: resolveCorjRedactPolicy({
         ...options,

@@ -139,13 +139,14 @@ messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
 - `keys` match a name everywhere; `paths` reach the caught value only, never
   `context` or selected public details.
 - Every pattern needs the `g` flag; `replacement` is inserted literally.
-- Redaction never discloses: on a public report it runs on what the kind's
-  `public.details` selector returned.
+- A skip rule hides the value, not the name: a secret *name* needs `patterns`.
+- Redaction never discloses: on a public report the policy is given only what
+  the kind's `public.details` selector returned.
 
-A policy that throws fails closed — the value becomes the replacement — and
-is listed in `reporting_errors` with `stage: 'redact'`. Its own message is
-withheld, because it may quote what the policy was protecting: the `error` of
-such an entry is the replacement.
+A policy that throws fails closed: the value becomes the replacement. The
+diagnostic report lists the failure in `reporting_errors` with
+`stage: 'redact'`; the thrown message is withheld, because it may quote what
+the policy was protecting.
 
 Throws: `APPEX_INVALID_REDACTION_POLICY`
 
@@ -170,7 +171,7 @@ optional `context`, and `reporting_errors`. Send it to a trusted sink; it
 contains messages, stacks, and every enumerable property of the error graph.
 With `maxFinalReportSize`, the whole report is bounded by that many UTF-8
 bytes of compact JSON: `context` is dropped, then `reporting_errors` (both
-named in `report_omitted`), then corj's own budget is halved until the
+named in `report_omitted`), then corj's own budget is shrunk until the
 report fits; a budget too small for the envelope throws.
 
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_REPORT_BUDGET_TOO_SMALL`; corj option errors propagate.
@@ -465,9 +466,11 @@ Per-call overrides of the kind's public policy; `details: null` suppresses the p
 export type RedactionContext = CorjRedactContext;
 ```
 
-What a policy was asked about: `stage` is where corj produced the value,
-`path` is a JSON path rooted at the caught value's `$`, `key` is the report
-field it is destined for, and `prop` the property it was read from.
+What a `transform` is told about a value: `stage` is where corj produced it,
+`key` the report field it is destined for, `prop` the property it was read
+from, and `path` a JSON path rooted at whatever is being serialized — the
+caught value, the `context` object, or the selected public details. Key a
+transform on `prop`: `$.password` is also `context.password`.
 
 ### `RedactionPolicy`
 
@@ -491,7 +494,7 @@ export interface RedactionPolicyOptions {
   readonly patterns?: readonly RegExp[];
   /** What skipped and scrubbed content becomes, inserted literally. Defaults to `[redacted]`. */
   readonly replacement?: string;
-  /** Scrub: runs last on every emitted value; return `undefined` to drop the field. */
+  /** Scrub: runs after `patterns` on every value and property name; return `undefined` to drop the field. It sees raw input, so it must never quote it in an error. */
   readonly transform?: CorjRedactTransform;
 }
 ```
