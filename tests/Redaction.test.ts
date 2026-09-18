@@ -340,6 +340,22 @@ describe('createRedactionPolicy', () => {
       expect(report.v).toBe('appex/public/v3');
     });
 
+    test('scrubs the message as the `as_string` of `$.message`', () => {
+      // The redaction context of the public message is part of the contract: a
+      // policy keyed on it must fire here exactly as it does inside corj.
+      const report = toPublicReport(new Error('boom'), {
+        message: 'hello',
+        redact: createRedactionPolicy({
+          transform: (value, { stage, path, key }) =>
+            stage === 'as_string' && path === '$.message' && key === 'message'
+              ? 'PINNED'
+              : value,
+        }),
+      });
+
+      expect(report.message).toBe('PINNED');
+    });
+
     test('scrubs the message before the length bound is applied', () => {
       // The scrub runs first, so a replacement longer than the text it replaced
       // is bounded by the cut rather than escaping it.
@@ -433,6 +449,68 @@ describe('createRedactionPolicy', () => {
       expect(JSON.stringify(report)).not.toContain('sk-abcdef');
       expect(validateDiagnostic(report)).toBeNull();
     });
+
+    test('withholds a message that quotes the raw input a transform choked on', () => {
+      // `transform` is the only protection this field has, and its own error
+      // quotes the value it was given.
+      const policy = createRedactionPolicy({
+        transform: (value, { prop }) =>
+          prop === 'account' && typeof value === 'string' && value !== 'account'
+            ? String(BigInt(value) % 10000n)
+            : value,
+      });
+
+      const report = toDiagnosticReport(
+        { account: '4111-1111-1111-1111' },
+        { redact: policy },
+      );
+
+      expect(JSON.stringify(report)).not.toContain('4111-1111-1111-1111');
+      expect(JSON.stringify(report)).not.toContain('BigInt');
+      expect(report.reporting_errors).toEqual([
+        expect.objectContaining({ stage: 'redact', error: '[redacted]' }),
+      ]);
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test.each([
+      ['a key rule', { keys: ['password'] }],
+      ['a path rule', { paths: ['$.password'] }],
+    ])(
+      'withholds a message quoting a container %s excluded a member of',
+      (_name, skip) => {
+        // corj hands `transform` the whole container, excluded members still
+        // inside, so the transform's own error can quote a skipped secret.
+        const policy = createRedactionPolicy({
+          ...skip,
+          transform: (value) => {
+            if (typeof value === 'object' && value !== null)
+              throw new Error('cannot handle ' + JSON.stringify(value));
+            return value;
+          },
+        });
+
+        const caught = toDiagnosticReport(
+          { user: 'ada', password: 'hunter2' },
+          { redact: policy },
+        );
+        const inContext = toDiagnosticReport(new Error('boom'), {
+          context: { user: 'ada', password: 'hunter2' },
+          redact: policy,
+        });
+
+        for (const report of [caught, inContext]) {
+          expect(JSON.stringify(report)).not.toContain('hunter2');
+          expect(JSON.stringify(report)).not.toContain('cannot handle');
+          expect(report.reporting_errors).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ stage: 'redact', error: '[redacted]' }),
+            ]),
+          );
+          expect(validateDiagnostic(report)).toBeNull();
+        }
+      },
+    );
 
     test('a failure at any other stage is still scrubbed by the transform', () => {
       const caught = {
@@ -545,15 +623,29 @@ describe('createRedactionPolicy', () => {
   });
 
   test('composes with the final report byte budget', () => {
-    const report = toDiagnosticReport(new Error('boom'), {
+    // The budget forces corj to rebuild the report at a smaller size; the
+    // secret is in content that survives the shrink, so the rebuilt report is
+    // the one that has to stay redacted.
+    const caught = Object.assign(
+      new Error(`sk-abcdefghij ${'e'.repeat(50_000)}`),
+      { note: 'sk-zyxwvutsrq' },
+    );
+
+    const report = toDiagnosticReport(caught, {
       context: { sessionToken: 'x'.repeat(12_000) },
       redact: secretPolicy(),
-      maxFinalReportSize: 4_096,
+      maxFinalReportSize: 1_024,
     });
-    const bytes = new TextEncoder().encode(JSON.stringify(report)).byteLength;
+    const json = JSON.stringify(report);
 
-    expect(bytes).toBeLessThanOrEqual(4_096);
-    expect(JSON.stringify(report)).not.toContain('xxxx');
+    expect(report.truncated).toBe(true);
+    expect(json).not.toContain('sk-');
+    expect(json).not.toContain('xxxx');
+    expect(json).toContain('[redacted]');
+    expect(new TextEncoder().encode(json).byteLength).toBeLessThanOrEqual(
+      1_024,
+    );
+    expect(validateDiagnostic(report)).toBeNull();
   });
 
   test('a report stays valid when the policy is bypassed, and the secret returns', () => {
@@ -750,6 +842,199 @@ describe('createRedactionPolicy', () => {
     });
   });
 
+  describe('scrubbing runs before the length bound', () => {
+    test('a secret straddling character 256 of an inspection error leaves nothing', () => {
+      // `describeValue` cuts at 256: cutting first would break the match and
+      // emit the head of the secret.
+      const caught = {
+        get detail(): never {
+          throw new Error(`${'A'.repeat(241)} sk-abcdefghijklmnop`);
+        },
+      };
+
+      const report = toDiagnosticReport(caught, {
+        redact: createRedactionPolicy({
+          patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
+        }),
+      });
+      const entries = report.reporting_errors ?? [];
+
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries) {
+        expect(entry.error).not.toContain('sk-');
+        expect(entry.error.length).toBeLessThanOrEqual(256);
+      }
+      expect(JSON.stringify(report)).not.toContain('sk-');
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test('a secret straddling character 4,096 of the public message leaves nothing', () => {
+      const report = toPublicReport(new Error('boom'), {
+        message: `${'A'.repeat(4_089)} sk-abcdefghijklmnop`,
+        redact: createRedactionPolicy({
+          patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
+        }),
+      });
+
+      expect(report.message).toHaveLength(4_096);
+      expect(report.message).not.toContain('sk-');
+      expect(report.truncated).toBe(true);
+      expect(validatePublic(report)).toBeNull();
+    });
+
+    test.each([
+      ['the default replacement', {}],
+      ['a 128-character replacement', { replacement: 'x'.repeat(128) }],
+    ])('keeps a grown reporting error within 256 characters: %s', (_n, extra) => {
+      // A scrub can make text longer than it found it; the report schema
+      // bounds this field at 256, so the cut has to come last.
+      const caught = {
+        get detail(): never {
+          throw new Error('1'.repeat(300));
+        },
+      };
+
+      const report = toDiagnosticReport(caught, {
+        redact: createRedactionPolicy({ patterns: [/\d/g], ...extra }),
+      });
+      const entries = report.reporting_errors ?? [];
+
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries)
+        expect(entry.error.length).toBeLessThanOrEqual(256);
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+  });
+
+  describe('the path and the prop of a reporting error are scrubbed too', () => {
+    /** A policy that throws on one value, so an entry naming the property exists. */
+    const triggered = (extra: Parameters<typeof createRedactionPolicy>[0]) =>
+      createRedactionPolicy({
+        ...extra,
+        transform: (value) => {
+          if (value === 'trigger') throw new Error('policy exploded');
+          return value;
+        },
+      });
+
+    test('a name hidden only by patterns never appears', () => {
+      const redact = triggered({ patterns: [/sk-[a-z0-9]+/g] });
+
+      const caught = toDiagnosticReport(
+        { 'sk-abcdefghij': 'trigger' },
+        { redact },
+      );
+      const inContext = toDiagnosticReport(new Error('boom'), {
+        context: { 'sk-abcdefghij': 'trigger' },
+        redact,
+      });
+
+      expect(caught.reporting_errors).toEqual([
+        {
+          stage: 'redact',
+          path: '$.[redacted]',
+          key: 'as_json',
+          prop: '[redacted]',
+          error: '[redacted]',
+        },
+      ]);
+      expect(inContext.reporting_errors).toEqual([
+        {
+          stage: 'redact',
+          path: '$.context.[redacted]',
+          key: 'as_json',
+          prop: '[redacted]',
+          error: '[redacted]',
+        },
+      ]);
+      for (const report of [caught, inContext]) {
+        expect(JSON.stringify(report)).not.toContain('sk-abcdefghij');
+        expect(validateDiagnostic(report)).toBeNull();
+      }
+    });
+
+    test('a name hidden only by a prop-keyed transform never appears', () => {
+      // corj applies `transform` to property names too, `value` being the name
+      // itself; the same policy has to decide about the name here.
+      const redact = createRedactionPolicy({
+        transform: (value, { prop }) => {
+          if (prop !== 'secretname') return value;
+          if (value === 'secretname') return '***';
+          throw new Error('policy exploded');
+        },
+      });
+
+      const caught = toDiagnosticReport({ secretname: 'trigger' }, { redact });
+      const inContext = toDiagnosticReport(new Error('boom'), {
+        context: { secretname: 'trigger' },
+        redact,
+      });
+
+      expect(caught.reporting_errors).toEqual([
+        {
+          stage: 'redact',
+          path: '$.[redacted]',
+          key: 'as_json',
+          prop: '***',
+          error: '[redacted]',
+        },
+      ]);
+      expect(inContext.reporting_errors?.[0]?.prop).toBe('***');
+      for (const report of [caught, inContext]) {
+        expect(JSON.stringify(report.reporting_errors)).not.toContain(
+          'secretname',
+        );
+        expect(validateDiagnostic(report)).toBeNull();
+      }
+    });
+
+    test('a policy that always throws leaves only the replacement, and corj’s own vocabulary', () => {
+      const report = toDiagnosticReport(
+        {
+          get boom(): never {
+            throw new Error('getter exploded');
+          },
+        },
+        {
+          redact: createRedactionPolicy({
+            replacement: 'REDACTED_MARK',
+            transform: () => {
+              throw new Error('policy exploded');
+            },
+          }),
+        },
+      );
+      const entries = report.reporting_errors ?? [];
+
+      expect(entries.length).toBeGreaterThan(0);
+      for (const entry of entries) {
+        expect(entry.path).toBe('$.REDACTED_MARK');
+        expect(entry.error).toBe('REDACTED_MARK');
+        if (entry.prop !== undefined) expect(entry.prop).toBe('REDACTED_MARK');
+        // `stage` and `key` are corj's own names, never content.
+        expect(entry.stage).toMatch(/^[a-z-]+$/);
+        if (entry.key !== undefined) expect(entry.key).toMatch(/^[a-z_]+$/);
+      }
+      expect(entries.map((entry) => entry.key)).toContain('as_json');
+      expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test('the scrubber sees the path corj saw, not the prefixed one', () => {
+      const report = toDiagnosticReport(new Error('boom'), {
+        context: { secret: 'trigger' },
+        redact: createRedactionPolicy({
+          transform: (value, { path }) => {
+            if (path === '$.secret' && value === '$.secret') return 'HIT';
+            if (value === 'trigger') throw new Error('policy exploded');
+            return value;
+          },
+        }),
+      });
+
+      expect(report.reporting_errors?.[0]?.path).toBe('$.context.HIT');
+    });
+  });
+
   describe('validation', () => {
     const rejects = (options: unknown) =>
       expect(() =>
@@ -791,6 +1076,20 @@ describe('createRedactionPolicy', () => {
       rejects({ patterns: [/sk-[a-z]+/] }).toThrow(
         /redact\.patterns must all be global; \/sk-\[a-z\]\+\/ would replace only its first match/,
       );
+    });
+
+    test('reports a corj complaint without the TypeError prefix', () => {
+      let message = '';
+      try {
+        createRedactionPolicy({ patterns: [/sk-[a-z]+/] });
+      } catch (failure: unknown) {
+        message = (failure as Error).message;
+      }
+
+      expect(message).toContain(
+        'APPEX_INVALID_REDACTION_POLICY: redact.patterns must all be global',
+      );
+      expect(message).not.toContain('TypeError');
     });
 
     test('accepts an empty policy', () => {
