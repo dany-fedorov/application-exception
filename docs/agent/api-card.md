@@ -143,7 +143,9 @@ messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
   `public.details` selector returned.
 
 A policy that throws fails closed — the value becomes the replacement — and
-is listed in `reporting_errors` with `stage: 'redact'`, its reason readable.
+is listed in `reporting_errors` with `stage: 'redact'`. Its own message is
+withheld, because it may quote what the policy was protecting: the `error` of
+such an entry is the replacement.
 
 Throws: `APPEX_INVALID_REDACTION_POLICY`
 

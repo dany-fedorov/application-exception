@@ -381,13 +381,13 @@ describe('createRedactionPolicy', () => {
           path: '$.password',
           key: 'as_json',
           prop: 'password',
-          error: 'Error: policy exploded',
+          error: '[redacted]',
         },
       ]);
       expect(validateDiagnostic(report)).toBeNull();
     });
 
-    test('a transform that always throws blanks the report without recursing, and says why', () => {
+    test('a transform that always throws blanks the report without recursing', () => {
       const throwing = createRedactionPolicy({
         transform: () => {
           throw new Error('policy exploded');
@@ -404,14 +404,16 @@ describe('createRedactionPolicy', () => {
       expect(report.reporting_errors?.length).toBeGreaterThan(1);
       for (const entry of report.reporting_errors ?? []) {
         expect(entry.stage).toBe('redact');
-        // The failing transform is not re-consulted to describe its own
-        // failure: the operator can still read why the policy broke.
-        expect(entry.error).toContain('policy exploded');
+        // The policy's own message is withheld: it may quote what the policy
+        // was protecting, and the only thing that knew how to protect it is
+        // the policy that just failed.
+        expect(entry.error).toBe('[redacted]');
       }
+      expect(JSON.stringify(report)).not.toContain('policy exploded');
       expect(validateDiagnostic(report)).toBeNull();
     });
 
-    test("patterns still scrub the text of the policy's own failure", () => {
+    test("the text of the policy's own failure is never emitted", () => {
       const leaky = createRedactionPolicy({
         patterns: [/sk-[a-z]+/g],
         transform: () => {
@@ -425,9 +427,9 @@ describe('createRedactionPolicy', () => {
       expect(entries.length).toBeGreaterThan(0);
       for (const entry of entries) {
         expect(entry.stage).toBe('redact');
-        expect(entry.error).toContain('failed on');
-        expect(entry.error).not.toContain('sk-abcdef');
+        expect(entry.error).toBe('[redacted]');
       }
+      expect(JSON.stringify(report)).not.toContain('failed on');
       expect(JSON.stringify(report)).not.toContain('sk-abcdef');
       expect(validateDiagnostic(report)).toBeNull();
     });
