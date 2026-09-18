@@ -96,12 +96,21 @@ function publicCodeOf(value: unknown): string {
   return value;
 }
 
-/** The call's `public` override, validated field by field before anything is built. */
+const NO_OVERRIDE: PublicOverride = Object.freeze({});
+
+/**
+ * The call's `public` override as a frozen snapshot, validated field by field
+ * before anything is built. Each field of the caller's bag is read exactly
+ * once, and the report is built from that snapshot: an accessor that answers
+ * differently the second time cannot show the validator one value and the
+ * report another. A getter that throws is the caller's own input and
+ * propagates, before either report exists.
+ */
 function publicOverrideOf(value: unknown): PublicOverride {
-  if (value === undefined) return {};
+  if (value === undefined) return NO_OVERRIDE;
   assertOptions(value, PUBLIC_OVERRIDE_KEYS, 'public');
   const { code, message, details } = value as Record<string, unknown>;
-  if (code !== undefined) publicCodeOf(code);
+  const validCode = code === undefined ? undefined : publicCodeOf(code);
   if (
     message !== undefined &&
     typeof message !== 'string' &&
@@ -120,7 +129,17 @@ function publicOverrideOf(value: unknown): PublicOverride {
       'APPEX_INVALID_OPTIONS',
       'public.details must be a function that selects the JSON to disclose, or null',
     );
-  return value as PublicOverride;
+  return Object.freeze({
+    ...(validCode === undefined ? {} : { code: validCode }),
+    ...(message === undefined
+      ? {}
+      : { message: message as NonNullable<PublicOverride['message']> }),
+    ...(details === undefined
+      ? {}
+      : {
+          details: details as Exclude<PublicOverride['details'], undefined>,
+        }),
+  });
 }
 
 /** The kind's policy with the call's override laid over it, field by field. */
@@ -384,7 +403,9 @@ export function toReports(
   // Everything that rejects a bag runs before either report exists: the public
   // override, and both makers, which is where corj rejects its own options. The
   // diagnostic report is built first because its fingerprint is the pair's.
-  publicOverrideOf(publicOptions.public);
+  // The snapshot the public report is built from: the caller's bag is read
+  // here and never again, so both reports see the same override.
+  const override = publicOverrideOf(publicOptions.public);
   makerFor(diagnosticOptions.corj, diagnosticOptions.redact);
   makerFor(publicOptions.corj, publicOptions.redact);
   const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
@@ -398,7 +419,7 @@ export function toReports(
     diagnostic,
     public: publicReportOf(
       caught,
-      publicOptions,
+      { ...publicOptions, public: override },
       occurrenceId,
       diagnostic.fingerprint ?? null,
     ),

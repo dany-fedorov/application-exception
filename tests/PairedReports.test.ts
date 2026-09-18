@@ -187,6 +187,24 @@ describe('toReports', () => {
     );
   });
 
+  test('reads the public override once and builds both reports from it', () => {
+    let reads = 0;
+    const captured = toReports(new Error('plain'), {
+      public: {
+        public: {
+          get code(): string {
+            return reads++ === 0 ? 'FIRST_READ' : ({ evil: 1 } as never);
+          },
+        },
+      },
+    });
+    expect(reads).toBe(1);
+    expect(captured.public.code).toBe('FIRST_READ');
+    expect(captured.diagnostic.occurrence_id).toBe(
+      captured.public.occurrence_id,
+    );
+  });
+
   test('throws instead of returning half a pair', () => {
     const error = new Error('plain');
     expect(() =>

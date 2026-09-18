@@ -550,6 +550,55 @@ describe('the public option', () => {
     ).not.toContain('sk-live');
   });
 
+  test('each override field is read once, so a getter cannot smuggle a value past validation', () => {
+    // The bag is the caller's object. Reading a field twice would let a getter
+    // show the validator one value and the report another.
+    let codeReads = 0;
+    const codeBag = {
+      get code(): string {
+        return codeReads++ === 0 ? 'OK_CODE' : ({ evil: 1 } as never);
+      },
+    };
+    expect(toPublicReport(caught, { public: codeBag }).code).toBe('OK_CODE');
+    expect(codeReads).toBe(1);
+
+    let messageReads = 0;
+    const messageBag = {
+      get message(): string {
+        return messageReads++ === 0 ? 'First.' : (42 as never);
+      },
+    };
+    expect(toPublicReport(caught, { public: messageBag }).message).toBe(
+      'First.',
+    );
+    expect(messageReads).toBe(1);
+
+    let detailsReads = 0;
+    const detailsBag = {
+      get details(): () => unknown {
+        return detailsReads++ === 0
+          ? () => ({ ok: true })
+          : ({ evil: 1 } as never);
+      },
+    };
+    expect(toPublicReport(caught, { public: detailsBag }).as_json).toEqual({
+      ok: true,
+    });
+    expect(detailsReads).toBe(1);
+  });
+
+  test('a throwing getter on the bag propagates before any report is built', () => {
+    expect(() =>
+      toPublicReport(caught, {
+        public: {
+          get code(): string {
+            throw new Error('bag boom');
+          },
+        },
+      }),
+    ).toThrow('bag boom');
+  });
+
   test('public.details that is not a function says what to pass', () => {
     expect(() =>
       toPublicReport(caught, { public: { details: { tool: 'x' } } as never }),
