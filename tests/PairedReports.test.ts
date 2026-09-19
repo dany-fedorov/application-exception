@@ -3,11 +3,14 @@ import {
   toPublicReport,
   toReports,
 } from '../src/reporting';
+import { createRedactionPolicy } from '../src/redaction';
 import { defineException } from '../src/typed';
 
 const code = (value: string) => expect.objectContaining({ code: value });
 const bytes = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
+class SecretNamedFailure extends Error {}
 
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
@@ -43,8 +46,8 @@ describe('toReports', () => {
       );
       expect(captured.occurrence_id).toBe(captured.public.occurrence_id);
       expect(captured.occurrence_id.length).toBeGreaterThan(0);
-      expect(captured.diagnostic.v).toBe('corj/v0.13');
-      expect(captured.public.v).toBe('appex/public/v3');
+      expect(captured.diagnostic.v).toBe('corj/v0.14');
+      expect(captured.public.v).toBe('appex/public/v4');
     }
   });
 
@@ -86,16 +89,19 @@ describe('toReports', () => {
       cause: new Error('postgres://user:hunter2@db'),
     });
     const captured = toReports(error, {
-      diagnostic: { context: { runId: 'run-1' }, maxReportSize: 4_096 },
-      public: { message: 'Search is down.' },
+      diagnostic: {
+        context: { runId: 'run-1' },
+        corj: { maxReportSize: 4_096 },
+      },
+      public: { public: { message: 'Search is down.' } },
     });
     expect(captured.public).toEqual(
-      toPublicReport(error, { message: 'Search is down.' }),
+      toPublicReport(error, { public: { message: 'Search is down.' } }),
     );
     expect(captured.diagnostic).toEqual(
       toDiagnosticReport(error, {
         context: { runId: 'run-1' },
-        maxReportSize: 4_096,
+        corj: { maxReportSize: 4_096 },
       }),
     );
     expect(captured.public.code).toBe('TOOL_UNAVAILABLE');
@@ -112,21 +118,25 @@ describe('toReports', () => {
     const captured = toReports('socket closed', {
       diagnostic: {
         context: { runId: 'run-1' },
-        maxDepth: 1,
-        maxChildren: 2,
-        maxReportSize: 2_048,
-        maxFinalReportSize: 4_096,
-        stackFormat: 'string',
+        corj: {
+          maxDepth: 1,
+          maxChildren: 2,
+          maxReportSize: 2_048,
+          stackFormat: 'string',
+        },
       },
       public: {
-        code: 'SOCKET_CLOSED',
-        message: 'Try again.',
-        details: { a: 1 },
+        public: {
+          code: 'SOCKET_CLOSED',
+          message: 'Try again.',
+          details: () => ({ a: 1 }),
+        },
       },
     });
     expect(captured.diagnostic.context).toEqual({ runId: 'run-1' });
+    // A thrown string has no stack, so the public report carries no fingerprint.
     expect(captured.public).toEqual({
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: captured.occurrence_id,
       code: 'SOCKET_CLOSED',
       message: 'Try again.',
@@ -137,13 +147,12 @@ describe('toReports', () => {
   test('bounds the diagnostic report through the nested budget', () => {
     const captured = toReports(new Error('failure'), {
       diagnostic: {
-        maxReportSize: 1024,
-        maxFinalReportSize: 1024,
+        corj: { maxReportSize: 1024 },
         context: { text: 'x'.repeat(12_000) },
       },
     });
     expect(bytes(captured.diagnostic)).toBeLessThanOrEqual(1024);
-    expect(captured.diagnostic.report_omitted).toEqual(['context']);
+    expect(captured.diagnostic.context_omitted).toBe('max_size');
     expect(captured.diagnostic.occurrence_id).toBe(
       captured.public.occurrence_id,
     );
@@ -169,31 +178,189 @@ describe('toReports', () => {
     expect(() =>
       toReports('x', { diagnostic: { occurrenceId: 'a' } } as never),
     ).toThrow(
-      /unknown option "occurrenceId"; known options: context, maxReportSize, maxFinalReportSize, maxDepth, maxChildren, stackFormat/,
+      /unknown option "occurrenceId"; known options: context, redact, corj/,
     );
     expect(() =>
       toReports('x', { public: { occurrenceId: 'a' } } as never),
     ).toThrow(
-      /unknown option "occurrenceId"; known options: code, message, details/,
+      /unknown option "occurrenceId"; known options: public, redact, realm, corj/,
     );
-    expect(() => toReports('x', { public: { messag: 'a' } } as never)).toThrow(
+    expect(() => toReports('x', { publi: { message: 'a' } } as never)).toThrow(
       code('APPEX_INVALID_OPTIONS'),
+    );
+  });
+
+  test('reads the public override once and builds both reports from it', () => {
+    let reads = 0;
+    const captured = toReports(new Error('plain'), {
+      public: {
+        public: {
+          get code(): string {
+            return reads++ === 0 ? 'FIRST_READ' : ({ evil: 1 } as never);
+          },
+        },
+      },
+    });
+    expect(reads).toBe(1);
+    expect(captured.public.code).toBe('FIRST_READ');
+    expect(captured.diagnostic.occurrence_id).toBe(
+      captured.public.occurrence_id,
     );
   });
 
   test('throws instead of returning half a pair', () => {
     const error = new Error('plain');
     expect(() =>
-      toReports(error, { public: { message: 42 } as never }),
+      toReports(error, { public: { public: { message: 42 } } as never }),
     ).toThrow(code('APPEX_INVALID_PUBLIC_MESSAGE'));
-    expect(() => toReports(error, { public: { code: '' } })).toThrow(
-      code('APPEX_INVALID_PUBLIC_CODE'),
-    );
-    expect(() => toReports(error, { diagnostic: { maxDepth: -1 } })).toThrow(
-      RangeError,
-    );
     expect(() =>
-      toReports(error, { diagnostic: { maxFinalReportSize: 64 } }),
-    ).toThrow(code('APPEX_REPORT_BUDGET_TOO_SMALL'));
+      toReports(error, { public: { public: { code: '' } } }),
+    ).toThrow(code('APPEX_INVALID_PUBLIC_CODE'));
+    expect(() =>
+      toReports(error, { diagnostic: { corj: { maxDepth: -1 } } }),
+    ).toThrow(RangeError);
+    expect(() =>
+      toReports(error, { diagnostic: { corj: { maxReportSize: 100 } } }),
+    ).toThrow(RangeError);
+    expect(() => toReports(error, { public: { realm: {} as never } })).toThrow(
+      code('APPEX_INVALID_TRUST_REALM'),
+    );
+  });
+
+  test('a bad bag is rejected before any report work, realm included', () => {
+    let ran = 0;
+    class Counting extends Error {
+      override get name() {
+        ran++;
+        return 'Counting';
+      }
+    }
+    const caught = new Counting('plain');
+    const before = ran; // V8 may read `name` while constructing the error
+
+    expect(() => toReports(caught, { public: { realm: {} as never } })).toThrow(
+      code('APPEX_INVALID_TRUST_REALM'),
+    );
+
+    // The diagnostic report reads `name`; nothing was built before the throw.
+    expect(ran).toBe(before);
+  });
+
+  test('reads every option of every bag exactly once, before either report', () => {
+    const reads: string[] = [];
+    const diagnosticBag = {
+      get corj() {
+        reads.push('diagnostic.corj');
+        return { maxDepth: 1 };
+      },
+      get redact() {
+        reads.push('diagnostic.redact');
+        return undefined;
+      },
+      get context() {
+        reads.push('diagnostic.context');
+        return { runId: 'run-1' };
+      },
+    };
+    const publicBag = {
+      get public() {
+        reads.push('public.public');
+        return { code: 'ONCE' };
+      },
+      get corj() {
+        reads.push('public.corj');
+        return {};
+      },
+      get redact() {
+        reads.push('public.redact');
+        return undefined;
+      },
+      get realm() {
+        reads.push('public.realm');
+        return undefined;
+      },
+    };
+
+    const captured = toReports(new Error('plain'), {
+      get occurrenceId() {
+        reads.push('occurrenceId');
+        return 'trace-once';
+      },
+      get diagnostic() {
+        reads.push('diagnostic');
+        return diagnosticBag;
+      },
+      get public() {
+        reads.push('public');
+        return publicBag;
+      },
+    });
+
+    // The order is the contract: both bags are read and validated up front, and
+    // no report is built from a second read.
+    expect(reads).toEqual([
+      'diagnostic',
+      'public',
+      'public.public',
+      'public.corj',
+      'public.redact',
+      'public.realm',
+      'diagnostic.corj',
+      'diagnostic.redact',
+      'diagnostic.context',
+      'occurrenceId',
+    ]);
+    expect(captured.occurrence_id).toBe('trace-once');
+    expect(captured.public.code).toBe('ONCE');
+    expect(captured.diagnostic.context).toEqual({ runId: 'run-1' });
+  });
+});
+
+describe('toReports fingerprints each report from its own bag', () => {
+  test('the same corj and redact in both bags agree', () => {
+    const corj = { maxDepth: 1 };
+    const redact = createRedactionPolicy({ patterns: [/sk-[a-z]{10}/g] });
+    const { diagnostic, public: disclosed } = toReports(
+      new Error('key sk-abcdefghij', { cause: new Error('y') }),
+      { diagnostic: { corj, redact }, public: { corj, redact } },
+    );
+    expect(disclosed.fingerprint).toBe(diagnostic.fingerprint);
+    expect(disclosed.fingerprint).toMatch(/^fp1_/);
+  });
+
+  test('the public bag turns the published hash off on its own', () => {
+    const { diagnostic, public: disclosed } = toReports(new Error('x'), {
+      public: { corj: { fingerprintParts: null } },
+    });
+    expect(diagnostic.fingerprint).toMatch(/^fp1_/);
+    expect(disclosed).not.toHaveProperty('fingerprint');
+  });
+
+  test('off in the diagnostic bag alone leaves the public hash standing', () => {
+    const { diagnostic, public: disclosed } = toReports(new Error('x'), {
+      diagnostic: { corj: { fingerprintParts: null } },
+    });
+    expect(diagnostic).not.toHaveProperty('fingerprint');
+    expect(disclosed.fingerprint).toMatch(/^fp1_/);
+  });
+
+  test('a value with no stack gets a diagnostic hash and no public one', () => {
+    const { diagnostic, public: disclosed } = toReports('socket closed');
+    expect(diagnostic.fingerprint).toMatch(/^fp1_/);
+    expect(disclosed).not.toHaveProperty('fingerprint');
+  });
+
+  test('redact on the public bag alone hashes under that policy', () => {
+    // The policy scrubs the constructor name, which the default recipe hashes;
+    // the stack keeps its frames, so the public hash is still published.
+    const caught = new SecretNamedFailure('boom');
+    const redact = createRedactionPolicy({ patterns: [/Secret/g] });
+    const { diagnostic, public: disclosed } = toReports(caught, {
+      public: { redact },
+    });
+    expect(disclosed.fingerprint).toBe(
+      toPublicReport(caught, { redact }).fingerprint,
+    );
+    expect(disclosed.fingerprint).not.toBe(diagnostic.fingerprint);
   });
 });

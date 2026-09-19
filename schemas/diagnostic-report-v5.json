@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dany-fedorov/application-exception/schemas/diagnostic-report-v5.json",
+  "title": "application-exception diagnostic report v5",
+  "description": "A caught-object-report-json report object (corj/v0.14, https://github.com/dany-fedorov/caught-object-report-json) whose root carries occurrence_id, fingerprint, context, context_omitted, reporting_errors and reporting_errors_omitted, all of them corj's own fields. corj definitions are embedded under $defs; a missing corj field holds its expected value, null means producing it failed.",
+  "type": "object",
+  "allOf": [
+    { "$ref": "#/$defs/corjBase" },
+    { "$ref": "#/$defs/corjObjectRoot" },
+    { "$ref": "#/$defs/appexExtension" }
+  ],
+  "$defs": {
+    "corjJsonValue": {
+      "oneOf": [
+        { "type": "null" },
+        { "type": "number" },
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "array" },
+        { "type": "object" }
+      ]
+    },
+    "corjBase": {
+      "type": "object",
+      "description": "Base properties shared by the root and every child report, as defined by corj/v0.14. The root-only properties are marked as such.",
+      "properties": {
+        "occurrence_id": {
+          "description": "Root only. Identifies this occurrence: the typed exception's occurrenceId, or a generated AE_ id. Shared with the public report.",
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,128}$"
+        },
+        "fingerprint": {
+          "description": "Root only. Equal for failures of the same kind from the same place: fp1_ plus 32 hex characters, or a caller-supplied token. A retry signal, not a lookup key.",
+          "type": "string",
+          "pattern": "^[\\x21-\\x7e]{1,64}$"
+        },
+        "truncated": {
+          "description": "Present when content or child reports were omitted to meet the report size limit.",
+          "const": true
+        },
+        "instanceof_error": {
+          "description": "Result of `caught instanceof Error`. Omitted when true.",
+          "type": "boolean"
+        },
+        "typeof": {
+          "description": "Result of `typeof caught`. Omitted when \"object\".",
+          "enum": [
+            "undefined",
+            "object",
+            "boolean",
+            "number",
+            "bigint",
+            "string",
+            "symbol",
+            "function"
+          ]
+        },
+        "constructor_name": {
+          "description": "Result of `caught.constructor.name`; null when reading it threw. Omitted with as_string and message when the first stack line is `constructor_name: message`.",
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "message": {
+          "description": "Result of `caught.message`; null when reading it threw. Omitted as described for constructor_name.",
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "as_string": {
+          "description": "String form of the caught value (`String(caught)`); null when producing it threw. Omitted when it equals the first stack line.",
+          "oneOf": [{ "type": "null" }, { "type": "string" }]
+        },
+        "as_json": {
+          "description": "JSON form of the caught value's enumerable properties, cut with [truncated] markers under the size limit; null when producing it threw. Omitted when {}.",
+          "$ref": "#/$defs/corjJsonValue"
+        },
+        "stack": {
+          "description": "Result of `caught.stack` split into lines (or the raw string with stackFormat \"string\"); null when reading it threw.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "string" },
+            { "type": "array", "items": { "type": "string" } }
+          ]
+        },
+        "children_omitted": {
+          "description": "Present when this node has child sources that were not reported.",
+          "enum": [
+            "max_depth",
+            "max_children",
+            "max_size",
+            "not_inspected",
+            "redacted"
+          ]
+        },
+        "as_string_format": {
+          "description": "Omitted when \"String\".",
+          "enum": [".toCorjAsString", "String", "derived"]
+        },
+        "as_json_format": {
+          "description": "Omitted when \"safe-stable-stringify-with-length-limit\".",
+          "enum": [".toCorjAsJson", "safe-stable-stringify-with-length-limit"]
+        },
+        "children_sources": {
+          "description": "Root only. Properties children were collected from. Omitted when [\"cause\", \"errors\"].",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "context": {
+          "description": "Root only. Caller data rendered as JSON; paths inside it start at $context."
+        },
+        "context_omitted": {
+          "description": "Root only. The context was dropped to meet maxReportSize.",
+          "const": "max_size"
+        },
+        "reporting_errors": {
+          "description": "Root only. Problems met while inspecting the caught value or the context, at most 8.",
+          "type": "array",
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/corjReportingError" }
+        },
+        "reporting_errors_omitted": {
+          "description": "Root only. The reporting errors were dropped to meet maxReportSize.",
+          "const": "max_size"
+        }
+      }
+    },
+    "corjReportingError": {
+      "description": "One failure met while the report was produced. The same shape reaches the onError handler.",
+      "type": "object",
+      "required": ["stage", "path", "error"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "description": "Where the failure happened.",
+          "enum": [
+            "prop-access",
+            "as_string",
+            "as_json",
+            "children",
+            "limit",
+            "redact",
+            "warning",
+            "other"
+          ]
+        },
+        "path": {
+          "description": "JSONPath of the value. $ is the caught root; $context and other named roots are separate documents.",
+          "type": "string"
+        },
+        "key": {
+          "description": "The report field being produced, when there is one.",
+          "type": "string"
+        },
+        "prop": {
+          "description": "The property of the caught object being read, when there is one.",
+          "type": "string"
+        },
+        "error": {
+          "description": "Text describing the failure, scrubbed by the redaction policy and cut to 256 characters.",
+          "type": "string",
+          "maxLength": 256
+        }
+      }
+    },
+    "corjChild": {
+      "type": "object",
+      "required": ["id", "path", "level"],
+      "properties": {
+        "id": {
+          "description": "Node id within this report, from the makeReportId option. Not the occurrence id.",
+          "type": "string"
+        },
+        "path": {
+          "description": "JSONPath from the root caught value, for example $.cause.errors[0].",
+          "type": "string"
+        },
+        "level": {
+          "description": "Depth in the error tree; the root is 0.",
+          "type": "number"
+        },
+        "child_ids": {
+          "description": "Ids of this node's direct children; a repeated object references its first id.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "corjObjectRoot": {
+      "type": "object",
+      "properties": {
+        "children": {
+          "description": "Every nested error found through children_sources, flattened breadth-first.",
+          "type": "array",
+          "items": {
+            "allOf": [
+              { "$ref": "#/$defs/corjBase" },
+              { "$ref": "#/$defs/corjChild" }
+            ]
+          }
+        }
+      }
+    },
+    "appexExtension": {
+      "type": "object",
+      "description": "What application-exception requires of a corj report: the version it emits, and the occurrence id it always sets. Both are corj's own fields.",
+      "required": ["v", "occurrence_id"],
+      "properties": {
+        "v": {
+          "description": "The corj report version. corj/v0.14-full marks a complete report, as produced by restoreExpectedValues or when corj could not omit expected values.",
+          "enum": ["corj/v0.14", "corj/v0.14-full"]
+        },
+        "occurrence_id": { "$ref": "#/$defs/corjBase/properties/occurrence_id" }
+      }
+    }
+  }
+}

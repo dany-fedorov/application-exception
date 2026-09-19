@@ -9,9 +9,11 @@ describe('agent recovery example', () => {
   };
   const report = toPublicReport(new Error('x'), {
     occurrenceId: 'AE_retry',
-    code: 'TOOL_UNAVAILABLE',
-    message: 'The requested tool is temporarily unavailable.',
-    details: { tool: 'search' },
+    public: {
+      code: 'TOOL_UNAVAILABLE',
+      message: 'The requested tool is temporarily unavailable.',
+      details: () => ({ tool: 'search' }),
+    },
   });
   const received = () => JSON.parse(JSON.stringify(report)) as unknown;
 
@@ -49,7 +51,7 @@ describe('agent recovery example', () => {
       action: 'escalate',
       occurrenceId: 'unavailable',
       reason: 'invalid-report',
-      detail: 'Expected version appex/public/v3 at $.v',
+      detail: 'Expected version appex/public/v3 or appex/public/v4 at $.v',
     });
   });
 

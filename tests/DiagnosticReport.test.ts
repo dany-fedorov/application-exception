@@ -1,7 +1,6 @@
-import { CorjMaker, restoreExpectedValues } from 'caught-object-report-json';
+import { restoreExpectedValues } from 'caught-object-report-json';
 import { toDiagnosticReport, toPublicReport } from '../src/reporting';
 import { DIAGNOSTIC_REPORT_VERSION } from '../src/report-types';
-import { createRedactionPolicy } from '../src/redaction';
 import { defineException } from '../src/typed';
 import { TYPED_EXCEPTION_BRAND } from '../src/typed-internals';
 
@@ -25,9 +24,12 @@ describe('toDiagnosticReport', () => {
 
     const report = toDiagnosticReport(error);
 
-    expect(report.v).toBe('corj/v0.13');
-    expect(DIAGNOSTIC_REPORT_VERSION).toBe('corj/v0.13');
+    expect(report.v).toBe('corj/v0.14');
+    expect(DIAGNOSTIC_REPORT_VERSION).toBe('corj/v0.14');
     expect(report.occurrence_id).toBe(error.occurrenceId);
+    expect(report.fingerprint).toEqual(
+      expect.stringMatching(/^fp1_[0-9a-f]{32}$/),
+    );
     expect(report.as_json).toEqual({
       _tag: 'agent/ToolFailure',
       occurrenceId: error.occurrenceId,
@@ -89,6 +91,13 @@ describe('toDiagnosticReport', () => {
       occurrenceId: 42,
     });
     expect(toDiagnosticReport(forged).occurrence_id).toMatch(/^AE_/);
+    // A branded id corj would reject falls through to the memo, as a too-long
+    // one does: the report keeps an id corj can carry.
+    const spaced = Object.assign(new Error('spaced'), {
+      [TYPED_EXCEPTION_BRAND]: true,
+      occurrenceId: 'has space',
+    });
+    expect(toDiagnosticReport(spaced).occurrence_id).toMatch(/^AE_/);
   });
 
   test('honors and validates an explicit occurrence id', () => {
@@ -99,7 +108,14 @@ describe('toDiagnosticReport', () => {
     expect(
       toDiagnosticReport(error, { occurrenceId: 'override' }).occurrence_id,
     ).toBe('override');
-    for (const occurrenceId of ['', 'x'.repeat(129), 42, null]) {
+    for (const occurrenceId of [
+      '',
+      'x'.repeat(129),
+      42,
+      null,
+      'has space',
+      'caf\u00e9',
+    ]) {
       expect(() => toDiagnosticReport('x', { occurrenceId } as never)).toThrow(
         code('APPEX_INVALID_OCCURRENCE_ID'),
       );
@@ -132,11 +148,13 @@ describe('toDiagnosticReport', () => {
     const big = toDiagnosticReport(new Error('x'), {
       context: { blob: 'x'.repeat(40_000) },
     });
-    expect(Buffer.byteLength(JSON.stringify(big.context))).toBeLessThan(17_000);
+    expect(Buffer.byteLength(JSON.stringify(big.context))).toBeLessThanOrEqual(
+      16_384,
+    );
     expect(JSON.stringify(big.context)).toContain('[truncated]');
   });
 
-  test('records context serialization failures under $.context', () => {
+  test('records context serialization failures under $context', () => {
     const report = toDiagnosticReport(new Error('x'), {
       context: {
         get secret() {
@@ -148,7 +166,7 @@ describe('toDiagnosticReport', () => {
     expect(report.reporting_errors).toEqual([
       {
         stage: 'as_json',
-        path: '$.context',
+        path: '$context',
         key: 'as_json',
         error: 'Error: getter boom',
       },
@@ -209,22 +227,64 @@ describe('toDiagnosticReport', () => {
 
   test('passes corj options through', () => {
     const nested = new Error('outer', { cause: new Error('inner') });
-    expect(toDiagnosticReport(nested, { maxDepth: 0 }).children_omitted).toBe(
-      'max_depth',
-    );
+    expect(
+      toDiagnosticReport(nested, { corj: { maxDepth: 0 } }).children_omitted,
+    ).toBe('max_depth');
     const aggregate = new AggregateError([new Error('a'), new Error('b')]);
     expect(
-      toDiagnosticReport(aggregate, { maxChildren: 1 }).children_omitted,
+      toDiagnosticReport(aggregate, { corj: { maxChildren: 1 } })
+        .children_omitted,
     ).toBe('max_children');
     expect(
-      typeof toDiagnosticReport(nested, { stackFormat: 'string' }).stack,
+      typeof toDiagnosticReport(nested, { corj: { stackFormat: 'string' } })
+        .stack,
     ).toBe('string');
     const small = toDiagnosticReport(new Error('x'.repeat(2000)), {
-      maxReportSize: 512,
+      corj: { maxReportSize: 512 },
     });
     expect(small.truncated).toBe(true);
-    expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThan(700);
-    expect(() => toDiagnosticReport('x', { maxDepth: -1 })).toThrow(RangeError);
+    expect(Buffer.byteLength(JSON.stringify(small))).toBeLessThanOrEqual(512);
+    expect(() => toDiagnosticReport('x', { corj: { maxDepth: -1 } })).toThrow(
+      RangeError,
+    );
+  });
+
+  test('every corj option is reachable: no-invoke runs no getter', () => {
+    let ran = 0;
+    class Lazy extends Error {
+      get secret() {
+        ran++;
+        return 's';
+      }
+    }
+    toDiagnosticReport(new Lazy('x'), { corj: { inspection: 'no-invoke' } });
+    expect(ran).toBe(0);
+  });
+
+  test('reads every option of the bag exactly once', () => {
+    const reads: string[] = [];
+    const report = toDiagnosticReport(new Error('x'), {
+      get occurrenceId() {
+        reads.push('occurrenceId');
+        return 'trace-once';
+      },
+      get corj() {
+        reads.push('corj');
+        return { maxDepth: 1 };
+      },
+      get redact() {
+        reads.push('redact');
+        return undefined;
+      },
+      get context() {
+        reads.push('context');
+        return { runId: 'run-1' };
+      },
+    });
+
+    expect(reads).toEqual(['occurrenceId', 'corj', 'redact', 'context']);
+    expect(report.occurrence_id).toBe('trace-once');
+    expect(report.context).toEqual({ runId: 'run-1' });
   });
 
   test('rejects malformed options with a coded error', () => {
@@ -234,7 +294,10 @@ describe('toDiagnosticReport', () => {
       );
     }
     expect(() => toDiagnosticReport('x', { maxDepht: 1 } as never)).toThrow(
-      /APPEX_INVALID_OPTIONS: unknown option "maxDepht"; known options: occurrenceId, context, maxReportSize, maxFinalReportSize, maxDepth, maxChildren, stackFormat/,
+      /APPEX_INVALID_OPTIONS: unknown option "maxDepht"; known options: occurrenceId, context, redact, corj/,
+    );
+    expect(() => toDiagnosticReport('x', { maxDepth: 1 } as never)).toThrow(
+      /unknown option "maxDepth"/,
     );
   });
 });
@@ -242,76 +305,73 @@ describe('toDiagnosticReport', () => {
 const bytes = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
 
-describe('toDiagnosticReport with maxFinalReportSize', () => {
-  test('bounds the complete report of the reported reproducer', () => {
-    const options = {
-      maxReportSize: 1024,
-      context: { text: 'x'.repeat(12_000) },
-    };
-    const unbounded = toDiagnosticReport(new Error('failure'), options);
-    expect(bytes(unbounded)).toBeGreaterThan(1024);
-    expect(unbounded).not.toHaveProperty('report_omitted');
-
-    const bounded = toDiagnosticReport(new Error('failure'), {
-      ...options,
-      maxFinalReportSize: 1024,
-    });
-    expect(bytes(bounded)).toBeLessThanOrEqual(1024);
-    expect(bounded.v).toBe('corj/v0.13');
-    expect(bounded.occurrence_id).toMatch(/^AE_/);
-    expect(bounded).not.toHaveProperty('context');
-    expect(bounded.report_omitted).toEqual(['context']);
-  });
-
-  test('keeps the report unbounded when the budget is disabled', () => {
-    const disabled = toDiagnosticReport(new Error('failure'), {
-      maxReportSize: 1024,
-      maxFinalReportSize: null,
-      context: { text: 'x'.repeat(12_000) },
-    });
-    expect(bytes(disabled)).toBeGreaterThan(1024);
-    expect(disabled).not.toHaveProperty('report_omitted');
-    expect(disabled.context).toBeDefined();
-  });
-
-  test('drops context first and reporting_errors second', () => {
+describe('toDiagnosticReport with corj.maxReportSize', () => {
+  /** An error whose `message` getter throws, so the report carries reporting errors too. */
+  const failing = () => {
     const error = new Error('base');
     Object.defineProperty(error, 'message', {
       get() {
         throw new Error('message boom');
       },
     });
+    return error;
+  };
+
+  test('one budget bounds the whole report, context and errors included', () => {
+    const report = toDiagnosticReport(new Error('m'.repeat(5000)), {
+      context: { blob: 'c'.repeat(5000) },
+      corj: { maxReportSize: 1024 },
+    });
+    expect(
+      new TextEncoder().encode(JSON.stringify(report)).length,
+    ).toBeLessThanOrEqual(1024);
+    expect(report.context_omitted).toBe('max_size');
+    expect(report.occurrence_id).toMatch(/^AE_/);
+    expect(report.v).toBe(DIAGNOSTIC_REPORT_VERSION);
+  });
+
+  test("the id is application-exception's, never corj's random one", () => {
+    expect(toDiagnosticReport(new Error('x')).occurrence_id).toMatch(/^AE_/);
+    expect(
+      toDiagnosticReport('primitive', { occurrenceId: 'req-1' }).occurrence_id,
+    ).toBe('req-1');
+  });
+
+  test('keeps the report unbounded when the budget is disabled', () => {
+    const disabled = toDiagnosticReport(new Error('failure'), {
+      corj: { maxReportSize: null },
+      context: { text: 'x'.repeat(12_000) },
+    });
+    expect(bytes(disabled)).toBeGreaterThan(1024);
+    expect(disabled).not.toHaveProperty('context_omitted');
+    expect(disabled.context).toBeDefined();
+  });
+
+  test('drops context first and reporting_errors second', () => {
+    const error = failing();
     const context = { runId: 'r'.repeat(200) };
     const complete = toDiagnosticReport(error, { context });
-    const withoutContext = bytes({
-      ...complete,
-      context: undefined,
-      report_omitted: ['context'],
-    });
-    const withoutErrors = bytes({
-      ...complete,
-      context: undefined,
-      reporting_errors: undefined,
-      report_omitted: ['context', 'reporting_errors'],
-    });
+    expect(complete.context).toBeDefined();
+    expect(complete.reporting_errors).toHaveLength(3);
 
     const one = toDiagnosticReport(error, {
       context,
-      maxFinalReportSize: withoutContext,
+      corj: { maxReportSize: bytes(complete) - 1 },
     });
-    expect(one.report_omitted).toEqual(['context']);
-    expect(one.reporting_errors).toHaveLength(3);
+    expect(one.context_omitted).toBe('max_size');
     expect(one).not.toHaveProperty('context');
-    expect(bytes(one)).toBeLessThanOrEqual(withoutContext);
+    expect(one.reporting_errors).toHaveLength(3);
+    expect(one).not.toHaveProperty('reporting_errors_omitted');
+    expect(bytes(one)).toBeLessThanOrEqual(bytes(complete) - 1);
 
     const two = toDiagnosticReport(error, {
       context,
-      maxFinalReportSize: withoutErrors,
+      corj: { maxReportSize: 512 },
     });
-    expect(two.report_omitted).toEqual(['context', 'reporting_errors']);
+    expect(two.context_omitted).toBe('max_size');
+    expect(two.reporting_errors_omitted).toBe('max_size');
     expect(two).not.toHaveProperty('reporting_errors');
-    expect(two.truncated).toBeUndefined();
-    expect(bytes(two)).toBeLessThanOrEqual(withoutErrors);
+    expect(bytes(two)).toBeLessThanOrEqual(512);
   });
 
   test('drops reporting_errors alone when there is no context', () => {
@@ -328,75 +388,39 @@ describe('toDiagnosticReport with maxFinalReportSize', () => {
     });
     const complete = toDiagnosticReport(hostile);
     expect(complete.reporting_errors).toHaveLength(8);
-    const budget = bytes({
-      ...complete,
-      reporting_errors: undefined,
-      report_omitted: ['reporting_errors'],
-    });
+
     const report = toDiagnosticReport(hostile, {
-      maxFinalReportSize: budget,
+      corj: { maxReportSize: 512 },
     });
-    expect(report.report_omitted).toEqual(['reporting_errors']);
+    expect(report.reporting_errors_omitted).toBe('max_size');
     expect(report).not.toHaveProperty('reporting_errors');
-    expect(bytes(report)).toBeLessThanOrEqual(budget);
+    expect(report).not.toHaveProperty('context_omitted');
+    expect(bytes(report)).toBeLessThanOrEqual(512);
   });
 
-  test('halves the corj budget until the report fits', () => {
+  test('trims the content of an error too large for the budget', () => {
     const report = toDiagnosticReport(new Error('e'.repeat(4_000)), {
-      maxFinalReportSize: 900,
+      corj: { maxReportSize: 900 },
     });
     expect(bytes(report)).toBeLessThanOrEqual(900);
     expect(report.truncated).toBe(true);
     expect(report.occurrence_id).toMatch(/^AE_/);
-    expect(report).not.toHaveProperty('report_omitted');
-
-    const unlimited = toDiagnosticReport(new Error('x'.repeat(5_000)), {
-      maxReportSize: null,
-      maxFinalReportSize: 800,
-    });
-    expect(bytes(unlimited)).toBeLessThanOrEqual(800);
-    expect(unlimited.truncated).toBe(true);
-  });
-
-  test('marks reporting errors met while shrinking', () => {
-    const calibrate = () => {
-      let reads = 0;
-      const probe = new Error('base');
-      Object.defineProperty(probe, 'message', {
-        get() {
-          reads += 1;
-          return 'm'.repeat(6_000);
-        },
-      });
-      toDiagnosticReport(probe);
-      return reads;
-    };
-    const budget = calibrate();
-    let reads = 0;
-    const error = new Error('base');
-    Object.defineProperty(error, 'message', {
-      get() {
-        reads += 1;
-        if (reads > budget) throw new Error('late boom');
-        return 'm'.repeat(6_000);
-      },
-    });
-    const complete = toDiagnosticReport(error, { maxFinalReportSize: 600 });
-    expect(complete.report_omitted).toEqual(['reporting_errors']);
-    expect(complete).not.toHaveProperty('reporting_errors');
-    expect(bytes(complete)).toBeLessThanOrEqual(600);
+    expect(report).not.toHaveProperty('context_omitted');
   });
 
   test('counts bytes and not string length for unicode content', () => {
-    const message = '🛰 спутник недоступен '.repeat(200);
+    const message =
+      '\u{1f6f0} \u0441\u043f\u0443\u0442\u043d\u0438\u043a \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d '.repeat(
+        200,
+      );
     const unbounded = toDiagnosticReport(new Error(message));
     expect(bytes(unbounded)).toBeGreaterThan(JSON.stringify(unbounded).length);
     const report = toDiagnosticReport(new Error(message), {
-      context: { note: '✅'.repeat(2_000) },
-      maxFinalReportSize: 700,
+      context: { note: '\u2705'.repeat(2_000) },
+      corj: { maxReportSize: 700 },
     });
     expect(bytes(report)).toBeLessThanOrEqual(700);
-    expect(report.report_omitted).toEqual(['context']);
+    expect(report.context_omitted).toBe('max_size');
   });
 
   test('keeps identity fields under nested causes and long identifiers', () => {
@@ -412,143 +436,63 @@ describe('toDiagnosticReport with maxFinalReportSize', () => {
     const report = toDiagnosticReport(deep, {
       occurrenceId,
       context: { runId: 'r'.repeat(4_000) },
-      maxFinalReportSize: 1_200,
+      corj: { maxReportSize: 1_200 },
     });
     expect(bytes(report)).toBeLessThanOrEqual(1_200);
     expect(report.occurrence_id).toBe(occurrenceId);
-    expect(report.v).toBe('corj/v0.13');
-    expect(report.report_omitted).toEqual(['context']);
+    expect(report.fingerprint).toEqual(
+      expect.stringMatching(/^fp1_[0-9a-f]{32}$/),
+    );
+    expect(report.v).toBe('corj/v0.14');
+    expect(report.context_omitted).toBe('max_size');
   });
 
-  test('throws when the budget cannot hold the envelope', () => {
+  test('a budget corj refuses is corj\u2019s own error, unwrapped', () => {
     expect(() =>
-      toDiagnosticReport(new Error('failure'), { maxFinalReportSize: 64 }),
-    ).toThrow(code('APPEX_REPORT_BUDGET_TOO_SMALL'));
-    expect(() =>
-      toDiagnosticReport('x', {
-        occurrenceId: 'o'.repeat(128),
-        maxFinalReportSize: 150,
+      toDiagnosticReport(new Error('failure'), {
+        corj: { maxReportSize: 100 },
       }),
-    ).toThrow(/cannot hold the required report envelope/);
-  });
-
-  test('rejects budgets that are not positive safe integers', () => {
-    for (const maxFinalReportSize of [
-      0,
-      -1,
-      1.5,
-      Number.NaN,
-      Number.MAX_SAFE_INTEGER + 2,
-      '1024',
-    ]) {
+    ).toThrow(RangeError);
+    for (const maxReportSize of [0, -1, 1.5, Number.NaN, '1024']) {
       expect(() =>
-        toDiagnosticReport('x', { maxFinalReportSize } as never),
-      ).toThrow(code('APPEX_INVALID_OPTIONS'));
+        toDiagnosticReport('x', { corj: { maxReportSize } } as never),
+      ).toThrow(RangeError);
     }
     expect(
-      toDiagnosticReport('x', { maxFinalReportSize: null }).occurrence_id,
+      toDiagnosticReport('x', { corj: { maxReportSize: null } }).occurrence_id,
     ).toMatch(/^AE_/);
   });
 });
 
-describe('maxFinalReportSize drop order', () => {
-  /**
-   * The explicit context and reporting_errors steps must do the work, not the
-   * corj shrink that follows them: at a budget the un-shrunk corj report
-   * already fits, only the two drop steps can bring the report inside it.
-   */
-  test('drops context and reporting_errors without shrinking the corj report', () => {
-    const caught = {
-      message: 'boom',
-      get password(): never {
-        throw new Error('unreadable');
-      },
-    };
-    const full = toDiagnosticReport(caught, {
-      context: { text: 'x'.repeat(400) },
-    });
-    const corjOnly = toDiagnosticReport(caught);
-    const corjBytes = new TextEncoder().encode(
-      JSON.stringify(corjOnly),
-    ).byteLength;
-    const fullBytes = new TextEncoder().encode(JSON.stringify(full)).byteLength;
-
-    expect(fullBytes).toBeGreaterThan(corjBytes);
-    expect(full.reporting_errors).toBeDefined();
-
-    // Room for everything except context and reporting_errors, plus the
-    // report_omitted marker the two drops add.
-    const errorsBytes = new TextEncoder().encode(
-      `,"reporting_errors":${JSON.stringify(corjOnly.reporting_errors)}`,
-    ).byteLength;
-    const budget = corjBytes - errorsBytes + 60;
-    const bounded = toDiagnosticReport(caught, {
-      context: { text: 'x'.repeat(400) },
-      maxFinalReportSize: budget,
-    });
-
-    expect(bounded.report_omitted).toEqual(['context', 'reporting_errors']);
-    expect(bounded.context).toBeUndefined();
-    expect(bounded.reporting_errors).toBeUndefined();
-    // The corj report itself was never shrunk: its own content survives whole.
-    expect(bounded.truncated).toBeUndefined();
-    expect(bounded.as_json).toEqual(corjOnly.as_json);
-  });
-
+describe('the budget drops optional parts before it trims content', () => {
   test('drops context alone when that is enough', () => {
     const caught = new Error('boom');
-    const corjBytes = new TextEncoder().encode(
-      JSON.stringify(toDiagnosticReport(caught)),
-    ).byteLength;
+    const corjOnly = toDiagnosticReport(caught);
 
     const bounded = toDiagnosticReport(caught, {
-      context: { text: 'x'.repeat(400) },
-      maxFinalReportSize: corjBytes + 40,
+      context: { text: 'x'.repeat(4_000) },
+      corj: { maxReportSize: bytes(corjOnly) * 2 },
     });
 
-    expect(bounded.report_omitted).toEqual(['context']);
-    expect(bounded.truncated).toBeUndefined();
+    expect(bounded.context_omitted).toBe('max_size');
+    expect(bounded).not.toHaveProperty('reporting_errors_omitted');
+    // The error's own content was never trimmed: only the container went.
+    expect(bounded.stack).toEqual(corjOnly.stack);
   });
 });
 
 describe('the report always identifies itself', () => {
-  test('restores the version corj dropped to meet its own budget', () => {
-    const corjAlone = new CorjMaker({ maxReportSize: 256 }).makeReportObject(
-      new Error('e'.repeat(3_000)),
-    );
-    expect(corjAlone.v).toBeUndefined();
-
+  test('keeps v, the occurrence id and the fingerprint at the smallest budget', () => {
     const report = toDiagnosticReport(new Error('e'.repeat(3_000)), {
-      maxReportSize: 256,
+      corj: { maxReportSize: 512 },
     });
 
     expect(report.v).toBe(DIAGNOSTIC_REPORT_VERSION);
+    expect(report.occurrence_id).toMatch(/^AE_/);
+    expect(report.fingerprint).toEqual(
+      expect.stringMatching(/^fp1_[0-9a-f]{32}$/),
+    );
     expect(report.truncated).toBe(true);
-  });
-});
-
-describe('APPEX_REPORT_BUDGET_TOO_SMALL', () => {
-  test('names the redaction policy when one is in play', () => {
-    expect(() =>
-      toDiagnosticReport(new Error('boom'), {
-        maxFinalReportSize: 300,
-        redact: createRedactionPolicy({
-          patterns: [/./g],
-          replacement: 'x'.repeat(128),
-        }),
-      }),
-    ).toThrow(/a redaction policy can enlarge but never shrink/);
-  });
-
-  test('does not mention a policy when there is none', () => {
-    let message = '';
-    try {
-      toDiagnosticReport(new Error('boom'), { maxFinalReportSize: 20 });
-    } catch (failure: unknown) {
-      message = (failure as Error).message;
-    }
-
-    expect(message).toContain('APPEX_REPORT_BUDGET_TOO_SMALL');
-    expect(message).not.toContain('redaction policy');
+    expect(bytes(report)).toBeLessThanOrEqual(512);
   });
 });

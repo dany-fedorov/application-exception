@@ -56,8 +56,9 @@ The response is:
 
 ```json
 {
-  "v": "appex/public/v3",
+  "v": "appex/public/v4",
   "occurrence_id": "AE_01J8Z3C4V5X6Y7Z8A9B0C1D2E3",
+  "fingerprint": "fp1_9f2a1c7d4e6b08315a2c9d7e4f60b183",
   "code": "TOOL_UNAVAILABLE",
   "message": "The requested tool is temporarily unavailable.",
   "as_json": { "tool": "search" }
@@ -72,9 +73,9 @@ A caught value without a policy, including a plain `Error`, produces
 
 | Report | Function | Audience | Content |
 | --- | --- | --- | --- |
-| Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `context`, `reporting_errors` |
-| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id` |
-| Both | `toReports(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence |
+| Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `fingerprint`, `context`, `reporting_errors` |
+| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id`, and `fingerprint` when the hash is backed by real stack frames |
+| Both | `toReports(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence; each report is fingerprinted by its own bag, so the two agree when both bags carry the same `corj` and `redact` |
 
 `occurrence_id` is the `occurrenceId` of a typed exception. Any other object
 gets one generated id, remembered for the object, so both functions agree in
@@ -93,44 +94,91 @@ console.log(reports.public.occurrence_id === reports.diagnostic.occurrence_id); 
 
 ### Diagnostic report
 
-The diagnostic report is a corj report object (`v: "corj/v0.13"`). corj
+The diagnostic report is a corj report object (`v: "corj/v0.14"`). corj
 documents every field, omits fields that hold their expected value, and bounds
-the whole report (100,000 bytes by default). This package adds:
+the whole report (100,000 UTF-8 bytes by default). The root fields this package
+relies on:
 
 | Field | Meaning |
 | --- | --- |
-| `occurrence_id` | the occurrence id, always present |
-| `context` | optional, present only when `options.context` is given: that value normalized by corj's serializer with a 16,384-byte budget; `null` if it could not be serialized |
-| `reporting_errors` | optional, present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, key?, prop?, error }` |
+| `occurrence_id` | the occurrence id this package resolves, always present and never trimmed |
+| `fingerprint` | corj's hash of the error graph's identifying parts — the constructor names and the stack text by default — equal for the same failure from the same place; `corj: { fingerprintParts: null }` turns it off. A public report carries it only when the hash is backed by real stack frames |
+| `context` | present only when `options.context` is given: that value rendered as a JSON document of its own, rooted at `$context`, with a 16,384-byte cap inside the report budget; `null` if it could not be rendered |
+| `reporting_errors` | present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, key?, prop?, error }` |
 
-Options `maxReportSize`, `maxDepth`, `maxChildren`, and `stackFormat` pass
-through to corj. Use `restoreExpectedValues(report)` to fill omitted fields.
+Every option of corj is reachable through one `corj` bag — `maxReportSize`,
+`maxDepth`, `maxChildren`, `stackFormat`, `inspection`, `fingerprintParts` and
+the rest — except `redact`, which both reports share at the top level. Use
+`restoreExpectedValues(report)` to fill omitted fields.
 
 ```ts
 import { restoreExpectedValues, toDiagnosticReport } from 'application-exception';
 
 const report = toDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
-  maxDepth: 2,
+  corj: { maxDepth: 2 },
 });
 const full = restoreExpectedValues(report);
 console.log(full.message, report.children?.[0]?.path); // 'outer' '$.cause'
 ```
 
-corj runs `toString`, `toJSON`, and getters of the reported objects and records
-failures instead of throwing. The report is for trusted sinks: it contains
-messages, stacks, and `details`.
+By default corj runs `toString`, `toJSON`, and getters of the reported objects,
+recording failures instead of throwing; `corj: { inspection: 'no-invoke' }`
+reads property descriptors only and calls none of them. The report is for
+trusted sinks either way: it contains messages, stacks, and `details`.
 
 ### Public report
 
-The public report keeps corj's field names and meanings for `message`,
-`as_json`, and `truncated`, and nothing else from the error. Limits: `message`
-4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set `truncated: true`.
-Per-call `options` override the policy: `code`, `message`, `details`, and
-`occurrenceId`. A policy without `message` yields the generic message, and
-`details: null` suppresses the policy's selection, yielding `as_json: null`.
+The public report (`v: "appex/public/v4"`) keeps corj's field names and meanings
+for `message`, `as_json`, and `truncated`. Nothing from the error is emitted
+except the policy's outputs, `occurrence_id` and `fingerprint`, a hash. The
+default recipe hashes the constructor names and the stack text of the error
+graph, under this call's own `corj` options and `redact`, and
+`corj: { fingerprintParts: null }` turns it off, after which nothing is read
+from the error but the policy's inputs. **The public report carries a
+fingerprint only when the hash is backed by real stack frames**: the recipe must
+include `stack`, the root's stack must have been read, and after redaction and
+the header cut it must still hold frames. A thrown string or number, a plain
+object, an object with a `toString`, an `Error` whose stack is gone or is
+frameless prose, and any recipe without `stack` — `['message']` included — get
+**no** public fingerprint, because that hash would be over the value's own text
+and a reader who can guess that text could confirm the guess. A stack-backed
+hash still covers every other part of the recipe, so adding `message` to the
+public bag's recipe puts the message into the hash next to the frames; frame
+text is unguessable only to a reader who does not know the deployed source and
+its paths.
+Limits: `message` 4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set
+`truncated: true`.
+
+`occurrence_id` is a bounded printable-ASCII token, not trusted text: a branded
+value that a caller never minted can choose its own, within
+`/^[\x21-\x7e]{1,128}$/` (see
+[docs/design/cross-copy-trust.md](docs/design/cross-copy-trust.md)). Treat it as
+data — escape it when you render it, never interpolate it into markup, a shell
+command, or an instruction to a model.
+
+The `public` option overrides the kind's policy for this call, field by field:
+`code`, `message` (a string or a function of the details) and `details` (a
+selector function, or `null` to disclose nothing — not even `as_json: null`). A
+field left out keeps what the kind says, and a policy without `message` yields
+the generic message.
+
+```ts
+import { defineException, toPublicReport } from 'application-exception';
+
+const Unavailable = defineException({
+  tag: 'tools/Unavailable',
+  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+  public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
+});
+const caught: unknown = new Unavailable({ details: { tool: 'search' } });
+const report = toPublicReport(caught, { public: { message: 'Search is down.', details: null } });
+console.log(report.code, report.message, 'as_json' in report); // 'TOOL_UNAVAILABLE' 'Search is down.' false
+```
 
 `decodePublicReport(value)` validates JSON received from another process and
-returns `{ ok: true, report }` or `{ ok: false, reason, path }`:
+returns `{ ok: true, report }` or `{ ok: false, reason, path }`. It accepts both
+`appex/public/v4` and the `appex/public/v3` a 0.4 sender emits, and the decoded
+report keeps the `v` it arrived with:
 
 ```ts
 import { decodePublicReport } from 'application-exception';
@@ -181,21 +229,27 @@ Errors thrown by this package carry an `APPEX_*` code and a link to
 
 ## Bound, redact, snapshot, share
 
-Four opt-in controls, each off by default and each leaving 0.3.0 behaviour
-unchanged when omitted.
+Four controls: one corj option and three opt-in features that leave the default
+behaviour unchanged when omitted.
 
-**Bound the whole report.** `maxFinalReportSize` holds the final diagnostic
-report to that many UTF-8 bytes of compact JSON — corj report, `occurrence_id`,
-`context`, and `reporting_errors` together. It drops `context`, then
-`reporting_errors`, naming both in `report_omitted`, then shrinks corj's own
-budget. A budget too small for the required envelope throws rather than emitting
-an over-budget or invalid report.
+**Bound the whole report.** `corj: { maxReportSize }` (a safe integer of at
+least 512, or `null`) holds the diagnostic report to that many UTF-8 bytes of
+compact JSON — the corj report, `context` and `reporting_errors` together. Over
+budget, corj drops `context` whole, however small it is, and sets
+`context_omitted: 'max_size'`; then drops `reporting_errors` and sets
+`reporting_errors_omitted: 'max_size'`; only then does it trim error content.
+`occurrence_id`, `fingerprint` and `v` are never trimmed, so a report always
+identifies itself and correlates. corj's default is 100,000 bytes.
 
 ```ts
 import { toDiagnosticReport } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-toDiagnosticReport(caught, { context: { runId: 'run-1' }, maxFinalReportSize: 32_768 });
+const report = toDiagnosticReport(caught, {
+  context: { runId: 'run-1' },
+  corj: { maxReportSize: 32_768 },
+});
+console.log(new TextEncoder().encode(JSON.stringify(report)).byteLength <= 32_768); // true
 ```
 
 **Redact once, everywhere.** A policy built by `createRedactionPolicy` has two
@@ -203,8 +257,11 @@ kinds of rule. **Skip** rules (`keys`, `paths`) name properties that are never
 read, so an excluded getter never runs. **Scrub** rules (`patterns`,
 `transform`) rewrite text wherever it appears in either report. To remove a
 secret's *text*, use `patterns`: skipping `message` still leaves it in `stack`.
-Redaction never discloses — on a public report it runs on what the kind's
-`details` selector returned. The rule-by-rule table is in
+`paths` address three documents — `$...` the caught value, `$context...` the
+context, `$public...` the selected public details — so anchor a `RegExp` path
+with `^\$\.` to keep it on the caught value. Redaction never discloses — on a
+public report it runs on what the kind's `details` selector returned. The
+rule-by-rule table is in
 [docs/agent/recipes.md](docs/agent/recipes.md#keep-secrets-out-of-both-reports);
 the design is in [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
 
@@ -264,11 +321,14 @@ contract and its limits are in
 
 ## Schemas
 
-`application-exception/schemas/diagnostic-report-v4.json` embeds corj v0.13's
-report definitions and adds the extension fields;
-`application-exception/schemas/public-report-v3.json` is closed. Both are JSON
-Schema 2020-12. `schemas/diagnostic-report-v3.json` stays published unchanged
-for readers of 0.3.0 reports, which carry `v: "corj/v0.12"`.
+`application-exception/schemas/diagnostic-report-v5.json` embeds corj v0.14's
+report definitions and requires `v` and `occurrence_id`;
+`application-exception/schemas/public-report-v4.json` is closed and carries the
+optional `fingerprint`. Both are JSON Schema 2020-12. The earlier schemas stay
+published unchanged for readers of older reports:
+`diagnostic-report-v4.json` and `public-report-v3.json` for 0.4.0
+(`v: "corj/v0.13"`, `appex/public/v3`), and `diagnostic-report-v3.json` for
+0.3.0 (`v: "corj/v0.12"`).
 
 ## Validate a change
 

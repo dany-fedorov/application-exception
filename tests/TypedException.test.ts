@@ -463,7 +463,7 @@ describe('typed construction boundaries', () => {
       code('APPEX_INVALID_TAG'),
     );
   });
-  test.each(['', ' ', 'x'.repeat(33), 42])(
+  test.each(['', ' ', 'x'.repeat(33), 42, 'a b', 'caf\u00e9'])(
     'rejects invalid prefix %p',
     (idPrefix) => {
       expect(() =>

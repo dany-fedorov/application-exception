@@ -41,8 +41,8 @@ try {
     bunVersion,
     'the reported Bun version must match',
   );
-  assert.equal(result.diagnosticVersion, 'corj/v0.13');
-  assert.equal(result.publicVersion, 'appex/public/v3');
+  assert.equal(result.diagnosticVersion, 'corj/v0.14');
+  assert.equal(result.publicVersion, 'appex/public/v4');
   assert.equal(result.diagnosticOccurrenceId, result.occurrenceId);
   assert.equal(result.publicOccurrenceId, result.occurrenceId);
   assert.equal(result.decodedOccurrenceId, result.occurrenceId);

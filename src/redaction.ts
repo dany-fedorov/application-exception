@@ -1,51 +1,28 @@
 import { resolveCorjRedactPolicy } from 'caught-object-report-json';
 import type {
-  CorjRedactContext,
+  CorjContext,
   CorjRedactPolicy,
-  CorjRedactTransform,
+  CorjRedactPolicyInput,
 } from 'caught-object-report-json';
 import { describeValue, invalid } from './errors';
 
 /**
- * What a `transform` is told about a value: `stage` is where corj produced it,
- * `key` the report field it is destined for, `prop` the property it was read
- * from, and `path` a JSON path rooted at whatever is being serialized — the
- * caught value, the `context` object, or the selected public details. Key a
- * transform on `prop`: `$.password` is also `context.password`.
+ * What a `transform` is told about a value: `stage`, the report `key`, the
+ * source `prop`, and a `path` whose root names the document: `$` the caught
+ * value, `$context` the context, `$public` the public report.
  */
-export type RedactionContext = CorjRedactContext;
+export type RedactionContext = CorjContext;
 
-/** Input of `createRedactionPolicy`. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional. */
-export interface RedactionPolicyOptions {
-  /** Skip: property names never read, wherever they appear. Exact string or `RegExp`. */
-  readonly keys?: readonly (string | RegExp)[];
-  /** Skip: JSON paths into the caught value never read, such as `$.cause.config.headers`. */
-  readonly paths?: readonly (string | RegExp)[];
-  /** Scrub: replaced in every string either report emits. Each must carry the `g` flag. */
-  readonly patterns?: readonly RegExp[];
-  /** What skipped and scrubbed content becomes, inserted literally. Defaults to `[redacted]`. */
-  readonly replacement?: string;
-  /** Scrub: runs after `patterns` on every value and property name; return `undefined` to drop the field. It sees raw input, so it must never quote it in an error. */
-  readonly transform?: CorjRedactTransform;
-}
+/** Input of `createRedactionPolicy`: corj's policy input. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional. */
+export type RedactionPolicyOptions = CorjRedactPolicyInput;
 
-/** An opaque, reusable redaction policy. Build it once and share it between reports. */
+/** An opaque, reusable redaction policy. Build it once, at startup, and share it between reports. */
 export interface RedactionPolicy {
-  readonly [REDACTION_POLICY]: CompiledRedactionPolicy;
+  readonly [REDACTION_POLICY]: CorjRedactPolicy;
 }
 
 /** Module-private mark: only `createRedactionPolicy` can mint a policy. */
 export const REDACTION_POLICY = Symbol('application-exception/RedactionPolicy');
-
-const MAX_REPLACEMENT_LENGTH = 128;
-
-/** The two resolved corj policies a minted policy carries. */
-export interface CompiledRedactionPolicy {
-  /** Forwarded to the diagnostic report's inspection of the caught value. */
-  readonly forCaught: CorjRedactPolicy;
-  /** Forwarded to `context` and to the public `as_json`: the same policy without `paths`. */
-  readonly forViews: CorjRedactPolicy;
-}
 
 /** corj's own explanation, without the `TypeError:` prefix `String` adds. */
 function corjMessage(failure: unknown): string {
@@ -56,17 +33,18 @@ function corjMessage(failure: unknown): string {
  * Build a reusable redaction policy, accepted as `redact` by
  * `toDiagnosticReport`, `toPublicReport`, and `toReports`.
  *
- * A policy has two kinds of rule. **Skip** rules (`keys`, `paths`) name
- * properties corj never reads, so an excluded getter never runs. **Scrub** rules
- * (`patterns`, `transform`) rewrite text wherever it appears in either report:
- * messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
+ * **Skip** rules (`keys`, `paths`) name properties corj never reads, so an
+ * excluded getter never runs. **Scrub** rules (`patterns`, `transform`) rewrite
+ * text wherever it appears in either report: messages, stacks, `as_json`,
+ * `context`, `reporting_errors`, nested causes.
  *
- * - To remove a secret's *text*, use `patterns`. Skipping a property does not
- *   remove its text elsewhere: `keys: ['message']` leaves it in `stack`.
- * - `keys` match a name everywhere; `paths` reach the caught value only, never
- *   `context` or selected public details.
+ * - To remove a secret's *text*, use `patterns`: skipping a property does not
+ *   remove its text elsewhere (`keys: ['message']` leaves it in `stack`), and
+ *   hides the value, not the name.
+ * - `keys` match a name everywhere. `paths` are JSON paths into three documents:
+ *   `$...` the caught value, `$context...`, `$public...` the selected details;
+ *   anchor a `RegExp` with `^\$\.` to keep it on the caught value.
  * - Every pattern needs the `g` flag; `replacement` is inserted literally.
- * - A skip rule hides the value, not the name: a secret *name* needs `patterns`.
  * - Redaction never discloses: on a public report the policy is given only what
  *   the kind's `public.details` selector returned.
  *
@@ -95,39 +73,17 @@ export function createRedactionPolicy(
       'APPEX_INVALID_REDACTION_POLICY',
       'redaction policy options must be an object',
     );
-  const { replacement } = options;
-  // corj puts no bound on the replacement; the public message bound depends on
-  // one, so a replacement can never blow a budget open on its own.
-  if (
-    replacement !== undefined &&
-    (typeof replacement !== 'string' ||
-      replacement.length > MAX_REPLACEMENT_LENGTH)
-  )
-    throw invalid(
-      'APPEX_INVALID_REDACTION_POLICY',
-      `replacement must be a string of at most ${MAX_REPLACEMENT_LENGTH} characters`,
-    );
-  let compiled: CompiledRedactionPolicy;
+  let resolved: CorjRedactPolicy;
   try {
-    compiled = {
-      forCaught: resolveCorjRedactPolicy(options) as CorjRedactPolicy,
-      // `paths` address the caught value; they must not also match inside
-      // `context` or the selected public details.
-      forViews: resolveCorjRedactPolicy({
-        ...options,
-        paths: [],
-      }) as CorjRedactPolicy,
-    };
+    resolved = resolveCorjRedactPolicy(options) as CorjRedactPolicy;
   } catch (failure: unknown) {
     throw invalid('APPEX_INVALID_REDACTION_POLICY', corjMessage(failure));
   }
-  return Object.freeze({ [REDACTION_POLICY]: Object.freeze(compiled) });
+  return Object.freeze({ [REDACTION_POLICY]: resolved });
 }
 
 /** The compiled policy behind a value, or `undefined` for `undefined`; anything else throws. */
-export function compiledPolicy(
-  policy: unknown,
-): CompiledRedactionPolicy | undefined {
+export function compiledPolicy(policy: unknown): CorjRedactPolicy | undefined {
   if (policy === undefined) return undefined;
   let compiled: unknown;
   try {
@@ -143,5 +99,5 @@ export function compiledPolicy(
       'APPEX_INVALID_REDACTION_POLICY',
       'redact must be a value returned by createRedactionPolicy',
     );
-  return compiled as CompiledRedactionPolicy;
+  return compiled as CorjRedactPolicy;
 }

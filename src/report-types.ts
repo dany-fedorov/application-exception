@@ -1,93 +1,105 @@
 import { CORJ_VERSION } from 'caught-object-report-json';
+import type { AppexCorjOptions } from './corj-maker';
 import type { RedactionPolicy } from './redaction';
+import type { DetailsRecord } from './typed';
 import type { TrustRealm } from './typed-internals';
 import type {
-  CorjErrorStage,
   CorjJsonValue,
   CorjReport,
+  CorjReportingError,
   CorjVersion,
 } from 'caught-object-report-json';
 
 /** The `v` of every diagnostic report: corj's report version. */
 export const DIAGNOSTIC_REPORT_VERSION: typeof CORJ_VERSION = CORJ_VERSION;
 
-/** The `v` of every public report. */
-export const PUBLIC_REPORT_VERSION = 'appex/public/v3' as const;
+/** The `v` of every public report this version emits. */
+export const PUBLIC_REPORT_VERSION = 'appex/public/v4' as const;
 
-/** A problem corj met while inspecting the caught value; `message: null` and friends mark where. */
-export interface ReportingError {
-  readonly stage: CorjErrorStage;
-  readonly path: string;
-  readonly key?: string;
-  readonly prop?: string;
-  readonly error: string;
-}
+/** Every public report format `decodePublicReport` reads: the current one and the one before it. */
+export type PublicReportVersion = 'appex/public/v3' | 'appex/public/v4';
+
+/** A problem corj met while producing a report: `stage`, `path`, the report `key`, the source `prop`, and a scrubbed description. */
+export type ReportingError = CorjReportingError;
 
 /**
- * A corj report object (see caught-object-report-json) with four extension
- * fields. `occurrence_id` is the occurrence id shared with the public
- * report. `context` is the normalized `options.context`. `reporting_errors`
- * lists inspection failures (at most 8). `report_omitted` names the optional
- * fields dropped to meet `maxFinalReportSize`.
+ * A corj report object (see caught-object-report-json) of one occurrence.
+ * `occurrence_id` is the id shared with the public report, and `v` is always
+ * present: corj never trims either. `context` is the JSON form of
+ * `options.context`, `reporting_errors` lists inspection failures (at most 8),
+ * and `context_omitted` / `reporting_errors_omitted` say when one of those two
+ * was left out to meet `corj.maxReportSize`.
  */
-export type DiagnosticReport = Omit<CorjReport, 'v'> & {
+export type DiagnosticReport = CorjReport & {
   readonly v: CorjVersion;
   readonly occurrence_id: string;
-  readonly context?: CorjJsonValue | null;
-  readonly reporting_errors?: readonly ReportingError[];
-  readonly report_omitted?: readonly ('context' | 'reporting_errors')[];
 };
 
 /**
- * Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
- * and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
- * 100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
- * the report budget. `occurrenceId` overrides the occurrence id.
- * `maxFinalReportSize` bounds the UTF-8 bytes of `JSON.stringify(report)` for
- * the whole report, extension fields included; `null` (the default) disables
- * it and leaves `maxReportSize` alone.
+ * Options of `toDiagnosticReport`. `occurrenceId` overrides the occurrence id.
+ * `context` is any caller data to report beside the caught value; corj bounds
+ * it and drops it whole when the report is over budget. `redact` is the policy
+ * both reports share. `corj` carries every option of
+ * caught-object-report-json, `maxReportSize` and `inspection` included.
  */
 export interface DiagnosticReportOptions {
   readonly occurrenceId?: string;
   readonly context?: unknown;
-  readonly maxReportSize?: number | null;
-  readonly maxFinalReportSize?: number | null;
-  readonly maxDepth?: number;
-  readonly maxChildren?: number;
-  readonly stackFormat?: 'lines' | 'string';
   readonly redact?: RedactionPolicy;
+  readonly corj?: AppexCorjOptions;
 }
 
 /**
  * What an application discloses about one failure. `code` is the branching
  * protocol, `occurrence_id` correlates with the diagnostic report, `message`
  * is display text, `as_json` is the selected JSON. `truncated` marks a cut
- * message or `as_json`.
+ * message or `as_json`. `fingerprint` is equal for failures of the same kind
+ * from the same place; a retry signal, not a lookup key. It is absent when
+ * `corj: { fingerprintParts: null }` turned it off, and on a decoded report of
+ * format `appex/public/v3`, which predates it.
  */
 export interface PublicReport {
-  readonly v: typeof PUBLIC_REPORT_VERSION;
+  readonly v: PublicReportVersion;
   readonly occurrence_id: string;
+  readonly fingerprint?: string;
   readonly code: string;
   readonly message: string;
   readonly as_json?: CorjJsonValue | null;
   readonly truncated?: true;
 }
 
-/** Per-call overrides of the kind's public policy; `details: null` suppresses the policy's selection. */
+/**
+ * A per-call override of a kind's public policy, merged field by field: a
+ * field the override leaves out keeps what the kind's policy says. `message`
+ * and `details` are read exactly as a policy's are, so a function is given the
+ * kind's details record, and `details: null` suppresses the kind's selector.
+ */
+export type PublicOverride = {
+  readonly code?: string;
+  readonly message?: string | ((details: DetailsRecord<object>) => string);
+  readonly details?: ((details: DetailsRecord<object>) => unknown) | null;
+};
+
+/**
+ * Options of `toPublicReport`. `occurrenceId` overrides the occurrence id.
+ * `public` overrides the kind's public policy for this call. `redact` is the
+ * policy both reports share, `realm` is the trust realm to read a foreign
+ * value's policy from, and `corj` carries the options of
+ * caught-object-report-json used to inspect the selected details.
+ */
 export interface PublicReportOptions {
   readonly occurrenceId?: string;
-  readonly code?: string;
-  readonly message?: string;
-  readonly details?: unknown;
+  readonly public?: PublicOverride;
   readonly redact?: RedactionPolicy;
   readonly realm?: TrustRealm;
+  readonly corj?: AppexCorjOptions;
 }
 
 /**
  * Options of `toReports`. `occurrenceId` overrides the occurrence id of both
  * reports. `diagnostic` and `public` are the per-report option bags, each
- * without its own `occurrenceId`, so that `message` and `context` stay
- * unambiguous.
+ * without its own `occurrenceId`, so that the shared id stays unambiguous;
+ * the public bag's own `public` key is the per-call policy override.
  */
 export interface ToReportsOptions {
   readonly occurrenceId?: string;

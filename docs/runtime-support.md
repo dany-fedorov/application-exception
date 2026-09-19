@@ -6,6 +6,12 @@ real publishable artifact with `prepublish-me`, runs `npm pack` on it, and insta
 with its real dependency closure (`nanoid`, `caught-object-report-json`) into a throwaway
 directory. No `node_modules` is hand-wired, and no suite imports `src/` or `dist/`.
 
+> **0.5.0 status.** The suites below were updated for corj 11 (`corj/v0.14`, `appex/public/v4`)
+> but not re-run: they install the dependency closure from the registry, and
+> `caught-object-report-json@11.0.0` is not published yet. Everything else on this page is what
+> the 0.4.0 runs observed; the resolutions, the bundle contents and the export conditions are
+> unaffected by the change, which touches report content only.
+
 ## Exercised runtimes
 
 | Runtime | How it is exercised | Script | CI job |
@@ -24,9 +30,15 @@ public report, decodes the public one after a JSON round trip, and checks that
 
 - `error.occurrenceId`, `diagnostic.occurrence_id`, `publicReport.occurrence_id` and the decoded
   report's `occurrence_id` are the same string, in every runtime;
-- `diagnostic.v` is `corj/v0.13` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
-- `publicReport.v` is `appex/public/v3` and equals the exported `PUBLIC_REPORT_VERSION`;
-- the public report does not carry the cause, and an invalid public code still raises
+- `diagnostic.v` is `corj/v0.14` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
+- `publicReport.v` is `appex/public/v4` and equals the exported `PUBLIC_REPORT_VERSION`;
+- both reports carry a `fp1_` `fingerprint`, and the pair `toReports` returns carries one
+  shared value;
+- a per-call `public: { message, details: null }` override replaces the message and
+  discloses no `as_json`, and `corj: { maxReportSize: 512 }` bounds the whole report,
+  dropping `context` whole with `context_omitted: 'max_size'`;
+- `decodePublicReport` accepts an `appex/public/v3` report and keeps its `v`;
+- the public report does not carry the cause, and an invalid `public.code` still raises
   `APPEX_INVALID_PUBLIC_CODE`.
 
 ## Occurrence ids and `nanoid`
@@ -62,8 +74,10 @@ left external, and after the build the emitted chunk is scanned for `node:` impo
 `global` or `__dirname` is defined, and the driver fails on any console error or page error.
 
 Observed: the bundle contains `application-exception`, `caught-object-report-json` and
-`nanoid/index.browser.js` and nothing from Node. `caught-object-report-json@9` has no dependencies
-and requires no Node builtin, so nothing in the closure pulls Node `crypto` into the bundle.
+`nanoid/index.browser.js` and nothing from Node. `caught-object-report-json` has no dependencies
+and requires no Node builtin — corj 11 bundles its own pure-JavaScript SHA-256 for the fingerprint
+rather than reaching for `node:crypto` or `crypto.subtle` — so nothing in the closure pulls Node
+`crypto` into the bundle.
 
 This was verified negatively as well: adding `import 'node:crypto'` to the fixture entry fails the
 build with `Node builtin "node:crypto" reached the browser bundle`.

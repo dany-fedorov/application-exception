@@ -13,6 +13,7 @@ export type {
   TypedException,
   TypedExceptionClass,
 } from './typed';
+export type { AppexCorjOptions } from './corj-maker';
 export { createRedactionPolicy } from './redaction';
 export type {
   RedactionContext,
@@ -34,8 +35,10 @@ export type {
   DecodePublicReportResult,
   DiagnosticReport,
   DiagnosticReportOptions,
+  PublicOverride,
   PublicReport,
   PublicReportOptions,
+  PublicReportVersion,
   ReportingError,
   ToReportsOptions,
 } from './report-types';
@@ -48,8 +51,12 @@ export {
 export type {
   /** Any value that survives `JSON.stringify`: a string, number, boolean, `null`, or an array or object of those. */
   CorjJsonValue,
+  /** Every option of caught-object-report-json; `corj` takes all of them but `redact`. */
+  CorjOptionsInput,
   /** The corj report object a `DiagnosticReport` extends: the root node plus its flattened `children`. */
   CorjReport,
   /** One node of the flattened error tree in `children`, with its `id`, `path`, `level` and `child_ids`. */
   CorjReportChild,
+  /** One failure met while a report was produced, as `reporting_errors` lists it. */
+  CorjReportingError,
 } from 'caught-object-report-json';

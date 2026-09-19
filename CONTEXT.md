@@ -26,10 +26,18 @@ The string that correlates the diagnostic and public reports of one failure:
 the `occurrenceId` of a typed exception, a generated `AE_` id remembered per
 object otherwise. Appears as `occurrence_id` on both reports.
 
+**Fingerprint**:
+The hash that groups occurrences of the same failure from the same place:
+corj's `fp1_` digest of the error graph's identifying parts, equal on both
+reports of one occurrence. A retry signal, not a lookup key — the occurrence id
+is what identifies one failure.
+_Avoid_: Error id, hash key
+
 **Diagnostic report**:
 A caught-object-report-json report of the occurrence and its causes, plus
-`occurrence_id`, `context`, and `reporting_errors`. Bounded, serializable, for
-trusted sinks. A representation of a failure, not a failure to throw.
+`occurrence_id`, `fingerprint`, `context`, and `reporting_errors`. Bounded,
+serializable, for trusted sinks. A representation of a failure, not a failure to
+throw.
 
 **Public policy**:
 The `public` part of a kind definition: the `code` an audience branches on, the
@@ -38,12 +46,15 @@ Declared where the details type is known.
 
 **Public report**:
 What the application discloses about one occurrence: `code`, `message`,
-`as_json`, `occurrence_id`, `truncated`. Rendered from the public policy or the
-generic default; never read from the error graph.
+`as_json`, `occurrence_id`, `fingerprint`, `truncated`. Rendered from the public
+policy or the generic default; nothing from the error graph is emitted except
+the policy's outputs and the fingerprint, a hash computed by this report's own
+option bag and published only when it is backed by real stack frames.
 
 **Context**:
 Host facts about where an occurrence was observed (run id, tool, attempt),
-passed to `toDiagnosticReport` and normalized into `report.context`. Adding
+passed to `toDiagnosticReport` and rendered by corj into `report.context`, a
+document of its own rooted at `$context`. Adding
 context does not create a different failure.
 _Avoid_: Root cause
 

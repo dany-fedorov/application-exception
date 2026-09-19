@@ -39,6 +39,9 @@ function ownData(value: object, key: PropertyKey): unknown {
   return descriptor && 'value' in descriptor ? descriptor.value : undefined;
 }
 
+/** Ids this package accepts and emits: printable ASCII without spaces, at most 128 characters. */
+export const ID_PATTERN = /^[\x21-\x7e]{1,128}$/;
+
 /** The `occurrenceId` of a branded occurrence (local or from another package copy), read from data properties only. */
 export function brandedOccurrenceId(value: unknown): string | undefined {
   try {
@@ -49,9 +52,7 @@ export function brandedOccurrenceId(value: unknown): string | undefined {
     )
       return undefined;
     const id = ownData(value, 'occurrenceId');
-    return typeof id === 'string' && id.length > 0 && id.length <= 128
-      ? id
-      : undefined;
+    return typeof id === 'string' && ID_PATTERN.test(id) ? id : undefined;
   } catch {
     return undefined;
   }
