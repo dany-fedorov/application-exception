@@ -8,7 +8,7 @@ Errors from the options in the `corj` bag (`maxDepth`, `maxChildren`,
 corj option) propagate unchanged as corj's `TypeError` or `RangeError`: corj
 validates them when the maker is built, and its message names the option. This
 package rejects only what is its own: an unknown key, `corj.redact`, and the
-`occurrenceId` and `public` options below.
+`occurrenceId`, `redact` and `public` options below.
 
 ## APPEX_INVALID_TAG
 
