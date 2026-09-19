@@ -6,8 +6,9 @@ import { compiledPolicy } from './redaction';
 /**
  * Options of caught-object-report-json, passed through as `corj`. Every corj
  * option is available except `redact`, which both reports share at the top level.
- * `metadata.v` is always on. `onError` defaults to a silent function: the same
- * records are in the report's `reporting_errors`.
+ * `metadata.v` is always on; `onError` defaults to silent (its records are in
+ * `reporting_errors`), and a custom one is called with the RAW caught value,
+ * unscrubbed, so it must never log that argument to an untrusted sink.
  */
 export type AppexCorjOptions = Omit<CorjOptionsInput, 'redact'>;
 

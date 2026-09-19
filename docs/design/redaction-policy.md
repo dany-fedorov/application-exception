@@ -44,9 +44,11 @@ redact })` consults `keys` and `paths` *before* reading a property, and applies
 `patterns` and then `transform` to every value it emits. `src/redaction.ts` in
 this package is validation plus forwarding — it validates the options by calling
 corj's `resolveCorjRedactPolicy`, rewraps corj's `TypeError` as
-`APPEX_INVALID_REDACTION_POLICY`, bounds `replacement` at 128 characters (corj
-has no bound; the public message bound depends on one), and freezes the result
-into an opaque policy object.
+`APPEX_INVALID_REDACTION_POLICY`, and freezes the result into an opaque policy
+object. corj 11 bounds `replacement` at 128 characters itself, so this package
+no longer carries its own bound; the rejection a caller sees is corj's, rewrapped
+as `APPEX_INVALID_REDACTION_POLICY`. The public message bound depends on that
+bound holding.
 
 ## One policy, three named documents
 
@@ -64,20 +66,27 @@ root of the document it belongs to:
 | `$context...` | the call's `context` |
 | `$public...` | the JSON the kind's `public.details` selector returned |
 
-A named root matches `/^\$[A-Za-z_][A-Za-z0-9_]*$/`, and a property path always
+A named root matches `/^\$([A-Za-z_][A-Za-z0-9_]*)?$/` — the name is optional, so
+the bare `$` is a root too — and a property path always
 continues with `.` or `[`, so `$context` can never collide with a `context`
 property of the caught value — which is exactly the ambiguity the old split was
 working around. A string `paths` rule now says which document it means:
 `'$.password'` is the caught value's, `'$context.user.email'` is the context's.
 
 **An unanchored `RegExp` path widens.** A rule such as `/\.headers$/` used to see
-the caught value alone; it now also matches inside `$context` and `$public`. It
-fails safe — more is redacted, not less — and a rule meant for the caught value
-alone is anchored with `^\$\.`, as in `/^\$\..*\.headers$/`. This is the one
-upgrade note of the change.
+the caught value alone; it now also matches inside `$context` and `$public`. That
+direction fails safe — more is redacted, not less — and a rule meant for the
+caught value alone is anchored with `^\$\.`, as in `/^\$\..*\.headers$/`.
 
-A `transform` is told the same paths, so it can tell the documents apart from
-`path` alone. Keying it on `prop` still works and is still the simplest rule.
+**A path- or stage-keyed `transform` fails open, and must be re-keyed.** This is
+the upgrade note that costs redaction rather than adding it. 0.4 offered context
+values at `$.<key>` and the public message as `stage: 'as_string'`,
+`path: '$.message'`; 0.5 roots context values at `$context.<key>`, selected
+public details at `$public.<key>`, and delivers the public message as
+`stage: 'warning'` at `$public.message`. A 0.4 policy keyed on the old values
+simply stops matching, and nothing is redacted — silently. A `transform` is told
+the new paths, so it can tell the documents apart from `path` alone; keying it on
+`prop` did not change and is still the simplest rule.
 
 **Fingerprint inputs go through the policy too.** Every value a `fingerprintParts`
 entry reads is offered under its own path — `$.details` for `{ field: 'details' }`,

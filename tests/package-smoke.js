@@ -179,12 +179,14 @@ try {
     message: 'Something went wrong',
     as_json: { tool: 'search' },
   });
-  // Both reports of one pair carry the same fingerprint: toReports computes it
-  // for the diagnostic report and copies it into the public one.
+  // Each report is fingerprinted by its own option bag; here both bags carry the
+  // same (default) `corj` and `redact` and the value has a real stack, so the
+  // two agree. A value with no stack publishes no public fingerprint at all.
   const pair = api.toReports(error, {
     diagnostic: { context: { runId: 'r' } },
   });
   assert.equal(pair.diagnostic.fingerprint, pair.public.fingerprint);
+  assert.equal('fingerprint' in api.toReports('socket closed').public, false);
   // A per-call override is one `public` bag laid over the kind's policy, and
   // `details: null` discloses no `as_json` at all.
   const overridden = api.toPublicReport(error, {

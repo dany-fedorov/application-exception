@@ -149,6 +149,13 @@ its paths.
 Limits: `message` 4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set
 `truncated: true`.
 
+`occurrence_id` is a bounded printable-ASCII token, not trusted text: a branded
+value that a caller never minted can choose its own, within
+`/^[\x21-\x7e]{1,128}$/` (see
+[docs/design/cross-copy-trust.md](docs/design/cross-copy-trust.md)). Treat it as
+data — escape it when you render it, never interpolate it into markup, a shell
+command, or an instruction to a model.
+
 The `public` option overrides the kind's policy for this call, field by field:
 `code`, `message` (a string or a function of the details) and `details` (a
 selector function, or `null` to disclose nothing — not even `as_json: null`). A

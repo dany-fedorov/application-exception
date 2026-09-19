@@ -50,9 +50,11 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
     UTF-8 bytes. Over budget, `context` goes first, whole
     (`context_omitted: 'max_size'`), then `reporting_errors`
     (`reporting_errors_omitted`), then error content is trimmed. `occurrence_id`,
-    `fingerprint` and `v` are never trimmed. Every corj option is available in
-    `corj`; `inspection: 'no-invoke'` reports an untrusted value without running
-    its getters.
+    `fingerprint` and `v` are never trimmed. Every corj option except `redact` is
+    available in `corj` — `redact` stays a top-level option both reports share;
+    `inspection: 'no-invoke'` reports an untrusted value without running its
+    getters. A custom `corj: { onError }` is called with the RAW caught value,
+    unscrubbed: never log its first argument to an untrusted sink.
 11. Build one `createRedactionPolicy({ keys, paths, patterns })` per service and
     pass it as `redact` to both reports. `keys` and `paths` are skip rules: the
     property is never read. `patterns` (each needs the `g` flag) and `transform`

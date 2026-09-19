@@ -112,12 +112,15 @@ export function runFlow(appex, { runtime }) {
       diagnostic.fingerprint.startsWith('fp1_'),
     `the diagnostic report must carry a fingerprint, got ${diagnostic.fingerprint}`,
   );
+  // Each report is fingerprinted by its own option bag. `error` is an Error with
+  // a real stack and both calls use the same (default) `corj` and `redact`, so
+  // the public hash is published and equals the diagnostic one.
   deepEqual(
     publicReport,
     {
       v: 'appex/public/v4',
       occurrence_id: occurrenceId,
-      fingerprint: publicReport.fingerprint,
+      fingerprint: diagnostic.fingerprint,
       code: 'TOOL_FAILED',
       message: 'Something went wrong',
       as_json: { tool: 'search' },
@@ -125,8 +128,7 @@ export function runFlow(appex, { runtime }) {
     'public report shape',
   );
 
-  // One occurrence, one fingerprint: toReports computes it for the diagnostic
-  // report and copies it into the public one.
+  // One occurrence; and one fingerprint, because both bags agree here.
   const pair = toReports(error, { diagnostic: { context: { runtime } } });
   equal(
     pair.diagnostic.occurrence_id,
@@ -136,7 +138,11 @@ export function runFlow(appex, { runtime }) {
   equal(
     pair.diagnostic.fingerprint,
     pair.public.fingerprint,
-    'toReports shares one fingerprint',
+    'toReports fingerprints agree when both bags agree',
+  );
+  ok(
+    !('fingerprint' in toReports('socket closed').public),
+    'a value with no stack publishes no public fingerprint',
   );
 
   // A per-call override is one `public` bag laid over the kind's policy.

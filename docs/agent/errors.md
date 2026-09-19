@@ -7,8 +7,9 @@ Errors from the options in the `corj` bag (`maxDepth`, `maxChildren`,
 `maxReportSize`, `stackFormat`, `metadata`, `fingerprintParts`, and every other
 corj option) propagate unchanged as corj's `TypeError` or `RangeError`: corj
 validates them when the maker is built, and its message names the option. This
-package rejects only what is its own: an unknown key, `corj.redact`, and the
-`occurrenceId`, `redact` and `public` options below.
+package rejects only what is its own: an unknown key, a `corj` that is not an
+object, `corj.redact`, and the `occurrenceId`, `redact` and `public` options
+below.
 
 ## APPEX_INVALID_TAG
 
@@ -107,7 +108,7 @@ toPublicReport(new Error('x'), { public: { code: 'X', message: 'x', details: () 
 
 When: `options.occurrenceId` is not 1 to 128 printable ASCII characters without spaces — `/^[\x21-\x7e]{1,128}$/`, so no space, no control character, nothing outside ASCII.
 Cause: passing an empty string, a non-string identifier, or text with a space or a non-ASCII character. The rule is what keeps the id a bounded correlation token: it bypasses redaction and is never trimmed, so it has to be small and printable.
-Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded ASCII string. This package validates its own option first, so you see this coded error rather than corj's plain `TypeError`.
+Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded ASCII string. `toDiagnosticReport` and `toPublicReport` validate this option before they build a corj maker, so you see this coded error rather than corj's plain `TypeError`; `toReports` resolves both option bags first, so an invalid corj option there is reported before an invalid `occurrenceId`.
 
 ```ts
 import { toPublicReport } from 'application-exception';

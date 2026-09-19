@@ -41,16 +41,26 @@ slot, and both reports carry a `fingerprint`.
   already comply.
 - A redaction policy's `paths` now address three documents: `$...` the caught
   value, `$context...` the context, `$public...` the selected public details. An
-  unanchored `RegExp` such as `/\.headers$/` starts matching in all three. It
-  fails safe — more is redacted, not less — and `^\$\.` keeps a rule on the
-  caught value. `createRedactionPolicy` now holds one resolved policy;
+  unanchored `RegExp` such as `/\.headers$/` starts matching in all three. That
+  direction fails safe — more is redacted, not less — and `^\$\.` keeps a rule on
+  the caught value. The `transform` direction below does **not** fail safe.
+  `createRedactionPolicy` now holds one resolved policy;
   `RedactionPolicyOptions` is corj's policy input and `RedactionContext` is
   corj's `CorjContext`, the one shape every corj callback and every
   `reporting_errors` row now uses.
+- **A 0.4 `transform` keyed on `path` or `stage` fails open on 0.5.** 0.4 offered
+  context values at `$.<key>` and the public message as `stage: 'as_string'`,
+  `path: '$.message'`. 0.5 roots context values at `$context.<key>`, selected
+  public details at `$public.<key>`, and delivers the public message as
+  `stage: 'warning'` at `$public.message`. A policy keyed on the old values
+  stops matching and **nothing is redacted** — no error, no warning. Re-key it
+  on `prop`, which did not change, or on the new roots and stage.
 - The runtime dependency is `caught-object-report-json ^11.0.0`. Invalid corj
-  options surface as corj's own `TypeError` or `RangeError`, unwrapped; this
-  package still validates its own `occurrenceId` first, so that one stays
-  `APPEX_INVALID_OCCURRENCE_ID`.
+  options surface as corj's own `TypeError` or `RangeError`, unwrapped. In
+  `toDiagnosticReport` and `toPublicReport` this package validates its own
+  `occurrenceId` before it builds a maker, so that one stays
+  `APPEX_INVALID_OCCURRENCE_ID`; `toReports` resolves both option bags first, so
+  a bad corj option there is reported before a bad `occurrenceId`.
 
 **Added.**
 
@@ -62,12 +72,16 @@ slot, and both reports carry a `fingerprint`.
   loudly instead of being ignored.
 - `fingerprint` on both reports: corj's hash of the failure's identifying parts
   (`constructor_name` and `stack` by default), equal for the same failure from
-  the same place. `toReports` computes it once, for the diagnostic report, and
-  copies it into the public one, so the pair always agrees. Every part value goes
-  through the redaction policy under its own path; string values are cut at
-  16,384 units and nested values at 16,384 bytes, so the hash is stable and
-  bounded. `corj: { fingerprintParts: null }` turns it off, and then a public
-  report reads nothing from the caught value but its policy inputs.
+  the same place. Each report is fingerprinted by its own option bag, so the two
+  agree whenever both bags carry the same `corj` and `redact`. A public report
+  publishes the hash only when it is backed by real stack frames: a thrown
+  string or number, a plain object, an `Error` with no stack or a frameless one,
+  and any recipe without `stack` publish none, because such a hash is over the
+  value's own text and a reader who can guess that text could confirm it. Every
+  part value goes through the redaction policy under its own path; string values
+  are cut at 16,384 units and nested values at 16,384 bytes, so the hash is
+  stable and bounded. `corj: { fingerprintParts: null }` turns it off, and then a
+  public report reads nothing from the caught value but its policy inputs.
 - `schemas/diagnostic-report-v5.json` (corj v0.14 embedded, `v` and
   `occurrence_id` required) and `schemas/public-report-v4.json` (closed, optional
   `fingerprint`), both exported from the package.
@@ -88,6 +102,7 @@ slot, and both reports carry a `fingerprint`.
 | `toPublicReport(caught, { details: { a: 1 } })` | `toPublicReport(caught, { public: { details: () => ({ a: 1 }) } })` — a selector, not a value |
 | `toPublicReport(caught, { details: null })` → `as_json: null` | `toPublicReport(caught, { public: { details: null } })` → no `as_json` field at all |
 | `createRedactionPolicy({ paths: [/\.headers$/] })` | `createRedactionPolicy({ paths: [/^\$\..*\.headers$/] })` to stay on the caught value; `'$context.user.email'` now addresses the context |
+| `createRedactionPolicy({ transform: (v, { path, stage }) => path === '$.sessionToken' \|\| (stage === 'as_string' && path === '$.message') ? '[x]' : v })` | key on `prop` (`prop === 'sessionToken'`), or on the new roots: `$context.sessionToken`, and `stage === 'warning'` at `$public.message`. Left as it was, the rule matches nothing and redacts nothing |
 | `toPublicReport(caught, { occurrenceId: 'trace 42' })` | `toPublicReport(caught, { occurrenceId: 'trace-42' })` — printable ASCII, no spaces |
 | `schemas/diagnostic-report-v4.json`, `schemas/public-report-v3.json` | `schemas/diagnostic-report-v5.json`, `schemas/public-report-v4.json`; the old files stay published for stored reports |
 | reading `report.v === 'appex/public/v3'` | `decodePublicReport` accepts v3 and v4 and keeps the input's `v`; new reports are `appex/public/v4` |

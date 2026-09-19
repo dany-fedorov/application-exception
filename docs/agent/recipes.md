@@ -308,7 +308,7 @@ wherever it appears in either report.
 | never read one named property, in one document | `paths: ['$.cause.config.headers', '$context.user.email']` | three documents: `$...` the caught value, `$context...` the context, `$public...` the selected public details |
 | decide value by value | `transform: (value, { prop }) => value` | runs after `patterns` on every value and property name; return `undefined` to drop the field |
 
-Five things to remember:
+Six things to remember:
 
 1. **Skipping a property does not remove its text elsewhere.** An error's message
    is also in its `stack`, so `keys: ['message']` leaves it there. To remove
@@ -318,12 +318,22 @@ Five things to remember:
 3. **Every pattern needs the `g` flag**, and `replacement` (default `[redacted]`)
    is inserted literally: `$&` is not expanded.
 4. **An unanchored `RegExp` path reaches all three documents.** `/\.headers$/`
-   now also matches inside `$context` and `$public`. It fails safe — more is
-   redacted, not less — but anchor it with `^\$\.` to keep the rule on the
-   caught value.
-5. **Redaction never discloses.** On a public report the policy is given only
-   what the kind's `details` selector returned. `occurrence_id` and `code` are
-   identifiers you choose; no rule rewrites them.
+   now also matches inside `$context` and `$public`. That direction fails safe —
+   more is redacted, not less — but anchor it with `^\$\.` to keep the rule on
+   the caught value.
+5. **A 0.4 `transform` keyed on `path` or `stage` fails open on 0.5.** 0.4
+   offered context values at `$.<key>` and the public message as
+   `stage: 'as_string'`, `path: '$.message'`; 0.5 roots context values at
+   `$context.<key>`, selected public details at `$public.<key>`, and delivers
+   the public message as `stage: 'warning'` at `$public.message`. Keyed on the
+   old values a rule stops matching and nothing is redacted, silently. Re-key it
+   on `prop`, which did not change, or on the new roots and stage.
+6. **Redaction never discloses.** On a public report the policy is given only
+   what the kind's `details` selector returned. `code` is an identifier you
+   choose and no rule rewrites it; `occurrence_id` is not rewritten either, and a
+   branded value this process did not mint can choose its own within
+   `/^[\x21-\x7e]{1,128}$/`. Treat it as data: escape it when you render it,
+   never interpolate it into markup or into an instruction to a model.
 
 A `transform` sees raw input — whole objects, including members a skip rule
 excludes — so key it on `prop` and never quote its input in an error. If the

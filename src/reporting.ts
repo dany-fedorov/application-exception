@@ -319,9 +319,8 @@ function selectPublicDetails(
  * outputs, `occurrence_id` and the fingerprint, a hash. The default recipe
  * hashes constructor names and stack text under this call's own `corj` and
  * `redact`; `corj: { fingerprintParts: null }` reads nothing. It is published
- * only when backed by real stack frames: a stackless value (a thrown string, a
- * plain object, an `Error` with no stack or a frameless one) and any recipe
- * without `stack` publish none, because that hash is over the value's own text.
+ * only when backed by real stack frames: a stackless value and any recipe
+ * without `stack` publish none — that hash is over the value's own text.
  *
  * The `public` option overrides that policy for this call, field by field:
  * `code`, `message` (a string or a function of the details) and `details` (a

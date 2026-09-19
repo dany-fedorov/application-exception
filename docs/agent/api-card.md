@@ -209,9 +209,8 @@ generic message. Nothing from the error is emitted except the policy's
 outputs, `occurrence_id` and the fingerprint, a hash. The default recipe
 hashes constructor names and stack text under this call's own `corj` and
 `redact`; `corj: { fingerprintParts: null }` reads nothing. It is published
-only when backed by real stack frames: a stackless value (a thrown string, a
-plain object, an `Error` with no stack or a frameless one) and any recipe
-without `stack` publish none, because that hash is over the value's own text.
+only when backed by real stack frames: a stackless value and any recipe
+without `stack` publish none — that hash is over the value's own text.
 
 The `public` option overrides that policy for this call, field by field:
 `code`, `message` (a string or a function of the details) and `details` (a
@@ -324,8 +323,9 @@ export type AppexCorjOptions = Omit<CorjOptionsInput, 'redact'>;
 
 Options of caught-object-report-json, passed through as `corj`. Every corj
 option is available except `redact`, which both reports share at the top level.
-`metadata.v` is always on. `onError` defaults to a silent function: the same
-records are in the report's `reporting_errors`.
+`metadata.v` is always on; `onError` defaults to silent (its records are in
+`reporting_errors`), and a custom one is called with the RAW caught value,
+unscrubbed, so it must never log that argument to an untrusted sink.
 
 ### `AppexErrorCode`
 
