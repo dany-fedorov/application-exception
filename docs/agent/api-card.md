@@ -206,10 +206,12 @@ Report a failure to an agent or user: the kind's `public` policy rendered
 into `code`, `message`, and `as_json`, with the same `occurrence_id` as the
 diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
 generic message. Nothing from the error is emitted except the policy's
-outputs and the fingerprint, a hash. Computing the fingerprint reads names,
-messages and stacks of the error graph under the same `corj` options and
-`redact` as the diagnostic report; pass `corj: { fingerprintParts: null }`
-to read nothing.
+outputs, `occurrence_id` and the fingerprint, a hash. The default recipe
+hashes constructor names and stack text under this call's own `corj` and
+`redact`; `corj: { fingerprintParts: null }` reads nothing. It is published
+only when backed by real stack frames: a stackless value (a thrown string, a
+plain object, an `Error` with no stack or a frameless one) and any recipe
+without `stack` publish none, because that hash is over the value's own text.
 
 The `public` option overrides that policy for this call, field by field:
 `code`, `message` (a string or a function of the details) and `details` (a
@@ -243,10 +245,9 @@ holds for every caught value, primitives included. The per-report options
 live in `options.diagnostic` and `options.public`; the occurrence id is
 overridden for both at the top level. Every option bag is read once and
 validated before either report is built, `realm` included, and a failure to
-build either one throws instead of returning half a pair. The fingerprint is
-computed once, for the diagnostic report, and copied into the public one, so
-the pair always agrees; the public bag's `corj.fingerprintParts` does not
-change it.
+build either one throws instead of returning half a pair. Each report's
+fingerprint comes from its own bag, so they agree when both bags carry the
+same `corj` and `redact`.
 
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
 

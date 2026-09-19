@@ -62,9 +62,12 @@ describe('toPublicReport', () => {
       ...generic,
       occurrence_id: expect.stringMatching(/^AE_/),
     });
+    // `undefined` has no stack, so it carries no fingerprint either.
     expect(toPublicReport(undefined)).toEqual({
-      ...generic,
+      v: generic.v,
       occurrence_id: expect.stringMatching(/^AE_/),
+      code: generic.code,
+      message: generic.message,
     });
     expect(toPublicReport('AE_looks_like_an_occurrence_id')).toMatchObject({
       occurrence_id: expect.stringMatching(/^AE_[0-9A-Z]{26}$/),
@@ -626,8 +629,58 @@ describe('public report v4', () => {
     const caught = new Error('key sk-abcdefghij', {
       cause: new Error('inner'),
     });
+    expect(toPublicReport(caught, { corj, redact }).fingerprint).toEqual(
+      anyFingerprint,
+    );
     expect(toPublicReport(caught, { corj, redact }).fingerprint).toBe(
       toDiagnosticReport(caught, { corj, redact }).fingerprint,
+    );
+  });
+
+  test.each([
+    ['a thrown string', 'PIN 4921 rejected for alice@example.com'],
+    ['a plain object', { name: 'UpstreamError', message: 'secret' }],
+    [
+      'an object with toString',
+      {
+        toString() {
+          return 'token=abc123';
+        },
+      },
+    ],
+    [
+      'an Error without a stack',
+      Object.defineProperty(
+        new Error('user bob@corp.example has no seat'),
+        'stack',
+        {
+          value: undefined,
+        },
+      ),
+    ],
+  ])(
+    '%s gets no public fingerprint, only a diagnostic one',
+    (_label, caught) => {
+      expect(toPublicReport(caught)).not.toHaveProperty('fingerprint');
+      expect(toDiagnosticReport(caught).fingerprint).toEqual(anyFingerprint);
+    },
+  );
+
+  test('a stack of prose with no frames is not stack-backed either', () => {
+    const caught = Object.defineProperty(new Error('x'), 'stack', {
+      value: 'boom happened at the office',
+    });
+    expect(toPublicReport(caught)).not.toHaveProperty('fingerprint');
+    expect(toDiagnosticReport(caught).fingerprint).toEqual(anyFingerprint);
+  });
+
+  test('a recipe without stack publishes no fingerprint', () => {
+    const corj = { fingerprintParts: ['message'] } as const;
+    expect(toPublicReport(new Error('x'), { corj })).not.toHaveProperty(
+      'fingerprint',
+    );
+    expect(toDiagnosticReport(new Error('x'), { corj }).fingerprint).toEqual(
+      anyFingerprint,
     );
   });
 

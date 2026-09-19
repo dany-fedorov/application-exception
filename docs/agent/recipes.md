@@ -149,18 +149,27 @@ export function nextAttempt(received: unknown, seen: Set<string>): Attempt {
 ```
 
 `fingerprint` is a hash of the failure's identifying parts — by default the
-constructor name and the stack of every node of the error graph — so two reports
-with the same value describe the same failure from the same place. Equal means
-retrying the same way will fail the same way: change the call or escalate.
+constructor name and the stack text of every node of the error graph — so two
+reports with the same value describe the same failure from the same place. Equal
+means retrying the same way will fail the same way: change the call or escalate.
 Unequal means a different failure, not progress. It is a retry signal, not a
 lookup key: `occurrence_id` is what you quote when escalating. It is absent when
-the sender turned it off with `corj: { fingerprintParts: null }`, and on a report
-of format `appex/public/v3`, which predates it.
+the sender turned it off with `corj: { fingerprintParts: null }`, on a report of
+format `appex/public/v3`, which predates it, and whenever the hash is not backed
+by real stack frames.
 
 Publishing a fingerprint publishes a hash of values the reader may be able to
-guess. With the default parts the hash input contains stack text with absolute
-paths and line numbers, which an outside reader cannot reproduce; a recipe
-*without* `'stack'` lets a reader confirm guesses about the hashed values.
+guess, so **a public report carries one only when the hash is backed by real
+stack frames**: the recipe must include `'stack'`, the root's stack must have
+been read, and after redaction and the header cut it must still hold frames. A
+thrown string or number, a plain object, an object with a `toString`, an `Error`
+whose stack is gone or is frameless prose, and any recipe without `'stack'` —
+`corj: { fingerprintParts: ['message'] }` included — publish none, because such
+a hash is over the value's own text and a reader who guesses the text confirms
+it. A stack-backed hash still covers every other part of the recipe, so adding
+`'message'` to the public bag's recipe puts the message into the hash next to
+the frames; frame text is unguessable only to a reader who does not know the
+deployed source and its paths.
 
 ## Test a failure path
 
@@ -211,8 +220,10 @@ caught value — a thrown string or `undefined` included, where two separate cal
 would each mint their own. Per-report options live in `options.diagnostic` and
 `options.public`; `options.occurrenceId` overrides the id for both. Every option
 bag is read and validated before either report is built, so the call never
-returns half a pair. The fingerprint is computed once, for the diagnostic
-report, and copied into the public one, so the pair always agrees.
+returns half a pair. Each report's fingerprint is computed by its own bag, so
+the two agree whenever both bags carry the same `corj` options and `redact`;
+`public: { corj: { fingerprintParts: null } }` withholds the published hash on
+its own, and so does a hash that is not backed by real stack frames.
 
 ## Bound what a sink receives
 

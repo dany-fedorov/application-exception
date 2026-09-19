@@ -48,7 +48,8 @@ Declared where the details type is known.
 What the application discloses about one occurrence: `code`, `message`,
 `as_json`, `occurrence_id`, `fingerprint`, `truncated`. Rendered from the public
 policy or the generic default; nothing from the error graph is emitted except
-the policy's outputs and the fingerprint, a hash.
+the policy's outputs and the fingerprint, a hash computed by this report's own
+option bag and published only when it is backed by real stack frames.
 
 **Context**:
 Host facts about where an occurrence was observed (run id, tool, attempt),

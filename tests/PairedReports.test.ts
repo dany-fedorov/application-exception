@@ -3,11 +3,14 @@ import {
   toPublicReport,
   toReports,
 } from '../src/reporting';
+import { createRedactionPolicy } from '../src/redaction';
 import { defineException } from '../src/typed';
 
 const code = (value: string) => expect.objectContaining({ code: value });
 const bytes = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
+class SecretNamedFailure extends Error {}
 
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
@@ -131,10 +134,10 @@ describe('toReports', () => {
       },
     });
     expect(captured.diagnostic.context).toEqual({ runId: 'run-1' });
+    // A thrown string has no stack, so the public report carries no fingerprint.
     expect(captured.public).toEqual({
       v: 'appex/public/v4',
       occurrence_id: captured.occurrence_id,
-      fingerprint: expect.stringMatching(/^fp1_[0-9a-f]{32}$/),
       code: 'SOCKET_CLOSED',
       message: 'Try again.',
       as_json: { a: 1 },
@@ -313,21 +316,51 @@ describe('toReports', () => {
   });
 });
 
-describe('toReports shares one fingerprint', () => {
-  test('the public report copies the diagnostic one', () => {
+describe('toReports fingerprints each report from its own bag', () => {
+  test('the same corj and redact in both bags agree', () => {
+    const corj = { maxDepth: 1 };
+    const redact = createRedactionPolicy({ patterns: [/sk-[a-z]{10}/g] });
     const { diagnostic, public: disclosed } = toReports(
-      new Error('x', { cause: new Error('y') }),
-      { diagnostic: { corj: { maxDepth: 1 } } },
+      new Error('key sk-abcdefghij', { cause: new Error('y') }),
+      { diagnostic: { corj, redact }, public: { corj, redact } },
     );
     expect(disclosed.fingerprint).toBe(diagnostic.fingerprint);
     expect(disclosed.fingerprint).toMatch(/^fp1_/);
   });
 
-  test('off in the diagnostic report means off in both', () => {
+  test('the public bag turns the published hash off on its own', () => {
+    const { diagnostic, public: disclosed } = toReports(new Error('x'), {
+      public: { corj: { fingerprintParts: null } },
+    });
+    expect(diagnostic.fingerprint).toMatch(/^fp1_/);
+    expect(disclosed).not.toHaveProperty('fingerprint');
+  });
+
+  test('off in the diagnostic bag alone leaves the public hash standing', () => {
     const { diagnostic, public: disclosed } = toReports(new Error('x'), {
       diagnostic: { corj: { fingerprintParts: null } },
     });
     expect(diagnostic).not.toHaveProperty('fingerprint');
+    expect(disclosed.fingerprint).toMatch(/^fp1_/);
+  });
+
+  test('a value with no stack gets a diagnostic hash and no public one', () => {
+    const { diagnostic, public: disclosed } = toReports('socket closed');
+    expect(diagnostic.fingerprint).toMatch(/^fp1_/);
     expect(disclosed).not.toHaveProperty('fingerprint');
+  });
+
+  test('redact on the public bag alone hashes under that policy', () => {
+    // The policy scrubs the constructor name, which the default recipe hashes;
+    // the stack keeps its frames, so the public hash is still published.
+    const caught = new SecretNamedFailure('boom');
+    const redact = createRedactionPolicy({ patterns: [/Secret/g] });
+    const { diagnostic, public: disclosed } = toReports(caught, {
+      public: { redact },
+    });
+    expect(disclosed.fingerprint).toBe(
+      toPublicReport(caught, { redact }).fingerprint,
+    );
+    expect(disclosed.fingerprint).not.toBe(diagnostic.fingerprint);
   });
 });

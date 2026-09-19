@@ -74,8 +74,8 @@ A caught value without a policy, including a plain `Error`, produces
 | Report | Function | Audience | Content |
 | --- | --- | --- | --- |
 | Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `fingerprint`, `context`, `reporting_errors` |
-| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id` and `fingerprint` |
-| Both | `toReports(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence, with one fingerprint shared by both |
+| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id`, and `fingerprint` when the hash is backed by real stack frames |
+| Both | `toReports(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence; each report is fingerprinted by its own bag, so the two agree when both bags carry the same `corj` and `redact` |
 
 `occurrence_id` is the `occurrenceId` of a typed exception. Any other object
 gets one generated id, remembered for the object, so both functions agree in
@@ -102,7 +102,7 @@ relies on:
 | Field | Meaning |
 | --- | --- |
 | `occurrence_id` | the occurrence id this package resolves, always present and never trimmed |
-| `fingerprint` | corj's hash of the error graph's identifying parts (`constructor_name` and `stack` by default), equal for the same failure from the same place; `corj: { fingerprintParts: null }` turns it off |
+| `fingerprint` | corj's hash of the error graph's identifying parts — the constructor names and the stack text by default — equal for the same failure from the same place; `corj: { fingerprintParts: null }` turns it off. A public report carries it only when the hash is backed by real stack frames |
 | `context` | present only when `options.context` is given: that value rendered as a JSON document of its own, rooted at `$context`, with a 16,384-byte cap inside the report budget; `null` if it could not be rendered |
 | `reporting_errors` | present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, key?, prop?, error }` |
 
@@ -130,10 +130,22 @@ trusted sinks either way: it contains messages, stacks, and `details`.
 
 The public report (`v: "appex/public/v4"`) keeps corj's field names and meanings
 for `message`, `as_json`, and `truncated`. Nothing from the error is emitted
-except the policy's outputs and `fingerprint`, a hash: computing it reads names,
-messages and stacks of the error graph under the same `corj` options and
-`redact` as the diagnostic report, and `corj: { fingerprintParts: null }` turns
-it off, after which nothing is read from the error but the policy's inputs.
+except the policy's outputs, `occurrence_id` and `fingerprint`, a hash. The
+default recipe hashes the constructor names and the stack text of the error
+graph, under this call's own `corj` options and `redact`, and
+`corj: { fingerprintParts: null }` turns it off, after which nothing is read
+from the error but the policy's inputs. **The public report carries a
+fingerprint only when the hash is backed by real stack frames**: the recipe must
+include `stack`, the root's stack must have been read, and after redaction and
+the header cut it must still hold frames. A thrown string or number, a plain
+object, an object with a `toString`, an `Error` whose stack is gone or is
+frameless prose, and any recipe without `stack` — `['message']` included — get
+**no** public fingerprint, because that hash would be over the value's own text
+and a reader who can guess that text could confirm the guess. A stack-backed
+hash still covers every other part of the recipe, so adding `message` to the
+public bag's recipe puts the message into the hash next to the frames; frame
+text is unguessable only to a reader who does not know the deployed source and
+its paths.
 Limits: `message` 4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set
 `truncated: true`.
 
