@@ -69,6 +69,8 @@ const PUBLIC_REPORT_VERSION_V3: PublicReportVersion = 'appex/public/v3';
 const FINGERPRINT_PATTERN = /^[\x21-\x7e]{1,64}$/;
 const DECODE_MAX_DEPTH = 32;
 const DECODE_MAX_VALUES = 10_000;
+const DECODE_MAX_PATH_KEY = 64;
+const DECODE_MAX_PATH = 256;
 
 function assertOptions(
   options: unknown,
@@ -458,8 +460,16 @@ class Rejection {
   ) {}
 }
 
+/**
+ * A rejection `path` is built from keys the sender chose and the recipes hand it
+ * to an agent, so it is bounded like any other text that crosses the boundary:
+ * each key segment at 64 characters, the whole path at 256.
+ */
 function reject(reason: string, path: string): never {
-  throw new Rejection(reason, path);
+  throw new Rejection(
+    reason,
+    path.length > DECODE_MAX_PATH ? path.slice(0, DECODE_MAX_PATH) : path,
+  );
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -496,7 +506,12 @@ function detachJson(
   const output: Record<string, CorjJsonValue> = {};
   for (const [key, item] of Object.entries(value)) {
     Object.defineProperty(output, key, {
-      value: detachJson(item, `${path}.${key}`, depth + 1, budget),
+      value: detachJson(
+        item,
+        `${path}.${key.slice(0, DECODE_MAX_PATH_KEY)}`,
+        depth + 1,
+        budget,
+      ),
       enumerable: true,
       writable: true,
       configurable: true,
@@ -577,7 +592,7 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
     if (!isPlainObject(value)) reject('Expected an object', '$');
     for (const key of Object.keys(value)) {
       if (!PUBLIC_FIELDS.has(key))
-        reject('Unexpected field', `$.${key.slice(0, 64)}`);
+        reject('Unexpected field', `$.${key.slice(0, DECODE_MAX_PATH_KEY)}`);
     }
     const version = publicVersionOf(value['v']);
     // `fingerprint` arrived with v4: a v3 report that carries the key at all was
