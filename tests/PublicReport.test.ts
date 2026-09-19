@@ -785,6 +785,19 @@ describe('decodePublicReport reads v3 and v4', () => {
     expect(decodePublicReport(v3)).toEqual({ ok: true, report: v3 });
   });
 
+  test('a v3 occurrence id stays length-only, a v4 one is a token', () => {
+    const loose = 'has space and\nnewline';
+    expect(decodePublicReport({ ...v3, occurrence_id: loose })).toEqual({
+      ok: true,
+      report: { ...v3, occurrence_id: loose },
+    });
+    expect(decodePublicReport({ ...v4, occurrence_id: loose })).toEqual({
+      ok: false,
+      reason: 'Expected 1 to 128 printable ASCII characters without spaces',
+      path: '$.occurrence_id',
+    });
+  });
+
   test('a v3 report is rejected for carrying the key at all', () => {
     // Every other stray key is rejected whatever its value; so is this one.
     expect(decodePublicReport({ ...v3, fingerprint: undefined })).toEqual({
@@ -839,6 +852,23 @@ describe('decodePublicReport reads v3 and v4', () => {
       { ...v4, v: 'appex/public/v5' },
       'Expected version appex/public/v3 or appex/public/v4',
       '$.v',
+    ],
+    // A v4 id is the token the v4 schema and this package both enforce.
+    [
+      { ...v4, occurrence_id: 'has space and\nnewline' },
+      'Expected 1 to 128 printable ASCII characters without spaces',
+      '$.occurrence_id',
+    ],
+    [
+      { ...v4, occurrence_id: 'nön-ascii' },
+      'Expected 1 to 128 printable ASCII characters without spaces',
+      '$.occurrence_id',
+    ],
+    // The length bound is reported as a length for both versions.
+    [
+      { ...v4, occurrence_id: 'x'.repeat(129) },
+      'Expected 1 to 128 characters',
+      '$.occurrence_id',
     ],
   ])('%j is rejected', (value, reason, path) => {
     expect(decodePublicReport(value)).toEqual({ ok: false, reason, path });

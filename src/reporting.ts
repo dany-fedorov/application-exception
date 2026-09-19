@@ -527,6 +527,25 @@ function publicVersionOf(value: unknown): PublicReportVersion {
   return value as PublicReportVersion;
 }
 
+/**
+ * A v4 `occurrence_id` is the token this package mints and the v4 schema
+ * enforces: recipes quote it into escalation text, so a v4 sender may not put
+ * free text with spaces or newlines where the receiver expects an identifier.
+ * v3 predates the rule and stays length-only, so a 0.4 sender remains readable.
+ */
+function decodedOccurrenceIdOf(
+  value: unknown,
+  version: PublicReportVersion,
+): string {
+  const id = boundedText(value, '$.occurrence_id', 1, 128);
+  if (version === PUBLIC_REPORT_VERSION && !ID_PATTERN.test(id))
+    reject(
+      'Expected 1 to 128 printable ASCII characters without spaces',
+      '$.occurrence_id',
+    );
+  return id;
+}
+
 function fingerprintOf(value: unknown): string {
   if (typeof value !== 'string') reject('Expected a string', '$.fingerprint');
   if (!FINGERPRINT_PATTERN.test(value))
@@ -570,12 +589,7 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
     const fingerprint = value['fingerprint'];
     const base = {
       v: version,
-      occurrence_id: boundedText(
-        value['occurrence_id'],
-        '$.occurrence_id',
-        1,
-        128,
-      ),
+      occurrence_id: decodedOccurrenceIdOf(value['occurrence_id'], version),
       ...(fingerprint === undefined
         ? {}
         : { fingerprint: fingerprintOf(fingerprint) }),
