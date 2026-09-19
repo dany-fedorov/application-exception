@@ -240,10 +240,10 @@ function diagnosticReportOf(
  * through `corj`, except `redact`, which both reports share at the top level.
  *
  * `corj: { maxReportSize }` (at least 512) bounds the whole report in UTF-8
- * bytes of compact JSON. Over budget, corj drops `context` whole, then
- * `reporting_errors`, leaving `context_omitted: 'max_size'` and
- * `reporting_errors_omitted: 'max_size'`, and only then trims error content.
- * `occurrence_id`, `fingerprint` and `v` are never trimmed.
+ * bytes of compact JSON: over budget, corj drops `context` whole, then
+ * `reporting_errors` — leaving `context_omitted` and `reporting_errors_omitted`
+ * at `'max_size'` — and only then trims error content. `occurrence_id`,
+ * `fingerprint` and `v` are never trimmed.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_REDACTION_POLICY`; corj option errors propagate.
  * @example

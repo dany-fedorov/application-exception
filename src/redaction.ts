@@ -33,19 +33,18 @@ function corjMessage(failure: unknown): string {
  * Build a reusable redaction policy, accepted as `redact` by
  * `toDiagnosticReport`, `toPublicReport`, and `toReports`.
  *
- * A policy has two kinds of rule. **Skip** rules (`keys`, `paths`) name
- * properties corj never reads, so an excluded getter never runs. **Scrub** rules
- * (`patterns`, `transform`) rewrite text wherever it appears in either report:
- * messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
+ * **Skip** rules (`keys`, `paths`) name properties corj never reads, so an
+ * excluded getter never runs. **Scrub** rules (`patterns`, `transform`) rewrite
+ * text wherever it appears in either report: messages, stacks, `as_json`,
+ * `context`, `reporting_errors`, nested causes.
  *
- * - To remove a secret's *text*, use `patterns`. Skipping a property does not
- *   remove its text elsewhere: `keys: ['message']` leaves it in `stack`.
- * - `keys` match a name everywhere. `paths` are JSON paths: `$...` into the
- *   caught value, `$context...` into `context`, `$public...` into the selected
- *   public details. Anchor a `RegExp` path with `^\$\.` to keep it on the
- *   caught value.
+ * - To remove a secret's *text*, use `patterns`: skipping a property does not
+ *   remove its text elsewhere (`keys: ['message']` leaves it in `stack`), and
+ *   hides the value, not the name.
+ * - `keys` match a name everywhere. `paths` are JSON paths into three documents:
+ *   `$...` the caught value, `$context...`, `$public...` the selected details;
+ *   anchor a `RegExp` with `^\$\.` to keep it on the caught value.
  * - Every pattern needs the `g` flag; `replacement` is inserted literally.
- * - A skip rule hides the value, not the name: a secret *name* needs `patterns`.
  * - Redaction never discloses: on a public report the policy is given only what
  *   the kind's `public.details` selector returned.
  *

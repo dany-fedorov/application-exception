@@ -41,7 +41,19 @@ const TASKS = [
   ],
   [
     'Bound the whole diagnostic report',
-    '`toDiagnosticReport(caught, { maxFinalReportSize })`',
+    '`toDiagnosticReport(caught, { corj: { maxReportSize } })`',
+  ],
+  [
+    'Reach any option of caught-object-report-json',
+    '`{ corj: { inspection, maxDepth, fingerprintParts, … } }` on any report call',
+  ],
+  [
+    'Override what one call discloses',
+    '`toPublicReport(caught, { public: { code, message, details } })`',
+  ],
+  [
+    'Tell two failures apart, or recognize a repeat',
+    '`report.fingerprint`, equal on both reports of one occurrence',
   ],
   [
     'Keep secrets out of either report',

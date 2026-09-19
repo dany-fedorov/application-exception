@@ -5,7 +5,7 @@
 | [README](../README.md) | What the library does, install, quick start, report shapes | yes |
 | [AGENTS.md](../AGENTS.md) | Rules for coding agents, report shapes, layout, checks | yes |
 | [API card](agent/api-card.md) | Generated signatures, summaries, and examples for every export | yes |
-| [Recipes](agent/recipes.md) | Six complete tasks, each a compiling snippet | yes |
+| [Recipes](agent/recipes.md) | Thirteen complete tasks, each a compiling snippet | yes |
 | [Errors](agent/errors.md) | One section per `APPEX_*` code: when, cause, fix | yes |
 | [Schemas](../schemas) | JSON Schemas for both reports | yes |
 | [Changelog](../CHANGELOG.md) | Changes by release | yes |
@@ -31,7 +31,7 @@
 `npm run docs:generate` rewrites the API card from JSDoc. `npm run docs:check`
 regenerates it in memory and fails on drift, type-checks every fenced `ts`
 block in `README.md`, `AGENTS.md`, and `docs/agent/*.md` against `src`,
-enforces the size budgets (`AGENTS.md` 150 lines, the card 400), requires one
+enforces the size budgets (`AGENTS.md` 170 lines, the card 650), requires one
 errors.md section per code, and resolves every relative link. Use `json` or
 `text` fences for fragments that are not complete programs; a first line
 `// expect-error: <fragment>` marks a block that must fail to compile with a

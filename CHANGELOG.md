@@ -1,5 +1,97 @@
 # Changelog
 
+## 0.5.0 — 2026-09-19
+
+corj 11 (report format `corj/v0.14`) absorbs the mechanisms this package used to
+rebuild — error collection, a bounded JSON view, and a size budget — so 0.5.0 is
+the disclosure layer on top of it. Every corj option now travels in one `corj`
+slot, and both reports carry a `fingerprint`.
+
+**Breaking.**
+
+- Every corj option moved into one `corj` bag on `toDiagnosticReport`,
+  `toPublicReport` and `toReports`. The top-level `maxReportSize`, `maxDepth`,
+  `maxChildren` and `stackFormat` are gone, and an unknown key is
+  `APPEX_INVALID_OPTIONS`. `corj.redact` is rejected by name: the policy stays a
+  top-level `redact`, because both reports share it. `metadata.v` is forced on,
+  and `onError` defaults to a silent function — the same records are in the
+  report's `reporting_errors`.
+- `maxFinalReportSize` is gone, with its `report_omitted` field and its
+  `APPEX_REPORT_BUDGET_TOO_SMALL` code. `corj: { maxReportSize }` (a safe integer
+  of at least 512, or `null`) bounds the whole report instead: over budget corj
+  drops `context` whole, however small it is, and sets
+  `context_omitted: 'max_size'`, then drops `reporting_errors` and sets
+  `reporting_errors_omitted: 'max_size'`, and only then trims error content.
+  `occurrence_id`, `fingerprint` and `v` are never trimmed.
+- The per-call `code`, `message` and `details` of `toPublicReport` became one
+  `public: { code, message, details }` bag, merged field by field over the kind's
+  policy. `message` may be a string or a function of the details, and `details`
+  is a selector function or `null`. **`details: null` now discloses no `as_json`
+  at all**; 0.4.0 disclosed `as_json: null`.
+- The public report format is `appex/public/v4`, with `fingerprint` right after
+  `occurrence_id`. `decodePublicReport` reads v3 and v4 and keeps the `v` it was
+  given; a v3 report that carries a `fingerprint` key is rejected. The new type
+  `PublicReportVersion` is exported.
+- The diagnostic report's `v` is `corj/v0.14`, and the schemas ship as
+  `schemas/diagnostic-report-v5.json` and `schemas/public-report-v4.json`. The
+  0.4.0 and 0.3.0 schemas stay published unchanged.
+- `occurrenceId` and `idPrefix` must be printable ASCII without spaces —
+  `/^[\x21-\x7e]{1,128}$/` and `/^[\x21-\x7e]{1,32}$/`. They bypass redaction
+  and are never trimmed, so they are bounded tokens. The default `AE_` ids
+  already comply.
+- A redaction policy's `paths` now address three documents: `$...` the caught
+  value, `$context...` the context, `$public...` the selected public details. An
+  unanchored `RegExp` such as `/\.headers$/` starts matching in all three. It
+  fails safe — more is redacted, not less — and `^\$\.` keeps a rule on the
+  caught value. `createRedactionPolicy` now holds one resolved policy;
+  `RedactionPolicyOptions` is corj's policy input and `RedactionContext` is
+  corj's `CorjContext`, the one shape every corj callback and every
+  `reporting_errors` row now uses.
+- The runtime dependency is `caught-object-report-json ^11.0.0`. Invalid corj
+  options surface as corj's own `TypeError` or `RangeError`, unwrapped; this
+  package still validates its own `occurrenceId` first, so that one stays
+  `APPEX_INVALID_OCCURRENCE_ID`.
+
+**Added.**
+
+- `corj`: every option of caught-object-report-json, per call — `inspection:
+  'no-invoke'` to report an untrusted value without running its getters,
+  `occurrenceIdSources`, `fingerprintParts`, `maxContextSize`, `onError`, and the
+  rest. One `CorjMaker` is cached per (`corj` bag identity, redaction policy),
+  and the bag's own keys are frozen on first use, so a later mutation fails
+  loudly instead of being ignored.
+- `fingerprint` on both reports: corj's hash of the failure's identifying parts
+  (`constructor_name` and `stack` by default), equal for the same failure from
+  the same place. `toReports` computes it once, for the diagnostic report, and
+  copies it into the public one, so the pair always agrees. Every part value goes
+  through the redaction policy under its own path; string values are cut at
+  16,384 units and nested values at 16,384 bytes, so the hash is stable and
+  bounded. `corj: { fingerprintParts: null }` turns it off, and then a public
+  report reads nothing from the caught value but its policy inputs.
+- `schemas/diagnostic-report-v5.json` (corj v0.14 embedded, `v` and
+  `occurrence_id` required) and `schemas/public-report-v4.json` (closed, optional
+  `fingerprint`), both exported from the package.
+- `context` is rendered as a document of its own, rooted at `$context`, so a
+  `paths` rule can finally address it — and `$public` addresses the disclosed
+  details.
+
+**Upgrading from 0.4.**
+
+| 0.4 | 0.5 |
+| --- | --- |
+| `toDiagnosticReport(caught, { maxDepth: 2, maxChildren: 4, stackFormat: 'lines' })` | `toDiagnosticReport(caught, { corj: { maxDepth: 2, maxChildren: 4, stackFormat: 'lines' } })` |
+| `toDiagnosticReport(caught, { maxReportSize: 4096 })` | `toDiagnosticReport(caught, { corj: { maxReportSize: 4096 } })` |
+| `toDiagnosticReport(caught, { maxFinalReportSize: 16_384 })` | `toDiagnosticReport(caught, { corj: { maxReportSize: 16_384 } })` — one budget, at least 512 |
+| `report.report_omitted?.includes('context')` | `report.context_omitted === 'max_size'`, and `report.reporting_errors_omitted` |
+| `catch` `APPEX_REPORT_BUDGET_TOO_SMALL` | nothing to catch: a budget below 512 is corj's `RangeError` when the maker is built |
+| `toPublicReport(caught, { code: 'X', message: 'Down.' })` | `toPublicReport(caught, { public: { code: 'X', message: 'Down.' } })` |
+| `toPublicReport(caught, { details: { a: 1 } })` | `toPublicReport(caught, { public: { details: () => ({ a: 1 }) } })` — a selector, not a value |
+| `toPublicReport(caught, { details: null })` → `as_json: null` | `toPublicReport(caught, { public: { details: null } })` → no `as_json` field at all |
+| `createRedactionPolicy({ paths: [/\.headers$/] })` | `createRedactionPolicy({ paths: [/^\$\..*\.headers$/] })` to stay on the caught value; `'$context.user.email'` now addresses the context |
+| `toPublicReport(caught, { occurrenceId: 'trace 42' })` | `toPublicReport(caught, { occurrenceId: 'trace-42' })` — printable ASCII, no spaces |
+| `schemas/diagnostic-report-v4.json`, `schemas/public-report-v3.json` | `schemas/diagnostic-report-v5.json`, `schemas/public-report-v4.json`; the old files stay published for stored reports |
+| reading `report.v === 'appex/public/v3'` | `decodePublicReport` accepts v3 and v4 and keeps the input's `v`; new reports are `appex/public/v4` |
+
 ## 0.4.0 — 2026-09-17
 
 Every new feature is opt-in, but the release is not purely additive: the

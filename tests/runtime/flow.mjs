@@ -50,6 +50,7 @@ export function runFlow(appex, { runtime }) {
     defineException,
     toDiagnosticReport,
     toPublicReport,
+    toReports,
     decodePublicReport,
     isTypedException,
     DIAGNOSTIC_REPORT_VERSION,
@@ -91,9 +92,9 @@ export function runFlow(appex, { runtime }) {
   const publicReport = toPublicReport(error);
 
   equal(diagnostic.v, DIAGNOSTIC_REPORT_VERSION, 'diagnostic schema version');
-  equal(diagnostic.v, 'corj/v0.13', 'diagnostic schema version literal');
+  equal(diagnostic.v, 'corj/v0.14', 'diagnostic schema version literal');
   equal(publicReport.v, PUBLIC_REPORT_VERSION, 'public schema version');
-  equal(publicReport.v, 'appex/public/v3', 'public schema version literal');
+  equal(publicReport.v, 'appex/public/v4', 'public schema version literal');
 
   equal(
     diagnostic.occurrence_id,
@@ -106,17 +107,57 @@ export function runFlow(appex, { runtime }) {
     'public occurrence_id correlates',
   );
 
+  ok(
+    typeof diagnostic.fingerprint === 'string' &&
+      diagnostic.fingerprint.startsWith('fp1_'),
+    `the diagnostic report must carry a fingerprint, got ${diagnostic.fingerprint}`,
+  );
   deepEqual(
     publicReport,
     {
-      v: 'appex/public/v3',
+      v: 'appex/public/v4',
       occurrence_id: occurrenceId,
+      fingerprint: publicReport.fingerprint,
       code: 'TOOL_FAILED',
       message: 'Something went wrong',
       as_json: { tool: 'search' },
     },
     'public report shape',
   );
+
+  // One occurrence, one fingerprint: toReports computes it for the diagnostic
+  // report and copies it into the public one.
+  const pair = toReports(error, { diagnostic: { context: { runtime } } });
+  equal(
+    pair.diagnostic.occurrence_id,
+    pair.public.occurrence_id,
+    'toReports shares one occurrence id',
+  );
+  equal(
+    pair.diagnostic.fingerprint,
+    pair.public.fingerprint,
+    'toReports shares one fingerprint',
+  );
+
+  // A per-call override is one `public` bag laid over the kind's policy.
+  const overridden = toPublicReport(error, {
+    public: { message: 'Search is down.', details: null },
+  });
+  equal(overridden.code, 'TOOL_FAILED', 'the override keeps the kind code');
+  equal(overridden.message, 'Search is down.', 'the override message');
+  ok(!('as_json' in overridden), 'details: null discloses no as_json at all');
+
+  // Every corj option travels in one bag; the budget bounds the whole report.
+  const bounded = toDiagnosticReport(error, {
+    context: { runtime },
+    corj: { maxReportSize: 512 },
+  });
+  equal(
+    bounded.occurrence_id,
+    occurrenceId,
+    'a bounded report still correlates',
+  );
+  equal(bounded.context_omitted, 'max_size', 'context goes first, whole');
   ok(
     !JSON.stringify(publicReport).includes('connection refused'),
     'the public report must not leak the cause',
@@ -147,8 +188,18 @@ export function runFlow(appex, { runtime }) {
   );
   equal(decoded.report.code, 'TOOL_FAILED', 'decoded code');
 
-  const rejected = decodePublicReport({ v: 'appex/public/v3' });
+  const rejected = decodePublicReport({ v: 'appex/public/v4' });
   ok(!rejected.ok, 'decodePublicReport must reject a malformed report');
+
+  // v3 senders stay readable while services upgrade, and keep their own `v`.
+  const legacy = decodePublicReport({
+    v: 'appex/public/v3',
+    occurrence_id: occurrenceId,
+    code: 'TOOL_FAILED',
+    message: 'Down.',
+  });
+  ok(legacy.ok, 'decodePublicReport must accept appex/public/v3');
+  equal(legacy.ok && legacy.report.v, 'appex/public/v3', 'decoded v is kept');
 
   equal(
     toPublicReport(new Error('x')).code,
@@ -158,7 +209,7 @@ export function runFlow(appex, { runtime }) {
 
   let invalidCodeError;
   try {
-    toPublicReport(error, { code: '' });
+    toPublicReport(error, { public: { code: '' } });
   } catch (thrown) {
     invalidCodeError = thrown;
   }
@@ -175,6 +226,10 @@ export function runFlow(appex, { runtime }) {
     publicVersion: publicReport.v,
     diagnosticOccurrenceId: diagnostic.occurrence_id,
     publicOccurrenceId: publicReport.occurrence_id,
+    diagnosticFingerprint: diagnostic.fingerprint,
+    publicFingerprint: publicReport.fingerprint,
+    pairedFingerprintsAgree:
+      pair.diagnostic.fingerprint === pair.public.fingerprint,
     decodedOccurrenceId: decoded.report.occurrence_id,
     code: decoded.report.code,
   };

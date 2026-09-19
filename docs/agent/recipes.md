@@ -55,8 +55,9 @@ export function handleSearch(runId: string, query: string): { ok: true; value: s
 
 Both calls take the same `caught`; the reports share `occurrence_id`. For a
 thrown primitive, pass the same `occurrenceId` option to both calls. Unknown
-failures
-produce `INTERNAL_ERROR` with the same correlation.
+failures produce `INTERNAL_ERROR` with the same correlation. To say something
+else at this one call, pass `public: { code, message, details }`: it is laid
+over the kind's policy field by field, and `details: null` discloses nothing.
 
 ## Translate a lower-level failure
 
@@ -95,18 +96,19 @@ import { toDiagnosticReport } from 'application-exception';
 export function record(caught: unknown, runId: string, attempt: number): string {
   const report = toDiagnosticReport(caught, {
     context: { runId, attempt, host: process.env['HOSTNAME'] ?? 'unknown' },
-    maxReportSize: 32_768,
-    maxDepth: 3,
+    corj: { maxReportSize: 32_768, maxDepth: 3 },
   });
   return JSON.stringify(report);
 }
 ```
 
-`context` is normalized by corj's serializer with a fixed 16,384-byte budget
-and appears as `report.context`; that budget is independent of `maxReportSize`,
-which bounds the report as a whole. A value the serializer cannot handle
-becomes `null` with an entry in `report.reporting_errors`. `maxReportSize`,
-`maxDepth`, `maxChildren`, and `stackFormat` are corj options.
+`context` is rendered by corj as a JSON document of its own, rooted at
+`$context`, capped at 16,384 bytes by `corj: { maxContextSize }` and counted
+inside `corj: { maxReportSize }`, which bounds the report as a whole. It appears
+as `report.context`; a value corj cannot render becomes `null` with an entry in
+`report.reporting_errors`. Every corj option — `maxReportSize`, `maxDepth`,
+`maxChildren`, `stackFormat`, `inspection` and the rest — lives in the `corj`
+bag; only `redact` stays at the top level, because both reports share it.
 
 ## Recover from a public report
 
@@ -127,6 +129,38 @@ export function decide(received: unknown, retryable: readonly string[], remainin
 
 `code` selects the action; `message` never does. Carry the decremented budget
 into the next attempt. The host owns idempotency and backoff.
+
+## Stop a retry loop on a repeated failure
+
+```ts
+import { decodePublicReport } from 'application-exception';
+
+type Attempt = { retry: true } | { retry: false; reason: string };
+
+export function nextAttempt(received: unknown, seen: Set<string>): Attempt {
+  const decoded = decodePublicReport(received);
+  if (!decoded.ok) return { retry: false, reason: `${decoded.reason} at ${decoded.path}` };
+  const { fingerprint } = decoded.report;
+  if (fingerprint === undefined) return { retry: true };
+  if (seen.has(fingerprint)) return { retry: false, reason: `the same failure again: ${fingerprint}` };
+  seen.add(fingerprint);
+  return { retry: true };
+}
+```
+
+`fingerprint` is a hash of the failure's identifying parts — by default the
+constructor name and the stack of every node of the error graph — so two reports
+with the same value describe the same failure from the same place. Equal means
+retrying the same way will fail the same way: change the call or escalate.
+Unequal means a different failure, not progress. It is a retry signal, not a
+lookup key: `occurrence_id` is what you quote when escalating. It is absent when
+the sender turned it off with `corj: { fingerprintParts: null }`, and on a report
+of format `appex/public/v3`, which predates it.
+
+Publishing a fingerprint publishes a hash of values the reader may be able to
+guess. With the default parts the hash input contains stack text with absolute
+paths and line numbers, which an outside reader cannot reproduce; a recipe
+*without* `'stack'` lets a reader confirm guesses about the hashed values.
 
 ## Test a failure path
 
@@ -176,8 +210,9 @@ One occurrence is resolved for both reports, so `occurrence_id` matches for any
 caught value — a thrown string or `undefined` included, where two separate calls
 would each mint their own. Per-report options live in `options.diagnostic` and
 `options.public`; `options.occurrenceId` overrides the id for both. Every option
-bag is validated before either report is built, so the call never returns half a
-pair.
+bag is read and validated before either report is built, so the call never
+returns half a pair. The fingerprint is computed once, for the diagnostic
+report, and copied into the public one, so the pair always agrees.
 
 ## Bound what a sink receives
 
@@ -187,18 +222,45 @@ import { toDiagnosticReport } from 'application-exception';
 const caught: unknown = new Error('connection refused');
 const report = toDiagnosticReport(caught, {
   context: { runId: 'run-1' },
-  maxFinalReportSize: 16_384,
+  corj: { maxReportSize: 16_384 },
 });
 console.log(new TextEncoder().encode(JSON.stringify(report)).byteLength <= 16_384); // true
-console.log(report.report_omitted); // e.g. ['context'] when it did not fit
+console.log(report.context_omitted); // 'max_size' when the context did not fit
 ```
 
-`maxFinalReportSize` bounds the UTF-8 bytes of the whole compact report, not
-just corj's part. It drops `context`, then `reporting_errors`, naming each in
-`report_omitted`, then shrinks corj's own budget until the report fits. A budget
-too small for the required envelope throws `APPEX_REPORT_BUDGET_TOO_SMALL`
-rather than emitting an over-budget or invalid report. Omit the option to keep
-the unbounded 0.3.0 behaviour.
+`corj: { maxReportSize }` bounds the UTF-8 bytes of the whole compact report,
+`context` and `reporting_errors` included. Over budget, corj drops `context`
+whole — however small it is — and sets `context_omitted: 'max_size'`; then drops
+`reporting_errors` and sets `reporting_errors_omitted: 'max_size'`; only then
+does it trim error content. `occurrence_id`, `fingerprint` and `v` are never
+trimmed, so even the smallest report identifies itself and correlates. The
+budget is a safe integer of at least 512, or `null` for no bound; corj's default
+is 100,000 bytes.
+
+## Report an untrusted failure without running it
+
+```ts
+import { toDiagnosticReport } from 'application-exception';
+
+export function reportUntrusted(caught: unknown, runId: string): string {
+  const report = toDiagnosticReport(caught, {
+    context: { runId },
+    corj: { inspection: 'no-invoke' },
+  });
+  return JSON.stringify(report);
+}
+```
+
+Describing a caught value normally runs some of its code: reading `message`
+calls a getter if one is defined, `as_string` calls `toString`, `as_json` calls
+`toJSON`. `corj: { inspection: 'no-invoke' }` reads values off property
+descriptors and calls none of those hooks, so a value that crossed a plugin, a
+worker or a network boundary cannot execute at the reporting boundary. Content
+that exists but was not read becomes `"[not-inspected]"` — distinct from an
+absent field, which the value never had, and from `null`, which means producing
+it threw — and a children source behind a getter yields
+`children_omitted: 'not_inspected'`. `inspection` and `redact` compose: `redact`
+decides what may be reported, `inspection` how much may run to report it.
 
 ## Keep secrets out of both reports
 
@@ -232,10 +294,10 @@ wherever it appears in either report.
 | --- | --- | --- |
 | remove a secret's text wherever it shows up | `patterns: [/\bsk-\w+/g]` | strings and property names in both reports: message, stack, `as_json`, `context`, `reporting_errors`, nested causes |
 | never read a property, wherever it appears | `keys: ['password', /token$/i]` | the name, in the caught value, `context`, and selected public details |
-| never read one property of the caught value | `paths: ['$.cause.config.headers']` | the caught value only, never `context` or public details |
+| never read one named property, in one document | `paths: ['$.cause.config.headers', '$context.user.email']` | three documents: `$...` the caught value, `$context...` the context, `$public...` the selected public details |
 | decide value by value | `transform: (value, { prop }) => value` | runs after `patterns` on every value and property name; return `undefined` to drop the field |
 
-Four things to remember:
+Five things to remember:
 
 1. **Skipping a property does not remove its text elsewhere.** An error's message
    is also in its `stack`, so `keys: ['message']` leaves it there. To remove
@@ -244,7 +306,11 @@ Four things to remember:
    `{ "sk-live-abc": "[redacted]" }`. A secret *name* needs `patterns`.
 3. **Every pattern needs the `g` flag**, and `replacement` (default `[redacted]`)
    is inserted literally: `$&` is not expanded.
-4. **Redaction never discloses.** On a public report the policy is given only
+4. **An unanchored `RegExp` path reaches all three documents.** `/\.headers$/`
+   now also matches inside `$context` and `$public`. It fails safe — more is
+   redacted, not less — but anchor it with `^\$\.` to keep the rule on the
+   caught value.
+5. **Redaction never discloses.** On a public report the policy is given only
    what the kind's `details` selector returned. `occurrence_id` and `code` are
    identifiers you choose; no rule rewrites them.
 

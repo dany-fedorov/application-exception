@@ -17,7 +17,10 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 | Correlate the two reports | `report.occurrence_id`, equal on both for any object; pass `occurrenceId` for thrown primitives |
 | Read a public report received as JSON | `decodePublicReport(value)` |
 | Capture both reports as one occurrence | `toReports(caught, { diagnostic, public })` |
-| Bound the whole diagnostic report | `toDiagnosticReport(caught, { maxFinalReportSize })` |
+| Bound the whole diagnostic report | `toDiagnosticReport(caught, { corj: { maxReportSize } })` |
+| Reach any option of caught-object-report-json | `{ corj: { inspection, maxDepth, fingerprintParts, … } }` on any report call |
+| Override what one call discloses | `toPublicReport(caught, { public: { code, message, details } })` |
+| Tell two failures apart, or recognize a repeat | `report.fingerprint`, equal on both reports of one occurrence |
 | Keep secrets out of either report | `createRedactionPolicy({ keys, paths, patterns })` passed as `redact` |
 | Freeze details against later mutation | `defineException({ tag, message, snapshotDetails: true })` |
 | Trust failures from another loaded copy | `createTrustRealm()` passed as `realm` to `defineException` and `toPublicReport` |
@@ -129,17 +132,18 @@ function createRedactionPolicy(options?: RedactionPolicyOptions): RedactionPolic
 Build a reusable redaction policy, accepted as `redact` by
 `toDiagnosticReport`, `toPublicReport`, and `toReports`.
 
-A policy has two kinds of rule. **Skip** rules (`keys`, `paths`) name
-properties corj never reads, so an excluded getter never runs. **Scrub** rules
-(`patterns`, `transform`) rewrite text wherever it appears in either report:
-messages, stacks, `as_json`, `context`, `reporting_errors`, nested causes.
+**Skip** rules (`keys`, `paths`) name properties corj never reads, so an
+excluded getter never runs. **Scrub** rules (`patterns`, `transform`) rewrite
+text wherever it appears in either report: messages, stacks, `as_json`,
+`context`, `reporting_errors`, nested causes.
 
-- To remove a secret's *text*, use `patterns`. Skipping a property does not
-  remove its text elsewhere: `keys: ['message']` leaves it in `stack`.
-- `keys` match a name everywhere; `paths` reach the caught value only, never
-  `context` or selected public details.
+- To remove a secret's *text*, use `patterns`: skipping a property does not
+  remove its text elsewhere (`keys: ['message']` leaves it in `stack`), and
+  hides the value, not the name.
+- `keys` match a name everywhere. `paths` are JSON paths into three documents:
+  `$...` the caught value, `$context...`, `$public...` the selected details;
+  anchor a `RegExp` with `^\$\.` to keep it on the caught value.
 - Every pattern needs the `g` flag; `replacement` is inserted literally.
-- A skip rule hides the value, not the name: a secret *name* needs `patterns`.
 - Redaction never discloses: on a public report the policy is given only what
   the kind's `public.details` selector returned.
 
@@ -167,21 +171,28 @@ function toDiagnosticReport(caught: unknown, options?: DiagnosticReportOptions):
 ```
 
 Report any caught value for operators: a corj report with `occurrence_id`,
-optional `context`, and `reporting_errors`. Send it to a trusted sink; it
-contains messages, stacks, and every enumerable property of the error graph.
-With `maxFinalReportSize`, the whole report is bounded by that many UTF-8
-bytes of compact JSON: `context` is dropped, then `reporting_errors` (both
-named in `report_omitted`), then corj's own budget is shrunk until the
-report fits; a budget too small for the envelope throws.
+`fingerprint`, the optional `context`, and `reporting_errors`. Send it to a
+trusted sink; it contains messages, stacks, and every enumerable property of
+the error graph. Every option of caught-object-report-json is reachable
+through `corj`, except `redact`, which both reports share at the top level.
 
-Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_REPORT_BUDGET_TOO_SMALL`; corj option errors propagate.
+`corj: { maxReportSize }` (at least 512) bounds the whole report in UTF-8
+bytes of compact JSON: over budget, corj drops `context` whole, then
+`reporting_errors` — leaving `context_omitted` and `reporting_errors_omitted`
+at `'max_size'` — and only then trims error content. `occurrence_id`,
+`fingerprint` and `v` are never trimmed.
+
+Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_REDACTION_POLICY`; corj option errors propagate.
 
 ```ts
 import { toDiagnosticReport } from 'application-exception';
 const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
-const report = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
-// { "v": "corj/v0.13", "occurrence_id": "AE_…", "stack": [...], "children": [{ "path": "$.cause", ... }],
-//   "context": { "runId": "run-1" } }
+const report = toDiagnosticReport(caught, {
+  context: { runId: 'run-1' },
+  corj: { maxReportSize: 4096 },
+});
+// { "v": "corj/v0.14", "occurrence_id": "AE_…", "fingerprint": "fp1_…", "stack": [...],
+//   "children": [{ "path": "$.cause", ... }], "context": { "runId": "run-1" } }
 console.error(JSON.stringify(report));
 ```
 
@@ -194,9 +205,18 @@ function toPublicReport(caught: unknown, options?: PublicReportOptions): PublicR
 Report a failure to an agent or user: the kind's `public` policy rendered
 into `code`, `message`, and `as_json`, with the same `occurrence_id` as the
 diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
-generic message. Nothing is read from the error except its policy inputs.
+generic message. Nothing from the error is emitted except the policy's
+outputs and the fingerprint, a hash. Computing the fingerprint reads names,
+messages and stacks of the error graph under the same `corj` options and
+`redact` as the diagnostic report; pass `corj: { fingerprintParts: null }`
+to read nothing.
 
-Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`
+The `public` option overrides that policy for this call, field by field:
+`code`, `message` (a string or a function of the details) and `details` (a
+selector function, or `null` to disclose nothing). A field left out keeps
+what the kind says.
+
+Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
 
 ```ts
 import { defineException, toPublicReport } from 'application-exception';
@@ -204,9 +224,10 @@ const ToolUnavailable = defineException({
   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
   public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
 });
-const report = toPublicReport(new ToolUnavailable({ details: { tool: 'search' } }));
-// { v: 'appex/public/v3', occurrence_id: 'AE_…', code: 'TOOL_UNAVAILABLE', message: 'Something went wrong',
-//   as_json: { tool: 'search' } }
+const failure = new ToolUnavailable({ details: { tool: 'search' } });
+const report = toPublicReport(failure, { public: { message: 'Search is down.' } });
+// { v: 'appex/public/v4', occurrence_id: 'AE_…', fingerprint: 'fp1_…',
+//   code: 'TOOL_UNAVAILABLE', message: 'Search is down.', as_json: { tool: 'search' } }
 console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
 ```
 
@@ -220,16 +241,19 @@ Report one failure to both audiences at once: the occurrence id is resolved
 once and shared, so `diagnostic.occurrence_id === public.occurrence_id`
 holds for every caught value, primitives included. The per-report options
 live in `options.diagnostic` and `options.public`; the occurrence id is
-overridden for both at the top level. All option bags are validated before
-either report is built, and a failure to build either one throws instead of
-returning half a pair.
+overridden for both at the top level. Every option bag is read once and
+validated before either report is built, `realm` included, and a failure to
+build either one throws instead of returning half a pair. The fingerprint is
+computed once, for the diagnostic report, and copied into the public one, so
+the pair always agrees; the public bag's `corj.fingerprintParts` does not
+change it.
 
-Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`, `APPEX_REPORT_BUDGET_TOO_SMALL`; corj option errors propagate.
+Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
 
 ```ts
 import { toReports } from 'application-exception';
 const { occurrence_id, diagnostic, public: disclosed } = toReports('socket closed', {
-  diagnostic: { context: { runId: 'run-1' }, maxFinalReportSize: 4096 },
+  diagnostic: { context: { runId: 'run-1' }, corj: { maxReportSize: 4096 } },
 });
 console.error(JSON.stringify(diagnostic)); // the operator copy
 console.log(disclosed.code, occurrence_id); // 'INTERNAL_ERROR' 'AE_…'
@@ -243,7 +267,9 @@ function decodePublicReport(value: unknown): DecodePublicReportResult;
 
 Validate a public report received as JSON and return a detached copy, or
 the first reason it is not a public report. Branch on `report.code` after
-`ok`; escalate on `!ok` with `reason` and `path`.
+`ok`; escalate on `!ok` with `reason` and `path`. Both `appex/public/v3` and
+`appex/public/v4` are accepted, and the decoded report keeps the `v` it
+arrived with, so a v3 sender stays readable while services upgrade.
 
 ```ts
 import { decodePublicReport } from 'application-exception';
@@ -266,7 +292,7 @@ Re-exported from caught-object-report-json; field meanings: https://github.com/d
 ### `DIAGNOSTIC_REPORT_VERSION`
 
 ```ts signature
-const DIAGNOSTIC_REPORT_VERSION: "corj/v0.13";
+const DIAGNOSTIC_REPORT_VERSION: "corj/v0.14";
 ```
 
 The `v` of every diagnostic report: corj's report version.
@@ -274,20 +300,31 @@ The `v` of every diagnostic report: corj's report version.
 ### `PUBLIC_REPORT_VERSION`
 
 ```ts signature
-const PUBLIC_REPORT_VERSION: "appex/public/v3";
+const PUBLIC_REPORT_VERSION: "appex/public/v4";
 ```
 
-The `v` of every public report.
+The `v` of every public report this version emits.
 
 ### `APPEX_ERROR_CODES`
 
 ```ts signature
-const APPEX_ERROR_CODES: readonly ["APPEX_INVALID_TAG", "APPEX_INVALID_MESSAGE", "APPEX_INVALID_ID_PREFIX", "APPEX_INVALID_PUBLIC_POLICY", "APPEX_INVALID_DETAILS", "APPEX_INVALID_CAUSES", "APPEX_INVALID_OPTIONS", "APPEX_INVALID_OCCURRENCE_ID", "APPEX_INVALID_PUBLIC_CODE", "APPEX_INVALID_PUBLIC_MESSAGE", "APPEX_INVALID_TRUST_REALM", "APPEX_INVALID_REDACTION_POLICY", "APPEX_REPORT_BUDGET_TOO_SMALL"];
+const APPEX_ERROR_CODES: readonly ["APPEX_INVALID_TAG", "APPEX_INVALID_MESSAGE", "APPEX_INVALID_ID_PREFIX", "APPEX_INVALID_PUBLIC_POLICY", "APPEX_INVALID_DETAILS", "APPEX_INVALID_CAUSES", "APPEX_INVALID_OPTIONS", "APPEX_INVALID_OCCURRENCE_ID", "APPEX_INVALID_PUBLIC_CODE", "APPEX_INVALID_PUBLIC_MESSAGE", "APPEX_INVALID_TRUST_REALM", "APPEX_INVALID_REDACTION_POLICY"];
 ```
 
 Every code an error thrown by this package can carry. Each has a section in docs/agent/errors.md.
 
 ## Types
+
+### `AppexCorjOptions`
+
+```ts signature
+export type AppexCorjOptions = Omit<CorjOptionsInput, 'redact'>;
+```
+
+Options of caught-object-report-json, passed through as `corj`. Every corj
+option is available except `redact`, which both reports share at the top level.
+`metadata.v` is always on. `onError` defaults to a silent function: the same
+records are in the report's `reporting_errors`.
 
 ### `AppexErrorCode`
 
@@ -340,20 +377,18 @@ The frozen details record an occurrence exposes. `never` selects the empty recor
 ### `DiagnosticReport`
 
 ```ts signature
-export type DiagnosticReport = Omit<CorjReport, 'v'> & {
+export type DiagnosticReport = CorjReport & {
   readonly v: CorjVersion;
   readonly occurrence_id: string;
-  readonly context?: CorjJsonValue | null;
-  readonly reporting_errors?: readonly ReportingError[];
-  readonly report_omitted?: readonly ('context' | 'reporting_errors')[];
 };
 ```
 
-A corj report object (see caught-object-report-json) with four extension
-fields. `occurrence_id` is the occurrence id shared with the public
-report. `context` is the normalized `options.context`. `reporting_errors`
-lists inspection failures (at most 8). `report_omitted` names the optional
-fields dropped to meet `maxFinalReportSize`.
+A corj report object (see caught-object-report-json) of one occurrence.
+`occurrence_id` is the id shared with the public report, and `v` is always
+present: corj never trims either. `context` is the JSON form of
+`options.context`, `reporting_errors` lists inspection failures (at most 8),
+and `context_omitted` / `reporting_errors_omitted` say when one of those two
+was left out to meet `corj.maxReportSize`.
 
 ### `DiagnosticReportOptions`
 
@@ -361,22 +396,16 @@ fields dropped to meet `maxFinalReportSize`.
 export interface DiagnosticReportOptions {
   readonly occurrenceId?: string;
   readonly context?: unknown;
-  readonly maxReportSize?: number | null;
-  readonly maxFinalReportSize?: number | null;
-  readonly maxDepth?: number;
-  readonly maxChildren?: number;
-  readonly stackFormat?: 'lines' | 'string';
   readonly redact?: RedactionPolicy;
+  readonly corj?: AppexCorjOptions;
 }
 ```
 
-Options of `toDiagnosticReport`. `maxReportSize`, `maxDepth`, `maxChildren`,
-and `stackFormat` are corj options with corj's defaults (100,000 bytes, 5,
-100, `'lines'`). `context` is normalized with a 16,384-byte budget outside
-the report budget. `occurrenceId` overrides the occurrence id.
-`maxFinalReportSize` bounds the UTF-8 bytes of `JSON.stringify(report)` for
-the whole report, extension fields included; `null` (the default) disables
-it and leaves `maxReportSize` alone.
+Options of `toDiagnosticReport`. `occurrenceId` overrides the occurrence id.
+`context` is any caller data to report beside the caught value; corj bounds
+it and drops it whole when the report is over budget. `redact` is the policy
+both reports share. `corj` carries every option of
+caught-object-report-json, `maxReportSize` and `inspection` included.
 
 ### `ExceptionDefinition`
 
@@ -411,6 +440,21 @@ export type ExceptionInput<Details extends object = never> = ([
 
 Constructor input. Omitting `Details` selects the constant-message form, whose input is optional.
 
+### `PublicOverride`
+
+```ts signature
+export type PublicOverride = {
+  readonly code?: string;
+  readonly message?: string | ((details: DetailsRecord<object>) => string);
+  readonly details?: ((details: DetailsRecord<object>) => unknown) | null;
+};
+```
+
+A per-call override of a kind's public policy, merged field by field: a
+field the override leaves out keeps what the kind's policy says. `message`
+and `details` are read exactly as a policy's are, so a function is given the
+kind's details record, and `details: null` suppresses the kind's selector.
+
 ### `PublicPolicy`
 
 ```ts signature
@@ -431,8 +475,9 @@ or rendered from the details. `details` selects the JSON that becomes
 
 ```ts signature
 export interface PublicReport {
-  readonly v: typeof PUBLIC_REPORT_VERSION;
+  readonly v: PublicReportVersion;
   readonly occurrence_id: string;
+  readonly fingerprint?: string;
   readonly code: string;
   readonly message: string;
   readonly as_json?: CorjJsonValue | null;
@@ -443,77 +488,72 @@ export interface PublicReport {
 What an application discloses about one failure. `code` is the branching
 protocol, `occurrence_id` correlates with the diagnostic report, `message`
 is display text, `as_json` is the selected JSON. `truncated` marks a cut
-message or `as_json`.
+message or `as_json`. `fingerprint` is equal for failures of the same kind
+from the same place; a retry signal, not a lookup key. It is absent when
+`corj: { fingerprintParts: null }` turned it off, and on a decoded report of
+format `appex/public/v3`, which predates it.
 
 ### `PublicReportOptions`
 
 ```ts signature
 export interface PublicReportOptions {
   readonly occurrenceId?: string;
-  readonly code?: string;
-  readonly message?: string;
-  readonly details?: unknown;
+  readonly public?: PublicOverride;
   readonly redact?: RedactionPolicy;
   readonly realm?: TrustRealm;
+  readonly corj?: AppexCorjOptions;
 }
 ```
 
-Per-call overrides of the kind's public policy; `details: null` suppresses the policy's selection.
+Options of `toPublicReport`. `occurrenceId` overrides the occurrence id.
+`public` overrides the kind's public policy for this call. `redact` is the
+policy both reports share, `realm` is the trust realm to read a foreign
+value's policy from, and `corj` carries the options of
+caught-object-report-json used to inspect the selected details.
+
+### `PublicReportVersion`
+
+```ts signature
+export type PublicReportVersion = 'appex/public/v3' | 'appex/public/v4';
+```
+
+Every public report format `decodePublicReport` reads: the current one and the one before it.
 
 ### `RedactionContext`
 
 ```ts signature
-export type RedactionContext = CorjRedactContext;
+export type RedactionContext = CorjContext;
 ```
 
-What a `transform` is told about a value: `stage` is where corj produced it,
-`key` the report field it is destined for, `prop` the property it was read
-from, and `path` a JSON path rooted at whatever is being serialized — the
-caught value, the `context` object, or the selected public details. Key a
-transform on `prop`: `$.password` is also `context.password`.
+What a `transform` is told about a value: `stage`, the report `key`, the
+source `prop`, and a `path` whose root names the document: `$` the caught
+value, `$context` the context, `$public` the public report.
 
 ### `RedactionPolicy`
 
 ```ts signature
 export interface RedactionPolicy {
-  readonly [REDACTION_POLICY]: CompiledRedactionPolicy;
+  readonly [REDACTION_POLICY]: CorjRedactPolicy;
 }
 ```
 
-An opaque, reusable redaction policy. Build it once and share it between reports.
+An opaque, reusable redaction policy. Build it once, at startup, and share it between reports.
 
 ### `RedactionPolicyOptions`
 
 ```ts signature
-export interface RedactionPolicyOptions {
-  /** Skip: property names never read, wherever they appear. Exact string or `RegExp`. */
-  readonly keys?: readonly (string | RegExp)[];
-  /** Skip: JSON paths into the caught value never read, such as `$.cause.config.headers`. */
-  readonly paths?: readonly (string | RegExp)[];
-  /** Scrub: replaced in every string either report emits. Each must carry the `g` flag. */
-  readonly patterns?: readonly RegExp[];
-  /** What skipped and scrubbed content becomes, inserted literally. Defaults to `[redacted]`. */
-  readonly replacement?: string;
-  /** Scrub: runs after `patterns` on every value and property name; return `undefined` to drop the field. It sees raw input, so it must never quote it in an error. */
-  readonly transform?: CorjRedactTransform;
-}
+export type RedactionPolicyOptions = CorjRedactPolicyInput;
 ```
 
-Input of `createRedactionPolicy`. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional.
+Input of `createRedactionPolicy`: corj's policy input. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional.
 
 ### `ReportingError`
 
 ```ts signature
-export interface ReportingError {
-  readonly stage: CorjErrorStage;
-  readonly path: string;
-  readonly key?: string;
-  readonly prop?: string;
-  readonly error: string;
-}
+export type ReportingError = CorjReportingError;
 ```
 
-A problem corj met while inspecting the caught value; `message: null` and friends mark where.
+A problem corj met while producing a report: `stage`, `path`, the report `key`, the source `prop`, and a scrubbed description.
 
 ### `ToReportsOptions`
 
@@ -527,8 +567,8 @@ export interface ToReportsOptions {
 
 Options of `toReports`. `occurrenceId` overrides the occurrence id of both
 reports. `diagnostic` and `public` are the per-report option bags, each
-without its own `occurrenceId`, so that `message` and `context` stay
-unambiguous.
+without its own `occurrenceId`, so that the shared id stays unambiguous;
+the public bag's own `public` key is the per-call policy override.
 
 ### `TrustRealm`
 
@@ -584,6 +624,12 @@ Any value that survives `JSON.stringify`: a string, number, boolean, `null`, or 
 
 Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
 
+### `CorjOptionsInput`
+
+Every option of caught-object-report-json; `corj` takes all of them but `redact`.
+
+Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
+
 ### `CorjReport`
 
 The corj report object a `DiagnosticReport` extends: the root node plus its flattened `children`.
@@ -593,5 +639,11 @@ Re-exported from caught-object-report-json; field meanings: https://github.com/d
 ### `CorjReportChild`
 
 One node of the flattened error tree in `children`, with its `id`, `path`, `level` and `child_ids`.
+
+Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
+
+### `CorjReportingError`
+
+One failure met while a report was produced, as `reporting_errors` lists it.
 
 Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
