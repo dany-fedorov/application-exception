@@ -369,6 +369,24 @@ the operator.
 `occurrenceId` and `idPrefix` tighten to printable ASCII without spaces (A6). The default
 ids already comply.
 
+## Amendments made during execution (2026-09-19)
+
+Each was ruled by the controller during the run, under the owner's "assume and document"
+instruction, and is recorded with its cost in the plan ledgers. Where an amendment and the
+text above disagree, the amendment is what was built.
+
+| # | Amends | What changed | Why |
+| --- | --- | --- | --- |
+| E1 | D4 | `context` is dropped whole **however small** once a report is over budget, before any error content is trimmed. | It is application-exception's 0.4 order; a plan test had contradicted it. |
+| E2 | D6 | The `[typeof, as_string]` fallback applies to a root **without a string stack** as well as to an all-empty root. | A thrown string has `constructor_name: "String"`, so "all empty" never fired for it. |
+| E3 | D6 | **Every** fingerprint part value, whatever its type, goes through the redaction policy, **under its own path**; string values are cut at 16,384 units after scrubbing; hashing can never throw (a failure is a reporting error and the report has no fingerprint); `bigint` contributes `<digits>n`, a non-finite number its `String()` form; `{ path: ['a'] }` takes the label `field:a`. | Adversarial review of corj: `paths` rules were dodged by fingerprint parts (a confirmation oracle), and a 129 MB thrown string made `makeCorj` throw. All of these change what `fp1_` hashes, so they had to land before 11.0.0. |
+| E4 | D5, D6 | An invalid runtime `occurrenceId` / `fingerprint` call **value** is recorded as a reporting error and resolution falls through to the sources; only a call input of the wrong **shape** throws. | A request id with a space must not turn an error report into a second exception inside a catch block. application-exception still validates its own `occurrenceId` first. |
+| E5 | D2 | `onError` receives a shallow **copy** of the record. | A handler that mutated its record rewrote the report. |
+| E6 | D11, R14 | The public report's fingerprint is always computed by the **public** bag's maker with `makeFingerprint(caught, { requireStack: true })`: a value without a string stack gets **no** public fingerprint, the public bag's `fingerprintParts: null` and `redact` are honoured, and `toReports` no longer copies the diagnostic one. The two reports agree whenever both bags carry the same `corj` options and `redact`. corj gained the `requireStack` option for this. | Adversarial review of application-exception: a stackless value's fingerprint is a hash of its text, and a reviewer recovered a PIN message from a public report in 10 ms. D11's claim that the default hash cannot be reproduced was wrong for such values. |
+| E7 | D10 | The `public` bag, and every other option bag, is read exactly once and the validated snapshot is what the report uses. | A non-idempotent getter put an unvalidated `code` into a public report. |
+| E8 | D11 | `decodePublicReport` applies the id token pattern to v4 reports (v3 stays length-only), and caps the rejection `path` it returns. | The decoder was looser than the v4 schema; recipes hand `path` to an agent. |
+| E9 | D8 | `corj: { onError: undefined }` keeps the silent default; an invalid `corj.metadata` reaches corj and throws corj's own error. | Spread order restored corj's console handler; invalid values were being normalized. |
+
 ## Non-goals
 
 - No change to `defineException`, `snapshotDetails`, trust realms, `causes`, or `toReports`
