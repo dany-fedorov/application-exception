@@ -55,7 +55,9 @@ slot, and both reports carry a `fingerprint`.
   `stage: 'warning'` at `$public.message`. A policy keyed on the old values
   stops matching and **nothing is redacted** — no error, no warning. Re-key it
   on `prop`, which did not change, or on the new roots and stage.
-- The runtime dependency is `caught-object-report-json ^11.0.0`. Invalid corj
+- The runtime dependency is `caught-object-report-json ^11.0.1`. 11.0.1 is the
+  floor because it fixes `inspection: 'no-invoke'` on Node 18 and 20, where reading
+  an error's `stack` descriptor ran an accessor `name` or `message`. Invalid corj
   options surface as corj's own `TypeError` or `RangeError`, unwrapped. In
   `toDiagnosticReport` and `toPublicReport` this package validates its own
   `occurrenceId` before it builds a maker, so that one stays
