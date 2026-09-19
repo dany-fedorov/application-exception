@@ -6,12 +6,6 @@ real publishable artifact with `prepublish-me`, runs `npm pack` on it, and insta
 with its real dependency closure (`nanoid`, `caught-object-report-json`) into a throwaway
 directory. No `node_modules` is hand-wired, and no suite imports `src/` or `dist/`.
 
-> **0.5.0 status.** The suites below were updated for corj 11 (`corj/v0.14`, `appex/public/v4`)
-> but not re-run: they install the dependency closure from the registry, and
-> `caught-object-report-json@11.0.0` is not published yet. Everything else on this page is what
-> the 0.4.0 runs observed; the resolutions, the bundle contents and the export conditions are
-> unaffected by the change, which touches report content only.
-
 ## Exercised runtimes
 
 | Runtime | How it is exercised | Script | CI job |
