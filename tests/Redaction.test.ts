@@ -868,8 +868,15 @@ describe('createRedactionPolicy', () => {
       // `id`, `path` and `level` are corj's own structure: a default id is
       // never emitted through the policy, so even a policy that redacts every
       // digit keeps the cause tree linked.
+      // The fixture values carry a `~`, which occurs neither in a hex
+      // fingerprint nor in the id alphabet nor in a stack line, so the final
+      // assertion can only be about the messages the application supplied.
       const report = toDiagnosticReport(
-        new Error('a1', { cause: new Error('b2', { cause: new Error('c3') }) }),
+        new Error('zq~secret-1', {
+          cause: new Error('zq~secret-2', {
+            cause: new Error('zq~secret-3'),
+          }),
+        }),
         { redact: createRedactionPolicy({ patterns: [/\d/g] }) },
       );
 
@@ -877,7 +884,7 @@ describe('createRedactionPolicy', () => {
       expect(report.children?.[0]?.child_ids).toEqual(['1']);
       expect(report.children?.[0]?.path).toBe('$.cause');
       expect(report.children?.[0]?.level).toBe(1);
-      expect(JSON.stringify(report)).not.toMatch(/a1|b2|c3/);
+      expect(JSON.stringify(report)).not.toMatch(/zq~secret-[123]/);
       expect(validateDiagnostic(report)).toBeNull();
     });
   });
