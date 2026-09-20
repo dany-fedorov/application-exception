@@ -54,8 +54,9 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
     `redact`, `maxReportSize`, and `reportSizeUnit` are available in `corj`;
     `redact` stays a top-level option both reports share;
     `inspection: 'no-invoke'` reports an untrusted value without running its
-    getters. A custom `corj: { onReportingError }` is called with the RAW caught value,
-    unscrubbed: never log its first argument to an untrusted sink.
+    getters. A custom `corj: { onReportingError }` receives the raw reporting
+    failure: the unsanitized value thrown while producing the report, not the
+    original caught application value. Never log it to an untrusted sink.
 11. Build one `makeRedactionPolicy({ keys, paths, patterns })` per service and
     pass it as `redact` to both reports. `keys` and `paths` are skip rules: the
     property is never read. `patterns` (each needs the `g` flag) and `transform`

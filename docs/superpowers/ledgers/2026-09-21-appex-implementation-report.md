@@ -74,3 +74,11 @@ published `caught-object-report-json@12.0.0` package.
 
 None. The release ledger and historical research/specification files were left
 to the coordinator and were not edited as part of this task.
+
+## Review fix round 1
+
+Independent review found no implementation defects and one live documentation
+error. `AGENTS.md` now correctly says that `onReportingError` receives the raw,
+unsanitized reporting failure thrown while CORJ produces a report, rather than
+the original caught application value. `npm run docs:check` passed after the
+correction with 44 snippets type-checked.
