@@ -41,3 +41,53 @@ documented assumptions, pushes, merges and publication remains applicable.
 
 Implementation, review, release and final verification evidence follows when
 those steps are complete.
+
+## CORJ implementation and review
+
+- Implementation `5c219c92b55b84419e9fc2d8299abb94bb17852c` migrates the
+  namespace, consumers and TypeDoc. Independent Sol medium review approved the
+  branch after two documentation corrections: source links now point to a
+  revision containing `Corj`, and a stale live README function reference is
+  qualified. Final reviewed head: `c2ba920b3896c806889444b231535d997d67034f`.
+- 32 suites, 1,511 tests and 25 snapshots pass with 100% statements, branches,
+  functions and lines. Build and six packed consumer targets pass (Node CJS/ESM,
+  Bun, encapsulation, TypeScript, Vite/Chromium). GitHub CI run
+  [35536727285](https://github.com/dany-fedorov/caught-object-report-json/actions/runs/35536727285)
+  also passed the tests and consumer matrix on Node 20 and 24.
+- The consumer harness now captures subprocess output through temporary files:
+  nested Node 24 pipes in the local environment returned empty output. The
+  reviewer reproduced the issue and verified exit status, stdout/stderr and
+  cleanup. Removed-import probes require all four utility names to be rejected.
+- The coordinator caught and corrected a stale README in an intermediate
+  tarball. Final artifact: 80,794 bytes, SHA-256
+  `d443b948a5aab862e2818e9713a2f58f1a98db165eecdec8d55e04a5c44b61ec`.
+  Its README, manifest, JavaScript and declarations match the final inputs;
+  an independent artifact smoke check passed.
+- [PR #226](https://github.com/dany-fedorov/caught-object-report-json/pull/226)
+  merged as `9d59e4ba9e0d47ad3423a9818132b0a3ae2f6b1e`, with a tree identical
+  to the reviewed head. Main and annotated `v13.0.0` were pushed atomically.
+  Only Pages ran on this skip-CI merge. npm accepted the exact tarball;
+  registry propagation verification follows below.
+- Registry verification succeeded: latest is 13.0.0, SHA-512 integrity and
+  downloaded bytes match the reviewed tarball. A fresh registry install passed
+  namespace, removed-export, extracted-call, report-version and redaction smoke
+  checks. [GitHub release and migration notes](https://github.com/dany-fedorov/caught-object-report-json/releases/tag/v13.0.0)
+  are published. Application-exception integration now uses the registry build.
+
+## Application-exception implementation
+
+- Implementation `b070107d0606f25e1e6f26968e3ba9c426bb7ca9` re-exports the
+  exact upstream `Corj`, removes standalone restoration, and uses the namespace
+  for redaction resolution. All own reporting APIs and schemas are unchanged.
+- Full `test:all` passes: 16 suites, 340 tests, 100% coverage, type tests, build,
+  packed CJS and named Node ESM consumers, Bun 1.4.2, Chromium 153, and 45 docs
+  snippets. The dynamically generated API card remains exactly 650 lines.
+- Version 0.7.0 uses registry dependency `^13.0.0`; lockfile integrity matches
+  the published corj artifact. The downstream artifact's SHA-256 is
+  `ed4f5b3fee12b8e70c980a55ee5c10456c81fe3b92d886d7cd9f4a71e6236394`.
+  The coordinator independently matched its README, manifest, JavaScript and
+  declarations to the final inputs. A fresh installation of the tarball with
+  real registry dependencies passed namespace identity, removed exports,
+  extracted calls, report-pair correlation, restoration and redaction checks.
+- [PR #53](https://github.com/dany-fedorov/application-exception/pull/53)
+  contains the integration. Independent review and CI evidence follow.
