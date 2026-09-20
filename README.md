@@ -110,15 +110,15 @@ Diagnostic CORJ options are reachable through one `corj` bag — including
 `maxDepth`, `maxChildren`, `stackFormat`, `inspection`, `fingerprintParts`, and
 `maxContextSize`. Whole-report size belongs to top-level `maxReportBytes`, its
 unit is always UTF-8, and `redact` stays at the top level. Use
-`restoreExpectedValues(report)` to fill omitted fields.
+`Corj.restoreExpectedValues(report)` to fill omitted fields.
 
 ```ts
-import { restoreExpectedValues, makeDiagnosticReport } from 'application-exception';
+import { Corj, makeDiagnosticReport } from 'application-exception';
 
 const report = makeDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
   corj: { maxDepth: 2 },
 });
-const full = restoreExpectedValues(report);
+const full = Corj.restoreExpectedValues(report);
 console.log(full.message, report.children?.[0]?.path); // 'outer' '$.cause'
 ```
 

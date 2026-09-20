@@ -1,5 +1,6 @@
 import Ajv2020 from 'ajv/dist/2020';
-import { CORJ_VERSION, restoreExpectedValues } from 'caught-object-report-json';
+import { CORJ_VERSION } from 'caught-object-report-json';
+import { Corj } from '../src';
 import {
   makeDiagnosticReport,
   makePublicReport,
@@ -78,7 +79,7 @@ describe('shipped schemas', () => {
   });
 
   test('accept a report with its expected values restored', () => {
-    const restored = restoreExpectedValues(
+    const restored = Corj.restoreExpectedValues(
       makeDiagnosticReport(new Error('outer', { cause: new Error('inner') })),
     );
     expect(restored.v).toBe(`${CORJ_VERSION}-full`);

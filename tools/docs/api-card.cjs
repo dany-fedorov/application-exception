@@ -69,7 +69,7 @@ const TASKS = [
   ],
   [
     'Read omitted corj fields of a diagnostic report',
-    '`restoreExpectedValues(report)`',
+    '`Corj.restoreExpectedValues(report)`',
   ],
 ];
 
@@ -83,7 +83,7 @@ const RUNTIME_ORDER = [
   'makePublicReport',
   'makeReportPair',
   'decodePublicReport',
-  'restoreExpectedValues',
+  'Corj',
   'DIAGNOSTIC_REPORT_VERSION',
   'PUBLIC_REPORT_VERSION',
   'APPEX_ERROR_CODES',
@@ -152,11 +152,32 @@ function describeExport(symbol, checker) {
   } else if (target.flags & ts.SymbolFlags.Variable) {
     runtime = true;
     const type = checker.getTypeOfSymbolAtLocation(target, declaration);
-    code = `const ${symbol.name}: ${checker.typeToString(
-      type,
-      declaration,
-      FORMAT,
-    )};`;
+    if (symbol.name === 'Corj') {
+      const properties = type.getProperties().map((property) => {
+        const propertyDeclaration = (property.declarations || [])[0];
+        if (!propertyDeclaration)
+          throw new Error(`No declaration for Corj.${property.name}`);
+        const propertyType = checker.getTypeOfSymbolAtLocation(
+          property,
+          propertyDeclaration,
+        );
+        const signatures = propertyType.getCallSignatures();
+        if (signatures.length !== 1)
+          throw new Error(`Corj.${property.name} must have one call signature`);
+        return `readonly ${property.name}: ${checker.signatureToString(
+          signatures[0],
+          propertyDeclaration,
+          FORMAT | ts.TypeFormatFlags.WriteArrowStyleSignature,
+        )};`;
+      });
+      code = `const Corj: { ${properties.join(' ')} };`;
+    } else {
+      code = `const ${symbol.name}: ${checker.typeToString(
+        type,
+        declaration,
+        FORMAT,
+      )};`;
+    }
   } else {
     runtime = false;
     code = declaration.getText(declaration.getSourceFile());
@@ -183,7 +204,7 @@ function section(entry) {
   if (entry.summary) lines.push(entry.summary, '');
   for (const text of entry.throws) lines.push(`Throws: ${text}`, '');
   for (const example of entry.examples) lines.push(example, '');
-  if (entry.foreign)
+  if (entry.foreign && entry.name !== 'Corj')
     lines.push(
       `Re-exported from caught-object-report-json; field meanings: ${CORJ_README}`,
       '',

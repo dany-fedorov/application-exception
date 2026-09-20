@@ -1,4 +1,4 @@
-import { restoreExpectedValues } from 'caught-object-report-json';
+import { Corj } from '../src';
 import { makeDiagnosticReport, makePublicReport } from '../src/reporting';
 import { DIAGNOSTIC_REPORT_VERSION } from '../src/report-types';
 import { defineException } from '../src/typed';
@@ -51,7 +51,9 @@ describe('makeDiagnosticReport', () => {
     expect(report).not.toHaveProperty('reporting_errors');
     expect(Object.keys(report)[0]).toBe('occurrence_id');
 
-    const full = restoreExpectedValues(report);
+    const full = Corj.restoreExpectedValues(report);
+    expect(full.occurrence_id).toBe(report.occurrence_id);
+    expect(full.v).toBe('corj/v0.15-full');
     expect(full.constructor_name).toBe('agent/ToolFailure');
     expect(full.message).toBe('search failed');
     expect(full.instanceof_error).toBe(true);

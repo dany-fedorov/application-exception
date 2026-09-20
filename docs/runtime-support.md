@@ -25,6 +25,8 @@ public report, decodes the public one after a JSON round trip, and checks that
 - `error.occurrenceId`, `diagnostic.occurrence_id`, `publicReport.occurrence_id` and the decoded
   report's `occurrence_id` are the same string, in every runtime;
 - `diagnostic.v` is `corj/v0.15` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
+- the exported `Corj` is frozen, and its extracted `restoreExpectedValues`
+  method preserves application fields while changing `v` to `corj/v0.15-full`;
 - `publicReport.v` is `appex/public/v4` and equals the exported `PUBLIC_REPORT_VERSION`;
 - both reports carry a `fp1_` `fingerprint`, and the pair `makeReportPair` returns carries one
   shared value;
@@ -69,7 +71,7 @@ left external, and after the build the emitted chunk is scanned for `node:` impo
 
 Observed: the bundle contains `application-exception`, `caught-object-report-json` and
 `nanoid/index.browser.js` and nothing from Node. `caught-object-report-json` has no dependencies
-and requires no Node builtin — corj 12 bundles its own pure-JavaScript SHA-256 for the fingerprint
+and requires no Node builtin — corj 13 bundles its own pure-JavaScript SHA-256 for the fingerprint
 rather than reaching for `node:crypto` or `crypto.subtle` — so nothing in the closure pulls Node
 `crypto` into the bundle.
 

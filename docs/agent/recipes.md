@@ -177,7 +177,7 @@ deployed source and its paths.
 
 ```ts
 import { strict as assert } from 'node:assert';
-import { defineException, restoreExpectedValues, makeDiagnosticReport, makePublicReport } from 'application-exception';
+import { Corj, defineException, makeDiagnosticReport, makePublicReport } from 'application-exception';
 
 const Timeout = defineException({
   tag: 'tools/Timeout',
@@ -192,13 +192,13 @@ const response = makePublicReport(error);
 assert.equal(response.code, 'TIMEOUT');
 assert.deepEqual(response.as_json, { ms: 500 });
 assert.equal(response.occurrence_id, diagnostic.occurrence_id);
-assert.equal(restoreExpectedValues(diagnostic).message, 'Timed out after 500ms');
+assert.equal(Corj.restoreExpectedValues(diagnostic).message, 'Timed out after 500ms');
 assert.equal(diagnostic.children?.[0]?.path, '$.cause');
 assert.ok(!JSON.stringify(response).includes('socket hang up'));
 ```
 
 Assert on `code`, `occurrence_id`, `as_json`, and `children`; do not assert on
-stack lines. Use `restoreExpectedValues` when you need omitted corj fields.
+stack lines. Use `Corj.restoreExpectedValues` when you need omitted corj fields.
 
 ## Capture both reports as one occurrence
 

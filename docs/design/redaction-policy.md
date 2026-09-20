@@ -43,7 +43,7 @@ avoid duplicating corj's traversal. It is not duplicated: `new CorjMaker({
 redact })` consults `keys` and `paths` *before* reading a property, and applies
 `patterns` and then `transform` to every value it emits. `src/redaction.ts` in
 this package is validation plus forwarding — it validates the options by calling
-corj's `resolveCorjRedactPolicy`, rewraps corj's `TypeError` as
+`Corj.resolveRedactPolicy`, rewraps corj's `TypeError` as
 `APPEX_INVALID_REDACTION_POLICY`, and freezes the result into an opaque policy
 object. corj 11 bounds `replacement` at 128 characters itself, so this package
 no longer carries its own bound; the rejection a caller sees is corj's, rewrapped

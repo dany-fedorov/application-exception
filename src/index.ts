@@ -48,8 +48,15 @@ export type {
 export { APPEX_ERROR_CODES } from './errors';
 export type { AppexErrorCode, AppexTypeError } from './errors';
 export {
-  /** Fill in the fields a diagnostic report omitted as expected values, so every node carries them; `v` and `$schema` become the `-full` version. */
-  restoreExpectedValues,
+  /**
+   * The exact frozen CORJ utility namespace for one-off reports, policy resolution, and restoration of omitted fields.
+   *
+   * @example
+   * ```ts
+   * import { Corj, makeDiagnosticReport } from 'application-exception'; console.log(Corj.restoreExpectedValues(makeDiagnosticReport(new Error('x'))).v); // 'corj/v0.15-full'
+   * ```
+   */
+  Corj,
 } from 'caught-object-report-json';
 export type {
   /** Any value that survives `JSON.stringify`: a string, number, boolean, `null`, or an array or object of those. */

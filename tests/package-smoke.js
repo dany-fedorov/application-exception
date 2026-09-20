@@ -134,8 +134,10 @@ try {
   }
 
   const api = consumerRequire('application-exception');
+  const dependencyCorj = consumerRequire('caught-object-report-json').Corj;
   assert.deepEqual(Object.keys(api).sort(), [
     'APPEX_ERROR_CODES',
+    'Corj',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
     'decodePublicReport',
@@ -147,8 +149,10 @@ try {
     'makeRedactionPolicy',
     'makeReportPair',
     'makeTrustRealm',
-    'restoreExpectedValues',
   ]);
+  assert.equal(api.Corj, dependencyCorj);
+  assert.equal(Object.isFrozen(api.Corj), true);
+  assert.equal('restoreExpectedValues' in api, false);
   assert.throws(
     () => consumerRequire('application-exception/typed'),
     /not defined|not exported/i,
@@ -217,7 +221,10 @@ try {
   assert.equal(bounded.occurrence_id, error.occurrenceId);
   assert.equal(bounded.context_omitted, 'max_size');
   assert.ok(Buffer.byteLength(JSON.stringify(bounded), 'utf8') <= 512);
-  assert.equal(api.restoreExpectedValues(diagnostic).message, 'search failed');
+  assert.equal(
+    api.Corj.restoreExpectedValues(diagnostic).message,
+    'search failed',
+  );
   assert.equal(
     api.decodePublicReport(JSON.parse(JSON.stringify(publicReport))).ok,
     true,
@@ -255,7 +262,8 @@ try {
   fs.writeFileSync(
     path.join(consumer, 'consumer.ts'),
     [
-      "import { defineException, makeDiagnosticReport, makePublicReport, decodePublicReport } from 'application-exception';",
+      "import { Corj, defineException, makeDiagnosticReport, makePublicReport, decodePublicReport } from 'application-exception';",
+      "import * as applicationException from 'application-exception';",
       "import type { DiagnosticReport, PublicReport } from 'application-exception';",
       '// @ts-expect-error legacy root API was removed',
       "import { decodeDiagnosticReport } from 'application-exception';",
@@ -268,6 +276,9 @@ try {
       "const error = new Failure({ details: { tool: 'search' } });",
       "const tag: 'agent/Failure' = error._tag;",
       'const diagnostic: DiagnosticReport = makeDiagnosticReport(error, { maxReportBytes: 4096  });',
+      'const full: DiagnosticReport = Corj.restoreExpectedValues(diagnostic);',
+      '// @ts-expect-error restoration moved under the Corj namespace',
+      'applicationException.restoreExpectedValues;',
       "const response: PublicReport = makePublicReport(error, { policyOverride: { message: 'Down.' } });",
       '// @ts-expect-error corj options do not live at the top level',
       'makeDiagnosticReport(error, { maxDepth: 2 });',
@@ -283,6 +294,7 @@ try {
       'const wrong: PublicReport = diagnostic;',
       'void tag;',
       'void response;',
+      'void full;',
       'void wrong;',
       'void decodeDiagnosticReport;',
       '',
