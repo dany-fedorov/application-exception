@@ -25,7 +25,7 @@ try {
       "import appex from 'application-exception';",
       // Named imports must work even though the artifact is CommonJS: Node's cjs-module-lexer
       // reads the tsc-emitted exports. If this ever stops working the import throws here.
-      "import { defineException, PUBLIC_REPORT_VERSION, DIAGNOSTIC_REPORT_VERSION } from 'application-exception';",
+      "import { Corj, defineException, PUBLIC_REPORT_VERSION, DIAGNOSTIC_REPORT_VERSION } from 'application-exception';",
       "import { runFlow } from './flow.mjs';",
       '',
       'const summary = runFlow(appex, { runtime: `node ${process.version} (esm)` });',
@@ -35,6 +35,7 @@ try {
       '// single artifact, so there is no dual-package hazard to reason about.',
       'const required = createRequire(import.meta.url)("application-exception");',
       'const sameInstance = required.defineException === defineException;',
+      'const sameCorj = required.Corj === Corj;',
       '',
       'process.stdout.write(',
       '  `__APPEX_RESULT__${JSON.stringify({',
@@ -44,6 +45,7 @@ try {
       '    publicVersionNamed: PUBLIC_REPORT_VERSION,',
       '    diagnosticVersionNamed: DIAGNOSTIC_REPORT_VERSION,',
       '    sameInstance,',
+      '    sameCorj,',
       '  })}\\n`,',
       ');',
       '',
@@ -65,6 +67,7 @@ try {
 
   assert.deepEqual(result.namedExports, [
     'APPEX_ERROR_CODES',
+    'Corj',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
     'decodePublicReport',
@@ -76,7 +79,6 @@ try {
     'makeRedactionPolicy',
     'makeReportPair',
     'makeTrustRealm',
-    'restoreExpectedValues',
   ]);
   assert.equal(result.publicVersionNamed, 'appex/public/v4');
   assert.equal(result.diagnosticVersionNamed, 'corj/v0.15');
@@ -84,6 +86,11 @@ try {
     result.sameInstance,
     true,
     'import and require must share one instance',
+  );
+  assert.equal(
+    result.sameCorj,
+    true,
+    'named Corj import and require must share identity',
   );
   assert.equal(result.diagnosticOccurrenceId, result.occurrenceId);
   assert.equal(result.publicOccurrenceId, result.occurrenceId);

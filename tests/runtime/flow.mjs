@@ -38,7 +38,7 @@ export function runFlow(appex, { runtime }) {
     'makeTrustRealm',
     'isTrustedException',
     'isTypedException',
-    'restoreExpectedValues',
+    'Corj',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
     'APPEX_ERROR_CODES',
@@ -178,11 +178,17 @@ export function runFlow(appex, { runtime }) {
     '$.cause',
     'the diagnostic report carries the cause',
   );
+  ok(Object.isFrozen(appex.Corj), 'Corj must be immutable');
+  const restoreExpectedValues = appex.Corj.restoreExpectedValues;
+  const full = restoreExpectedValues(diagnostic);
+  equal(full.message, 'search failed', 'Corj.restoreExpectedValues');
   equal(
-    appex.restoreExpectedValues(diagnostic).message,
-    'search failed',
-    'restoreExpectedValues',
+    full.occurrence_id,
+    diagnostic.occurrence_id,
+    'restoration keeps occurrence_id',
   );
+  equal(full.context.runtime, runtime, 'restoration keeps application context');
+  equal(full.v, 'corj/v0.15-full', 'restoration uses the full corj version');
 
   // Cross the transport boundary the way a caller would.
   const decoded = decodePublicReport(JSON.parse(JSON.stringify(publicReport)));

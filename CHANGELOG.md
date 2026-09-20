@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.7.0 — 2026-09-20
+
+**Breaking.** CORJ's one-off utilities now live on its frozen `Corj` object.
+This package re-exports that exact object and no longer exports the standalone
+`restoreExpectedValues` function. Its reporting APIs and report formats remain
+unchanged: diagnostic reports use `corj/v0.15` (or `corj/v0.15-full` after
+restoration), and public reports use `appex/public/v4`.
+
+Upgrade imports and restoration calls from 0.6.0:
+
+```ts
+// Before
+import { restoreExpectedValues } from 'application-exception';
+const full = restoreExpectedValues(report);
+
+// After
+import { Corj } from 'application-exception';
+const full = Corj.restoreExpectedValues(report);
+```
+
+Module-namespace consumers must also move the function under `Corj`:
+
+```ts
+import * as appex from 'application-exception';
+
+// Before: appex.restoreExpectedValues(report)
+// After:
+appex.Corj.restoreExpectedValues(report);
+```
+
+The runtime dependency is now `caught-object-report-json ^13.0.0`; see the
+[corj 13 release notes](https://github.com/dany-fedorov/caught-object-report-json/releases/tag/v13.0.0)
+for its complete migration. `Corj` is the dependency's immutable namespace by
+identity and also provides its report constructors and redaction-policy
+resolver; application-exception adds no aliases for those members.
+
 ## 0.6.0 — 2026-09-20
 
 **Breaking.** The runtime API now uses descriptive names:

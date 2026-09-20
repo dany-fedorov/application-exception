@@ -24,7 +24,7 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 | Keep secrets out of either report | `makeRedactionPolicy({ keys, paths, patterns })` passed as `redact` |
 | Freeze details against later mutation | `defineException({ tag, message, snapshotDetails: true })` |
 | Trust failures from another loaded copy | `makeTrustRealm()` passed as `realm` to `defineException` and `makePublicReport` |
-| Read omitted corj fields of a diagnostic report | `restoreExpectedValues(report)` |
+| Read omitted corj fields of a diagnostic report | `Corj.restoreExpectedValues(report)` |
 
 ## Runtime exports
 
@@ -258,15 +258,17 @@ if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
 else console.log(decoded.reason, decoded.path);
 ```
 
-### `restoreExpectedValues`
+### `Corj`
 
 ```ts signature
-function restoreExpectedValues<T extends Report>(report: T): T;
+const Corj: { readonly makeReport: (caught: unknown, input?: CorjReportInput) => CorjReport; readonly makeReportArray: (caught: unknown, input?: CorjReportInput) => CorjReportNode[]; readonly restoreExpectedValues: <T extends CorjReport | CorjReportNode[]>(report: T) => T; readonly resolveRedactPolicy: (input: CorjRedactPolicyInput | null | undefined) => CorjRedactPolicy | null; };
 ```
 
-Fill in the fields a diagnostic report omitted as expected values, so every node carries them; `v` and `$schema` become the `-full` version.
+The exact frozen CORJ utility namespace for one-off reports, policy resolution, and restoration of omitted fields.
 
-Re-exported from caught-object-report-json; field meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
+```ts
+import { Corj, makeDiagnosticReport } from 'application-exception'; console.log(Corj.restoreExpectedValues(makeDiagnosticReport(new Error('x'))).v); // 'corj/v0.15-full'
+```
 
 ### `DIAGNOSTIC_REPORT_VERSION`
 

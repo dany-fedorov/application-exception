@@ -1,15 +1,16 @@
 import {
   ReportPair,
+  Corj,
   makeRedactionPolicy,
   DecodePublicReportResult,
   DiagnosticReport,
   PublicReport,
   PublicReportVersion,
-  restoreExpectedValues,
   makeDiagnosticReport,
   makePublicReport,
   makeReportPair,
 } from '../src';
+import * as applicationException from '../src';
 import type { RedactionContext, RedactionPolicy } from '../src';
 import { defineException } from '../src/typed';
 
@@ -37,10 +38,18 @@ const version: 'corj/v0.15' | 'corj/v0.15-full' = diagnostic.v;
 const fingerprint: string | undefined = diagnostic.fingerprint;
 void fingerprint;
 const stack: string | string[] | null | undefined = diagnostic.stack;
-const restored: DiagnosticReport = restoreExpectedValues(diagnostic);
+const restored: DiagnosticReport = Corj.restoreExpectedValues(diagnostic);
+const restoredWithExtension = Corj.restoreExpectedValues({
+  ...diagnostic,
+  applicationField: true,
+});
+const applicationField: boolean = restoredWithExtension.applicationField;
 void version;
 void stack;
 void restored;
+void applicationField;
+// @ts-expect-error restoration moved under the Corj namespace.
+applicationException.restoreExpectedValues;
 
 const publicReport: PublicReport = makePublicReport(error, {
   policyOverride: {

@@ -1,4 +1,4 @@
-import { resolveCorjRedactPolicy } from 'caught-object-report-json';
+import { Corj } from 'caught-object-report-json';
 import type {
   CorjContext,
   CorjRedactPolicy,
@@ -71,7 +71,7 @@ export function makeRedactionPolicy(
     );
   let resolved: CorjRedactPolicy;
   try {
-    resolved = resolveCorjRedactPolicy(options) as CorjRedactPolicy;
+    resolved = Corj.resolveRedactPolicy(options) as CorjRedactPolicy;
   } catch (failure: unknown) {
     throw invalid('APPEX_INVALID_REDACTION_POLICY', corjMessage(failure));
   }
