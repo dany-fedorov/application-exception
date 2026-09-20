@@ -84,10 +84,18 @@ those steps are complete.
   snippets. The dynamically generated API card remains exactly 650 lines.
 - Version 0.7.0 uses registry dependency `^13.0.0`; lockfile integrity matches
   the published corj artifact. The downstream artifact's SHA-256 is
-  `ed4f5b3fee12b8e70c980a55ee5c10456c81fe3b92d886d7cd9f4a71e6236394`.
+  `a3eb32128257362a37dcaf35603d969f0fd01851dbf78c272323489c9e53153f`.
   The coordinator independently matched its README, manifest, JavaScript and
   declarations to the final inputs. A fresh installation of the tarball with
   real registry dependencies passed namespace identity, removed exports,
   extracted calls, report-pair correlation, restoration and redaction checks.
 - [PR #53](https://github.com/dany-fedorov/application-exception/pull/53)
-  contains the integration. Independent review and CI evidence follow.
+  contains the integration. Independent review confirmed the runtime, declarations,
+  schemas and cross-library contract; its sole source finding was corrected
+  in `5f3ee47fbdf4db201b57c5274f366abcb78dc3a2`: the 0.7 changelog now links
+  the upstream migration. The package was repacked because it includes that
+  changelog; both tarball copies match, at 63,302 bytes. All 35 packed files
+  match staging inputs byte for byte. The reviewer verified the corrected
+  artifact. CI [35537320361](https://github.com/dany-fedorov/application-exception/actions/runs/35537320361)
+  passed Node 18/20/24, Bun and browser on the implementation commit.
+  Final approval/release results are recorded below.
