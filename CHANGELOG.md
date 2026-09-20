@@ -30,10 +30,11 @@ import * as appex from 'application-exception';
 appex.Corj.restoreExpectedValues(report);
 ```
 
-The runtime dependency is now `caught-object-report-json ^13.0.0`. `Corj` is
-the dependency's immutable namespace by identity and also provides its report
-constructors and redaction-policy resolver; application-exception adds no
-aliases for those members.
+The runtime dependency is now `caught-object-report-json ^13.0.0`; see the
+[corj 13 release notes](https://github.com/dany-fedorov/caught-object-report-json/releases/tag/v13.0.0)
+for its complete migration. `Corj` is the dependency's immutable namespace by
+identity and also provides its report constructors and redaction-policy
+resolver; application-exception adds no aliases for those members.
 
 ## 0.6.0 — 2026-09-20
 
