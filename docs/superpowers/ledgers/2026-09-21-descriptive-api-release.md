@@ -16,6 +16,9 @@ questions, and authorized pushing, merging, and publishing both packages.
 - `maxReportBytes: null` disables the total budget, retaining independent limits;
   undefined keeps existing defaults. This preserves the former diagnostic
   `maxReportSize: null` capability under its new name.
+- Split `AppexCorjOptions` into descriptive `DiagnosticReportCorjOptions` and
+  `PublicReportCorjOptions`, without an alias, to name the two different option
+  contracts accurately.
 - Credentials are held only in temporary protected storage, never in this repo.
 
 ## Baselines and external preflight
@@ -34,3 +37,16 @@ questions, and authorized pushing, merging, and publishing both packages.
 Implementation, reviews, packed-artifact checks, and release results will be
 recorded here as completed; the preflight above does not establish release
 readiness.
+
+- corj implementation commit: `b8f4d2efd9ef5872e6b80eec1e4bf93e69236a91`.
+- corj implementation verification: 32 suites, 1,509 tests, 25 snapshots,
+  100% statements/branches/functions/lines; build and packed Node CJS/ESM, Bun,
+  declaration-resolution, encapsulation, and Vite/Chromium consumers passed.
+- corj draft PR: https://github.com/dany-fedorov/caught-object-report-json/pull/225.
+- Initial feature CI run: `35530794841`; independent source review is pending.
+- Release coordination ruling: run feature CI, then integrate the reviewed tree
+  with a `[skip ci]` merge and annotated tag pushed atomically. This avoids
+  concurrent automated/manual npm publication. Publish the exact checked tgz.
+  Generate tracked corj Typedoc locally; merge schemas before npm publication
+  because their URLs resolve from GitHub main. Manual publication does not claim
+  GitHub Actions provenance.
