@@ -30,12 +30,12 @@ const deepEqual = (actual, expected, message) => {
 export function runFlow(appex, { runtime }) {
   for (const name of [
     'defineException',
-    'toDiagnosticReport',
-    'toPublicReport',
-    'toReports',
+    'makeDiagnosticReport',
+    'makePublicReport',
+    'makeReportPair',
     'decodePublicReport',
-    'createRedactionPolicy',
-    'createTrustRealm',
+    'makeRedactionPolicy',
+    'makeTrustRealm',
     'isTrustedException',
     'isTypedException',
     'restoreExpectedValues',
@@ -48,9 +48,9 @@ export function runFlow(appex, { runtime }) {
 
   const {
     defineException,
-    toDiagnosticReport,
-    toPublicReport,
-    toReports,
+    makeDiagnosticReport,
+    makePublicReport,
+    makeReportPair,
     decodePublicReport,
     isTypedException,
     DIAGNOSTIC_REPORT_VERSION,
@@ -60,7 +60,7 @@ export function runFlow(appex, { runtime }) {
   const ToolFailure = defineException({
     tag: 'agent/ToolFailure',
     message: ({ tool }) => `${tool} failed`,
-    public: { code: 'TOOL_FAILED', details: ({ tool }) => ({ tool }) },
+    public: { code: 'TOOL_FAILED', detailsSelector: ({ tool }) => ({ tool }) },
   });
 
   const cause = new Error('connection refused');
@@ -88,11 +88,11 @@ export function runFlow(appex, { runtime }) {
   const second = new ToolFailure({ details: { tool: 'search' } }).occurrenceId;
   ok(second !== occurrenceId, 'occurrence ids must be unique per exception');
 
-  const diagnostic = toDiagnosticReport(error, { context: { runtime } });
-  const publicReport = toPublicReport(error);
+  const diagnostic = makeDiagnosticReport(error, { context: { runtime } });
+  const publicReport = makePublicReport(error);
 
   equal(diagnostic.v, DIAGNOSTIC_REPORT_VERSION, 'diagnostic schema version');
-  equal(diagnostic.v, 'corj/v0.14', 'diagnostic schema version literal');
+  equal(diagnostic.v, 'corj/v0.15', 'diagnostic schema version literal');
   equal(publicReport.v, PUBLIC_REPORT_VERSION, 'public schema version');
   equal(publicReport.v, 'appex/public/v4', 'public schema version literal');
 
@@ -129,34 +129,37 @@ export function runFlow(appex, { runtime }) {
   );
 
   // One occurrence; and one fingerprint, because both bags agree here.
-  const pair = toReports(error, { diagnostic: { context: { runtime } } });
+  const pair = makeReportPair(error, { diagnostic: { context: { runtime } } });
   equal(
     pair.diagnostic.occurrence_id,
     pair.public.occurrence_id,
-    'toReports shares one occurrence id',
+    'makeReportPair shares one occurrence id',
   );
   equal(
     pair.diagnostic.fingerprint,
     pair.public.fingerprint,
-    'toReports fingerprints agree when both bags agree',
+    'makeReportPair fingerprints agree when both bags agree',
   );
   ok(
-    !('fingerprint' in toReports('socket closed').public),
+    !('fingerprint' in makeReportPair('socket closed').public),
     'a value with no stack publishes no public fingerprint',
   );
 
   // A per-call override is one `public` bag laid over the kind's policy.
-  const overridden = toPublicReport(error, {
-    public: { message: 'Search is down.', details: null },
+  const overridden = makePublicReport(error, {
+    policyOverride: { message: 'Search is down.', detailsSelector: null },
   });
   equal(overridden.code, 'TOOL_FAILED', 'the override keeps the kind code');
   equal(overridden.message, 'Search is down.', 'the override message');
-  ok(!('as_json' in overridden), 'details: null discloses no as_json at all');
+  ok(
+    !('as_json' in overridden),
+    'detailsSelector: null discloses no as_json at all',
+  );
 
   // Every corj option travels in one bag; the budget bounds the whole report.
-  const bounded = toDiagnosticReport(error, {
+  const bounded = makeDiagnosticReport(error, {
     context: { runtime },
-    corj: { maxReportSize: 512 },
+    maxReportBytes: 512,
   });
   equal(
     bounded.occurrence_id,
@@ -208,14 +211,14 @@ export function runFlow(appex, { runtime }) {
   equal(legacy.ok && legacy.report.v, 'appex/public/v3', 'decoded v is kept');
 
   equal(
-    toPublicReport(new Error('x')).code,
+    makePublicReport(new Error('x')).code,
     'INTERNAL_ERROR',
     'untyped fallback code',
   );
 
   let invalidCodeError;
   try {
-    toPublicReport(error, { public: { code: '' } });
+    makePublicReport(error, { policyOverride: { code: '' } });
   } catch (thrown) {
     invalidCodeError = thrown;
   }

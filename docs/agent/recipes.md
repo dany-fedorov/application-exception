@@ -15,7 +15,7 @@ export const RateLimited = defineException({
   public: {
     code: 'RATE_LIMITED',
     message: 'The model is rate limited. Retry later.',
-    details: ({ retryAfterSeconds }) => ({ retryAfterSeconds }),
+    detailsSelector: ({ retryAfterSeconds }) => ({ retryAfterSeconds }),
   },
 });
 
@@ -23,20 +23,20 @@ const error = new RateLimited({ details: { model: 'gpt', retryAfterSeconds: 30 }
 console.log(error._tag, error.details.retryAfterSeconds, error.occurrenceId);
 ```
 
-The renderer's parameter type is the details type. `public.details` sees the
+The renderer's parameter type is the details type. `public.detailsSelector` sees the
 same type and returns the JSON that becomes `as_json`. Omit `public` for kinds
 that must stay internal.
 
 ## Handle a failure at a tool boundary
 
 ```ts
-import { defineException, toDiagnosticReport, toPublicReport } from 'application-exception';
+import { defineException, makeDiagnosticReport, makePublicReport } from 'application-exception';
 import type { PublicReport } from 'application-exception';
 
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
-  public: { code: 'TOOL_UNAVAILABLE', message: 'Try again later.', details: ({ tool }) => ({ tool }) },
+  public: { code: 'TOOL_UNAVAILABLE', message: 'Try again later.', detailsSelector: ({ tool }) => ({ tool }) },
 });
 
 function search(query: string): string[] {
@@ -47,8 +47,8 @@ export function handleSearch(runId: string, query: string): { ok: true; value: s
   try {
     return { ok: true, value: search(query) };
   } catch (caught: unknown) {
-    console.error(JSON.stringify(toDiagnosticReport(caught, { context: { runId, query } })));
-    return { ok: false, response: toPublicReport(caught) };
+    console.error(JSON.stringify(makeDiagnosticReport(caught, { context: { runId, query } })));
+    return { ok: false, response: makePublicReport(caught) };
   }
 }
 ```
@@ -56,8 +56,9 @@ export function handleSearch(runId: string, query: string): { ok: true; value: s
 Both calls take the same `caught`; the reports share `occurrence_id`. For a
 thrown primitive, pass the same `occurrenceId` option to both calls. Unknown
 failures produce `INTERNAL_ERROR` with the same correlation. To say something
-else at this one call, pass `public: { code, message, details }`: it is laid
-over the kind's policy field by field, and `details: null` discloses nothing.
+else at this one call, pass
+`policyOverride: { code, message, detailsSelector }`: it is laid over the kind's
+policy field by field, and `detailsSelector: null` discloses nothing.
 
 ## Translate a lower-level failure
 
@@ -91,12 +92,13 @@ reachable as `error.cause` and appears in the diagnostic report as
 ## Add context to diagnostics
 
 ```ts
-import { toDiagnosticReport } from 'application-exception';
+import { makeDiagnosticReport } from 'application-exception';
 
 export function record(caught: unknown, runId: string, attempt: number): string {
-  const report = toDiagnosticReport(caught, {
+  const report = makeDiagnosticReport(caught, {
     context: { runId, attempt, host: process.env['HOSTNAME'] ?? 'unknown' },
-    corj: { maxReportSize: 32_768, maxDepth: 3 },
+    corj: { maxDepth: 3 },
+    maxReportBytes: 32_768,
   });
   return JSON.stringify(report);
 }
@@ -104,11 +106,11 @@ export function record(caught: unknown, runId: string, attempt: number): string 
 
 `context` is rendered by corj as a JSON document of its own, rooted at
 `$context`, capped at 16,384 bytes by `corj: { maxContextSize }` and counted
-inside `corj: { maxReportSize }`, which bounds the report as a whole. It appears
+inside top-level `maxReportBytes`, which bounds the report as a whole. It appears
 as `report.context`; a value corj cannot render becomes `null` with an entry in
-`report.reporting_errors`. Every corj option — `maxReportSize`, `maxDepth`,
-`maxChildren`, `stackFormat`, `inspection` and the rest — lives in the `corj`
-bag; only `redact` stays at the top level, because both reports share it.
+`report.reporting_errors`. Diagnostic CORJ options such as `maxDepth`,
+`maxChildren`, `stackFormat`, `inspection`, and `maxContextSize` live in the
+`corj` bag; `maxReportBytes` and `redact` stay at the top level.
 
 ## Recover from a public report
 
@@ -175,17 +177,17 @@ deployed source and its paths.
 
 ```ts
 import { strict as assert } from 'node:assert';
-import { defineException, restoreExpectedValues, toDiagnosticReport, toPublicReport } from 'application-exception';
+import { defineException, restoreExpectedValues, makeDiagnosticReport, makePublicReport } from 'application-exception';
 
 const Timeout = defineException({
   tag: 'tools/Timeout',
   message: ({ ms }: { ms: number }) => `Timed out after ${ms}ms`,
-  public: { code: 'TIMEOUT', details: ({ ms }) => ({ ms }) },
+  public: { code: 'TIMEOUT', detailsSelector: ({ ms }) => ({ ms }) },
 });
 
 const error = new Timeout({ details: { ms: 500 }, cause: new Error('socket hang up') });
-const diagnostic = toDiagnosticReport(error);
-const response = toPublicReport(error);
+const diagnostic = makeDiagnosticReport(error);
+const response = makePublicReport(error);
 
 assert.equal(response.code, 'TIMEOUT');
 assert.deepEqual(response.as_json, { ms: 500 });
@@ -201,14 +203,14 @@ stack lines. Use `restoreExpectedValues` when you need omitted corj fields.
 ## Capture both reports as one occurrence
 
 ```ts
-import { toReports } from 'application-exception';
+import { makeReportPair } from 'application-exception';
 import type { PublicReport } from 'application-exception';
 
 export function boundary(run: () => string, runId: string): { ok: true; value: string } | { ok: false; response: PublicReport } {
   try {
     return { ok: true, value: run() };
   } catch (caught: unknown) {
-    const reports = toReports(caught, { diagnostic: { context: { runId } } });
+    const reports = makeReportPair(caught, { diagnostic: { context: { runId } } });
     console.error(JSON.stringify(reports.diagnostic));
     return { ok: false, response: reports.public };
   }
@@ -228,18 +230,18 @@ its own, and so does a hash that is not backed by real stack frames.
 ## Bound what a sink receives
 
 ```ts
-import { toDiagnosticReport } from 'application-exception';
+import { makeDiagnosticReport } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const report = toDiagnosticReport(caught, {
+const report = makeDiagnosticReport(caught, {
   context: { runId: 'run-1' },
-  corj: { maxReportSize: 16_384 },
+  maxReportBytes: 16_384,
 });
 console.log(new TextEncoder().encode(JSON.stringify(report)).byteLength <= 16_384); // true
 console.log(report.context_omitted); // 'max_size' when the context did not fit
 ```
 
-`corj: { maxReportSize }` bounds the UTF-8 bytes of the whole compact report,
+`maxReportBytes` bounds the UTF-8 bytes of the whole compact report,
 `context` and `reporting_errors` included. Over budget, corj drops `context`
 whole — however small it is — and sets `context_omitted: 'max_size'`; then drops
 `reporting_errors` and sets `reporting_errors_omitted: 'max_size'`; only then
@@ -251,10 +253,10 @@ is 100,000 bytes.
 ## Report an untrusted failure without running it
 
 ```ts
-import { toDiagnosticReport } from 'application-exception';
+import { makeDiagnosticReport } from 'application-exception';
 
 export function reportUntrusted(caught: unknown, runId: string): string {
-  const report = toDiagnosticReport(caught, {
+  const report = makeDiagnosticReport(caught, {
     context: { runId },
     corj: { inspection: 'no-invoke' },
   });
@@ -276,9 +278,9 @@ decides what may be reported, `inspection` how much may run to report it.
 ## Keep secrets out of both reports
 
 ```ts
-import { createRedactionPolicy, defineException, toReports } from 'application-exception';
+import { makeRedactionPolicy, defineException, makeReportPair } from 'application-exception';
 
-const redact = createRedactionPolicy({
+const redact = makeRedactionPolicy({
   keys: ['password', /token$/i],
   patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
 });
@@ -286,10 +288,10 @@ const redact = createRedactionPolicy({
 const Rejected = defineException({
   tag: 'auth/Rejected',
   message: ({ user }: { user: string; password: string }) => `Rejected ${user}`,
-  public: { code: 'AUTH_REJECTED', details: ({ user, password }) => ({ user, password }) },
+  public: { code: 'AUTH_REJECTED', detailsSelector: ({ user, password }) => ({ user, password }) },
 });
 
-const reports = toReports(new Rejected({ details: { user: 'ada', password: 'hunter2' } }), {
+const reports = makeReportPair(new Rejected({ details: { user: 'ada', password: 'hunter2' } }), {
   diagnostic: { redact },
   public: { redact },
 });
@@ -306,7 +308,7 @@ wherever it appears in either report.
 | remove a secret's text wherever it shows up | `patterns: [/\bsk-\w+/g]` | strings and property names in both reports: message, stack, `as_json`, `context`, `reporting_errors`, nested causes |
 | never read a property, wherever it appears | `keys: ['password', /token$/i]` | the name, in the caught value, `context`, and selected public details |
 | never read one named property, in one document | `paths: ['$.cause.config.headers', '$context.user.email']` | three documents: `$...` the caught value, `$context...` the context, `$public...` the selected public details |
-| decide value by value | `transform: (value, { prop }) => value` | runs after `patterns` on every value and property name; return `undefined` to drop the field |
+| decide value by value | `transform: (value, { sourceProperty }) => value` | runs after `patterns` on every value and property name; return `undefined` to drop the field |
 
 Six things to remember:
 
@@ -327,19 +329,19 @@ Six things to remember:
    `$context.<key>`, selected public details at `$public.<key>`, and delivers
    the public message as `stage: 'warning'` at `$public.message`. Keyed on the
    old values a rule stops matching and nothing is redacted, silently. Re-key it
-   on `prop`, which did not change, or on the new roots and stage.
+   on `sourceProperty`, which names the source property, or on the new roots and stage.
 6. **Redaction never discloses.** On a public report the policy is given only
-   what the kind's `details` selector returned. `code` is an identifier you
+   what the kind's `detailsSelector` returned. `code` is an identifier you
    choose and no rule rewrites it; `occurrence_id` is not rewritten either, and a
    branded value this process did not mint can choose its own within
    `/^[\x21-\x7e]{1,128}$/`. Treat it as data: escape it when you render it,
    never interpolate it into markup or into an instruction to a model.
 
 A `transform` sees raw input — whole objects, including members a skip rule
-excludes — so key it on `prop` and never quote its input in an error. If the
+excludes — so key it on `sourceProperty` and never quote its input in an error. If the
 policy throws, the value becomes the replacement and the diagnostic report lists
 the failure in `reporting_errors` with `stage: 'redact'`; the thrown message is
-withheld, because it may quote what the policy was protecting. `toReports`
+withheld, because it may quote what the policy was protecting. `makeReportPair`
 redacts each report with the policy in its own bag, so pass `redact` in both.
 
 ## Capture details that outlive the throw
@@ -370,9 +372,9 @@ the details stay shallow-frozen and share the caller's nested objects.
 ## Share typed failures between two loaded copies
 
 ```ts
-import { createTrustRealm, defineException, isTrustedException, toPublicReport } from 'application-exception';
+import { makeTrustRealm, defineException, isTrustedException, makePublicReport } from 'application-exception';
 
-export const realm = createTrustRealm();
+export const realm = makeTrustRealm();
 
 const Timeout = defineException({
   tag: 'db/Timeout',
@@ -382,14 +384,14 @@ const Timeout = defineException({
 });
 
 const caught: unknown = new Timeout();
-console.log(isTrustedException(caught, realm), toPublicReport(caught, { realm }).code);
+console.log(isTrustedException(caught, realm), makePublicReport(caught, { realm }).code);
 ```
 
 A duplicate install or a separately bundled module loads its own copy of this
 package, and copies do not recognize each other's occurrences by default: a
 public policy decides what leaves the process, so a value that merely claims to
 be typed must not pick its own code. Pass one realm to `defineException` in each
-cooperating copy and to `isTrustedException`, `toPublicReport`, or `toReports`
+cooperating copy and to `isTrustedException`, `makePublicReport`, or `makeReportPair`
 in the copy that reports. `isTypedException` keeps its one-argument shape, so it
 still works as an array callback; `isTrustedException` is the realm-aware form. Trust is keyed by object identity, so a forged `_tag` or
 brand and a report revived from JSON acquire nothing. Deduplicating the install

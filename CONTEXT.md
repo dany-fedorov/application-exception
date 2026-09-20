@@ -41,7 +41,7 @@ throw.
 
 **Public policy**:
 The `public` part of a kind definition: the `code` an audience branches on, the
-display `message`, and a `details` selector that returns the JSON to disclose.
+display `message`, and a `detailsSelector` that returns the JSON to disclose.
 Declared where the details type is known.
 
 **Public report**:
@@ -53,7 +53,7 @@ option bag and published only when it is backed by real stack frames.
 
 **Context**:
 Host facts about where an occurrence was observed (run id, tool, attempt),
-passed to `toDiagnosticReport` and rendered by corj into `report.context`, a
+passed to `makeDiagnosticReport` and rendered by corj into `report.context`, a
 document of its own rooted at `$context`. Adding
 context does not create a different failure.
 _Avoid_: Root cause

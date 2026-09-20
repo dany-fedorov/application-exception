@@ -67,19 +67,19 @@ try {
     'APPEX_ERROR_CODES',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
-    'createRedactionPolicy',
-    'createTrustRealm',
     'decodePublicReport',
     'defineException',
     'isTrustedException',
     'isTypedException',
+    'makeDiagnosticReport',
+    'makePublicReport',
+    'makeRedactionPolicy',
+    'makeReportPair',
+    'makeTrustRealm',
     'restoreExpectedValues',
-    'toDiagnosticReport',
-    'toPublicReport',
-    'toReports',
   ]);
   assert.equal(result.publicVersionNamed, 'appex/public/v4');
-  assert.equal(result.diagnosticVersionNamed, 'corj/v0.14');
+  assert.equal(result.diagnosticVersionNamed, 'corj/v0.15');
   assert.equal(
     result.sameInstance,
     true,

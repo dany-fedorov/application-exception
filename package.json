@@ -1,6 +1,6 @@
 {
   "name": "application-exception",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Typed failures and deliberate disclosure for TypeScript services and LLM harnesses.",
   "main": "./index.js",
   "types": "./index.d.ts",
@@ -14,6 +14,7 @@
     "./schemas/diagnostic-report-v3.json": "./schemas/diagnostic-report-v3.json",
     "./schemas/diagnostic-report-v4.json": "./schemas/diagnostic-report-v4.json",
     "./schemas/diagnostic-report-v5.json": "./schemas/diagnostic-report-v5.json",
+    "./schemas/diagnostic-report-v6.json": "./schemas/diagnostic-report-v6.json",
     "./schemas/public-report-v3.json": "./schemas/public-report-v3.json",
     "./schemas/public-report-v4.json": "./schemas/public-report-v4.json"
   },
@@ -90,7 +91,7 @@
     "vite": "^5.4.21"
   },
   "dependencies": {
-    "caught-object-report-json": "^11.0.1",
+    "caught-object-report-json": "^12.0.0",
     "nanoid": "^3.3.19"
   }
 }

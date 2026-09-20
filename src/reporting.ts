@@ -2,15 +2,15 @@ import { invalid } from './errors';
 import { createOccurrence } from './occurrence';
 import { PUBLIC_REPORT_VERSION } from './report-types';
 import type {
-  CapturedReports,
+  ReportPair,
   DecodePublicReportResult,
   DiagnosticReport,
   DiagnosticReportOptions,
-  PublicOverride,
+  PublicPolicyOverride,
   PublicReport,
   PublicReportOptions,
   PublicReportVersion,
-  ToReportsOptions,
+  ReportPairOptions,
 } from './report-types';
 import type { CorjJsonValue, CorjMaker } from 'caught-object-report-json';
 import {
@@ -21,10 +21,12 @@ import {
   trustedPublicPolicyOf,
 } from './typed-internals';
 import type { PublicPolicyRecord, TrustRealmApi } from './typed-internals';
-import { makerFor } from './corj-maker';
+import { diagnosticMakerFor, publicMakerFor } from './corj-maker';
 
 const PUBLIC_DETAILS_MAX_BYTES = 16_384;
 const PUBLIC_MESSAGE_MAX_LENGTH = 4_096;
+const DIAGNOSTIC_MIN_REPORT_BYTES = 512;
+const PUBLIC_MIN_REPORT_BYTES = 2_048;
 const GENERIC_CODE = 'INTERNAL_ERROR';
 const GENERIC_MESSAGE = 'Something went wrong';
 const DIAGNOSTIC_OPTION_KEYS = [
@@ -32,30 +34,32 @@ const DIAGNOSTIC_OPTION_KEYS = [
   'context',
   'redact',
   'corj',
+  'maxReportBytes',
 ] satisfies readonly (keyof DiagnosticReportOptions)[];
 const PUBLIC_OPTION_KEYS = [
   'occurrenceId',
-  'public',
+  'policyOverride',
   'redact',
   'realm',
   'corj',
+  'maxReportBytes',
 ] satisfies readonly (keyof PublicReportOptions)[];
 const PUBLIC_OVERRIDE_KEYS = [
   'code',
   'message',
-  'details',
-] satisfies readonly (keyof PublicOverride)[];
+  'detailsSelector',
+] satisfies readonly (keyof PublicPolicyOverride)[];
 const NESTED_DIAGNOSTIC_OPTION_KEYS = DIAGNOSTIC_OPTION_KEYS.filter(
   (key) => key !== 'occurrenceId',
 );
 const NESTED_PUBLIC_OPTION_KEYS = PUBLIC_OPTION_KEYS.filter(
   (key) => key !== 'occurrenceId',
 );
-const TO_REPORTS_OPTION_KEYS = [
+const REPORT_PAIR_OPTION_KEYS = [
   'occurrenceId',
   'diagnostic',
   'public',
-] satisfies readonly (keyof ToReportsOptions)[];
+] satisfies readonly (keyof ReportPairOptions)[];
 const PUBLIC_FIELDS = new Set([
   'v',
   'occurrence_id',
@@ -93,12 +97,12 @@ function publicCodeOf(value: unknown): string {
   if (typeof value !== 'string' || value.length === 0 || value.length > 128)
     throw invalid(
       'APPEX_INVALID_PUBLIC_CODE',
-      'public.code must be a nonempty string of at most 128 characters',
+      'policyOverride.code must be a nonempty string of at most 128 characters',
     );
   return value;
 }
 
-const NO_OVERRIDE: PublicOverride = Object.freeze({});
+const NO_OVERRIDE: PublicPolicyOverride = Object.freeze({});
 
 /**
  * The call's `public` override as a frozen snapshot, validated field by field
@@ -108,10 +112,10 @@ const NO_OVERRIDE: PublicOverride = Object.freeze({});
  * report another. A getter that throws is the caller's own input and
  * propagates, before either report exists.
  */
-function publicOverrideOf(value: unknown): PublicOverride {
+function publicOverrideOf(value: unknown): PublicPolicyOverride {
   if (value === undefined) return NO_OVERRIDE;
-  assertOptions(value, PUBLIC_OVERRIDE_KEYS, 'public');
-  const { code, message, details } = value as Record<string, unknown>;
+  assertOptions(value, PUBLIC_OVERRIDE_KEYS, 'policyOverride');
+  const { code, message, detailsSelector } = value as Record<string, unknown>;
   const validCode = code === undefined ? undefined : publicCodeOf(code);
   if (
     message !== undefined &&
@@ -120,26 +124,29 @@ function publicOverrideOf(value: unknown): PublicOverride {
   )
     throw invalid(
       'APPEX_INVALID_PUBLIC_MESSAGE',
-      'public.message must be a string or a function of the details',
+      'policyOverride.message must be a string or a function of the details',
     );
   if (
-    details !== undefined &&
-    details !== null &&
-    typeof details !== 'function'
+    detailsSelector !== undefined &&
+    detailsSelector !== null &&
+    typeof detailsSelector !== 'function'
   )
     throw invalid(
       'APPEX_INVALID_OPTIONS',
-      'public.details must be a function that selects the JSON to disclose, or null',
+      'policyOverride.detailsSelector must be a function that selects the JSON to disclose, or null',
     );
   return Object.freeze({
     ...(validCode === undefined ? {} : { code: validCode }),
     ...(message === undefined
       ? {}
-      : { message: message as NonNullable<PublicOverride['message']> }),
-    ...(details === undefined
+      : { message: message as NonNullable<PublicPolicyOverride['message']> }),
+    ...(detailsSelector === undefined
       ? {}
       : {
-          details: details as Exclude<PublicOverride['details'], undefined>,
+          detailsSelector: detailsSelector as Exclude<
+            PublicPolicyOverride['detailsSelector'],
+            undefined
+          >,
         }),
   });
 }
@@ -147,7 +154,7 @@ function publicOverrideOf(value: unknown): PublicOverride {
 /** The kind's policy with the call's override laid over it, field by field. */
 function effectivePolicy(
   policy: PublicPolicyRecord | undefined,
-  override: PublicOverride,
+  override: PublicPolicyOverride,
 ): {
   readonly code: string;
   readonly message: PublicPolicyRecord['message'];
@@ -157,7 +164,9 @@ function effectivePolicy(
     code: override.code ?? policy?.code ?? GENERIC_CODE,
     message: override.message ?? policy?.message,
     details:
-      override.details === undefined ? policy?.details : override.details,
+      override.detailsSelector === undefined
+        ? policy?.details
+        : override.detailsSelector,
   };
 }
 
@@ -183,6 +192,19 @@ function occurrenceIdFor(caught: unknown, explicit: unknown): string {
   );
 }
 
+function reportByteLimitOf(
+  value: unknown,
+  minimum: number,
+): number | null | undefined {
+  if (value === undefined || value === null) return value;
+  if (!Number.isSafeInteger(value) || (value as number) < minimum)
+    throw invalid(
+      'APPEX_INVALID_OPTIONS',
+      `maxReportBytes must be null or a safe integer of at least ${minimum}`,
+    );
+  return value as number;
+}
+
 /** Everything a diagnostic report is built from, with the caller's bag left behind. */
 interface ResolvedDiagnostic {
   readonly maker: CorjMaker;
@@ -191,9 +213,10 @@ interface ResolvedDiagnostic {
 
 /** Everything a public report is built from, with the caller's bag left behind. */
 interface ResolvedPublic {
-  readonly override: PublicOverride;
+  readonly override: PublicPolicyOverride;
   readonly maker: CorjMaker;
   readonly realmApi: TrustRealmApi | undefined;
+  readonly maxReportBytes: number | null | undefined;
 }
 
 /**
@@ -205,18 +228,22 @@ interface ResolvedPublic {
 function resolveDiagnostic(
   options: DiagnosticReportOptions,
 ): ResolvedDiagnostic {
+  const { corj, redact, context, maxReportBytes } = options;
+  const limit = reportByteLimitOf(maxReportBytes, DIAGNOSTIC_MIN_REPORT_BYTES);
   return {
-    maker: makerFor(options.corj, options.redact),
-    context: options.context,
+    maker: diagnosticMakerFor(corj, redact, limit),
+    context,
   };
 }
 
 /** Read a public bag once and validate it, `realm` included; see `resolveDiagnostic`. */
 function resolvePublic(options: PublicReportOptions): ResolvedPublic {
+  const { policyOverride, corj, redact, realm, maxReportBytes } = options;
   return {
-    override: publicOverrideOf(options.public),
-    maker: makerFor(options.corj, options.redact),
-    realmApi: trustRealmApi(options.realm),
+    override: publicOverrideOf(policyOverride),
+    maker: publicMakerFor(corj, redact),
+    realmApi: trustRealmApi(realm),
+    maxReportBytes: reportByteLimitOf(maxReportBytes, PUBLIC_MIN_REPORT_BYTES),
   };
 }
 
@@ -225,10 +252,10 @@ function diagnosticReportOf(
   resolved: ResolvedDiagnostic,
   occurrenceId: string,
 ): DiagnosticReport {
-  // The id is always the call argument: toPublicReport needs the same id
+  // The id is always the call argument: makePublicReport needs the same id
   // without building a corj report, and two loaded copies of corj would each
   // hold their own memo.
-  return resolved.maker.makeReportObject(caught, {
+  return resolved.maker.makeReport(caught, {
     occurrenceId,
     context: resolved.context,
   }) as DiagnosticReport;
@@ -238,10 +265,10 @@ function diagnosticReportOf(
  * Report any caught value for operators: a corj report with `occurrence_id`,
  * `fingerprint`, the optional `context`, and `reporting_errors`. Send it to a
  * trusted sink; it contains messages, stacks, and every enumerable property of
- * the error graph. Every option of caught-object-report-json is reachable
- * through `corj`, except `redact`, which both reports share at the top level.
+ * the error graph. Diagnostic CORJ options are reachable through `corj`, except
+ * redaction and the whole-report size/unit settings owned at the top level.
  *
- * `corj: { maxReportSize }` (at least 512) bounds the whole report in UTF-8
+ * `maxReportBytes` (at least 512, or `null`) bounds the whole report in UTF-8
  * bytes of compact JSON: over budget, corj drops `context` whole, then
  * `reporting_errors` — leaving `context_omitted` and `reporting_errors_omitted`
  * at `'max_size'` — and only then trims error content. `occurrence_id`,
@@ -250,24 +277,71 @@ function diagnosticReportOf(
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_REDACTION_POLICY`; corj option errors propagate.
  * @example
  * ```ts
- * import { toDiagnosticReport } from 'application-exception';
+ * import { makeDiagnosticReport } from 'application-exception';
  * const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
- * const report = toDiagnosticReport(caught, {
+ * const report = makeDiagnosticReport(caught, {
  *   context: { runId: 'run-1' },
- *   corj: { maxReportSize: 4096 },
+ *   maxReportBytes: 4096,
  * });
- * // { "v": "corj/v0.14", "occurrence_id": "AE_…", "fingerprint": "fp1_…", "stack": [...],
+ * // { "v": "corj/v0.15", "occurrence_id": "AE_…", "fingerprint": "fp1_…", "stack": [...],
  * //   "children": [{ "path": "$.cause", ... }], "context": { "runId": "run-1" } }
  * console.error(JSON.stringify(report));
  * ```
  */
-export function toDiagnosticReport(
+export function makeDiagnosticReport(
   caught: unknown,
   options: DiagnosticReportOptions = {},
 ): DiagnosticReport {
   assertOptions(options, DIAGNOSTIC_OPTION_KEYS);
   const occurrenceId = occurrenceIdFor(caught, options.occurrenceId);
   return diagnosticReportOf(caught, resolveDiagnostic(options), occurrenceId);
+}
+
+const UTF8 = new TextEncoder();
+
+function utf8JsonBytes(value: unknown): number {
+  return UTF8.encode(JSON.stringify(value)).byteLength;
+}
+
+function unicodeSafePrefix(value: string, maxUnits: number): string {
+  if (value.length <= maxUnits) return value;
+  let end = maxUnits;
+  const before = value.charCodeAt(end - 1);
+  const after = value.charCodeAt(end);
+  if (
+    before >= 0xd800 &&
+    before <= 0xdbff &&
+    after >= 0xdc00 &&
+    after <= 0xdfff
+  )
+    end--;
+  return value.slice(0, end);
+}
+
+function limitPublicReport(
+  report: PublicReport,
+  maxReportBytes: number | null | undefined,
+): PublicReport {
+  if (maxReportBytes === undefined || maxReportBytes === null) return report;
+  if (utf8JsonBytes(report) <= maxReportBytes) return report;
+  const candidate: PublicReport = {
+    ...report,
+    truncated: true,
+  };
+  delete (candidate as { as_json?: unknown }).as_json;
+  if (utf8JsonBytes(candidate) <= maxReportBytes) return candidate;
+
+  const points = Array.from(candidate.message);
+  let low = 0;
+  let high = points.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    const message = points.slice(0, middle).join('');
+    if (utf8JsonBytes({ ...candidate, message }) <= maxReportBytes)
+      low = middle;
+    else high = middle - 1;
+  }
+  return { ...candidate, message: points.slice(0, low).join('') };
 }
 
 /** The `details` data property of a caught value, never running an accessor and never throwing. */
@@ -312,37 +386,32 @@ function selectPublicDetails(
 }
 
 /**
- * Report a failure to an agent or user: the kind's `public` policy rendered
- * into `code`, `message`, and `as_json`, with the same `occurrence_id` as the
- * diagnostic report. Values without a policy get `INTERNAL_ERROR` and a
- * generic message. Nothing from the error is emitted except the policy's
- * outputs, `occurrence_id` and the fingerprint, a hash. The default recipe
- * hashes constructor names and stack text under this call's own `corj` and
- * `redact`; `corj: { fingerprintParts: null }` reads nothing. It is published
- * only when backed by real stack frames: a stackless value and any recipe
- * without `stack` publish none — that hash is over the value's own text.
+ * Report a failure to an agent or user from the kind's `public` policy. Values
+ * without one get `INTERNAL_ERROR` and a generic message. Only policy outputs,
+ * `occurrence_id`, and a stack-backed fingerprint are emitted;
+ * `corj: { fingerprintParts: null }` turns that fingerprint off.
  *
- * The `public` option overrides that policy for this call, field by field:
- * `code`, `message` (a string or a function of the details) and `details` (a
- * selector function, or `null` to disclose nothing). A field left out keeps
+ * The `policyOverride` option overrides that policy for this call, field by field:
+ * `code`, `message` (a string or a function of the details) and
+ * `detailsSelector` (a selector function, or `null` to disclose nothing). A field left out keeps
  * what the kind says.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
  * ```ts
- * import { defineException, toPublicReport } from 'application-exception';
+ * import { defineException, makePublicReport } from 'application-exception';
  * const ToolUnavailable = defineException({
  *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
- *   public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
+ *   public: { code: 'TOOL_UNAVAILABLE', detailsSelector: ({ tool }) => ({ tool }) },
  * });
  * const failure = new ToolUnavailable({ details: { tool: 'search' } });
- * const report = toPublicReport(failure, { public: { message: 'Search is down.' } });
+ * const report = makePublicReport(failure, { policyOverride: { message: 'Search is down.' } });
  * // { v: 'appex/public/v4', occurrence_id: 'AE_…', fingerprint: 'fp1_…',
  * //   code: 'TOOL_UNAVAILABLE', message: 'Search is down.', as_json: { tool: 'search' } }
- * console.log(report.code, toPublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
+ * console.log(report.code, makePublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
  * ```
  */
-export function toPublicReport(
+export function makePublicReport(
   caught: unknown,
   options: PublicReportOptions = {},
 ): PublicReport {
@@ -370,33 +439,37 @@ function publicReportOf(
   // The public message is one of the two strings corj never sees. It is scrubbed
   // before the length bound is applied, so a replacement longer than what it
   // replaced can never push the message past it.
-  const message = maker.scrubText(rendered, {
+  const scrubbedMessage = maker.scrubText(rendered, {
     path: '$public.message',
-    key: 'message',
+    reportKey: 'message',
   });
   const selected = selectPublicDetails(effective.details, details);
   const view =
     selected === undefined
       ? undefined
       : // `view.errors` is ignored: a public report never reports inspection failures.
-        maker.makeJson(selected, {
+        maker.makeJsonView(selected, {
           root: '$public',
           maxSize: PUBLIC_DETAILS_MAX_BYTES,
         });
-  const cut = message.length > PUBLIC_MESSAGE_MAX_LENGTH;
+  const cut = scrubbedMessage.length > PUBLIC_MESSAGE_MAX_LENGTH;
+  const message = unicodeSafePrefix(scrubbedMessage, PUBLIC_MESSAGE_MAX_LENGTH);
   const truncated = cut || view?.truncated === true;
   const print = maker.makeFingerprint(caught, { requireStack: true });
   // Redaction runs after selection: the policy is only ever given what the
   // kind's selector returned, never anything the selector left out.
-  return {
-    v: PUBLIC_REPORT_VERSION,
-    occurrence_id: occurrenceId,
-    ...(typeof print === 'string' ? { fingerprint: print } : {}),
-    code,
-    message: cut ? message.slice(0, PUBLIC_MESSAGE_MAX_LENGTH) : message,
-    ...(view === undefined ? {} : { as_json: view.value }),
-    ...(truncated ? { truncated: true } : {}),
-  };
+  return limitPublicReport(
+    {
+      v: PUBLIC_REPORT_VERSION,
+      occurrence_id: occurrenceId,
+      ...(typeof print === 'string' ? { fingerprint: print } : {}),
+      code,
+      message,
+      ...(view === undefined ? {} : { as_json: view.value }),
+      ...(truncated ? { truncated: true } : {}),
+    },
+    resolved.maxReportBytes,
+  );
 }
 
 /**
@@ -404,28 +477,25 @@ function publicReportOf(
  * once and shared, so `diagnostic.occurrence_id === public.occurrence_id`
  * holds for every caught value, primitives included. The per-report options
  * live in `options.diagnostic` and `options.public`; the occurrence id is
- * overridden for both at the top level. Every option bag is read once and
- * validated before either report is built, `realm` included, and a failure to
- * build either one throws instead of returning half a pair. Each report's
- * fingerprint comes from its own bag, so they agree when both bags carry the
- * same `corj` and `redact`.
+ * overridden for both at the top level. Both bags are validated before either
+ * report is built. Each report's fingerprint comes from its own bag.
  *
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
  * ```ts
- * import { toReports } from 'application-exception';
- * const { occurrence_id, diagnostic, public: disclosed } = toReports('socket closed', {
- *   diagnostic: { context: { runId: 'run-1' }, corj: { maxReportSize: 4096 } },
+ * import { makeReportPair } from 'application-exception';
+ * const { occurrence_id, diagnostic, public: disclosed } = makeReportPair('socket closed', {
+ *   diagnostic: { context: { runId: 'run-1' }, maxReportBytes: 4096 },
  * });
  * console.error(JSON.stringify(diagnostic)); // the operator copy
  * console.log(disclosed.code, occurrence_id); // 'INTERNAL_ERROR' 'AE_…'
  * ```
  */
-export function toReports(
+export function makeReportPair(
   caught: unknown,
-  options: ToReportsOptions = {},
-): CapturedReports {
-  assertOptions(options, TO_REPORTS_OPTION_KEYS);
+  options: ReportPairOptions = {},
+): ReportPair {
+  assertOptions(options, REPORT_PAIR_OPTION_KEYS);
   const diagnosticBag = options.diagnostic;
   const publicBag = options.public;
   const diagnosticOptions = diagnosticBag === undefined ? {} : diagnosticBag;

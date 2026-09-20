@@ -3,7 +3,7 @@ import { createOccurrence, installCause } from './occurrence';
 import {
   TYPED_EXCEPTION_BRAND,
   isTrustedTypedException,
-  makeTrustRealm,
+  makeTrustRealm as makeInternalTrustRealm,
   registerTypedException,
   trustRealmApi,
 } from './typed-internals';
@@ -30,17 +30,16 @@ type FunctionPropertyKeys<Details extends object> = {
   [Key in keyof Details]-?: [Details[Key]] extends [never]
     ? never
     : NonNullable<Details[Key]> extends (...args: never[]) => unknown
-    ? Key
-    : never;
+      ? Key
+      : never;
 }[keyof Details];
 
 type RecordDetails<Details extends object> = Details extends
-  | readonly unknown[]
-  | ((...args: never[]) => unknown)
+  readonly unknown[] | ((...args: never[]) => unknown)
   ? never
   : [FunctionPropertyKeys<Details>] extends [never]
-  ? Details
-  : never;
+    ? Details
+    : never;
 
 /** The frozen details record an occurrence exposes. `never` selects the empty record of a constant-message kind. */
 export type DetailsRecord<Details extends object> = [Details] extends [never]
@@ -48,16 +47,16 @@ export type DetailsRecord<Details extends object> = [Details] extends [never]
   : Readonly<RecordDetails<Details>>;
 
 /**
- * What `toPublicReport` discloses for occurrences of a kind.
+ * What `makePublicReport` discloses for occurrences of a kind.
  *
  * `code` is the value an agent branches on. `message` is display text, constant
- * or rendered from the details. `details` selects the JSON that becomes
- * `as_json`; return only what the audience may see.
+ * or rendered from the details. `detailsSelector` selects the JSON that becomes
+ * `as_json`.
  */
 export type PublicPolicy<Details extends object = never> = {
   readonly code: string;
   readonly message?: string | ((details: DetailsRecord<Details>) => string);
-  readonly details?: (details: DetailsRecord<Details>) => unknown;
+  readonly detailsSelector?: (details: DetailsRecord<Details>) => unknown;
 };
 
 /** Constructor input. Omitting `Details` selects the constant-message form, whose input is optional. */
@@ -265,7 +264,8 @@ function snapshotValue(
     for (const key of keys) {
       const descriptor = Object.getOwnPropertyDescriptor(object, key);
       const at = `${path}.${String(key)}`;
-      if (!descriptor || !('value' in descriptor)) unsupported(at, 'an accessor');
+      if (!descriptor || !('value' in descriptor))
+        unsupported(at, 'an accessor');
       if (!descriptor.enumerable) unsupported(at, 'not enumerable');
       Object.defineProperty(output, key, {
         value: snapshotValue(descriptor.value, at, depth + 1, budget, seen),
@@ -298,7 +298,14 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
   if (policy === undefined) return undefined;
   if (typeof policy !== 'object' || policy === null || Array.isArray(policy))
     throw invalid('APPEX_INVALID_PUBLIC_POLICY', 'public must be an object');
-  const { code, message, details } = policy as Record<string, unknown>;
+  for (const key of Object.keys(policy)) {
+    if (!['code', 'message', 'detailsSelector'].includes(key))
+      throw invalid(
+        'APPEX_INVALID_PUBLIC_POLICY',
+        `unknown public policy option "${key}"; known options: code, message, detailsSelector`,
+      );
+  }
+  const { code, message, detailsSelector } = policy as Record<string, unknown>;
   if (typeof code !== 'string' || code.length === 0 || code.length > 128)
     throw invalid(
       'APPEX_INVALID_PUBLIC_POLICY',
@@ -313,10 +320,10 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
       'APPEX_INVALID_PUBLIC_POLICY',
       'public.message must be a string or a function',
     );
-  if (details !== undefined && typeof details !== 'function')
+  if (detailsSelector !== undefined && typeof detailsSelector !== 'function')
     throw invalid(
       'APPEX_INVALID_PUBLIC_POLICY',
-      'public.details must be a function',
+      'public.detailsSelector must be a function',
     );
   const record: {
     code: string;
@@ -325,8 +332,10 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
   } = { code };
   if (message !== undefined)
     record.message = message as NonNullable<PublicPolicyRecord['message']>;
-  if (details !== undefined)
-    record.details = details as NonNullable<PublicPolicyRecord['details']>;
+  if (detailsSelector !== undefined)
+    record.details = detailsSelector as NonNullable<
+      PublicPolicyRecord['details']
+    >;
   return record;
 }
 
@@ -338,12 +347,9 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
  * string message defines a kind without details. Details must be a data-only
  * record: no arrays, functions, accessors, or methods.
  *
- * `snapshotDetails: true` captures a deep frozen copy at construction, so later
- * mutation of the caller's nested objects cannot change what the message and the
- * reports describe. A snapshot accepts primitives, plain objects, arrays, and
- * `Date`, and rejects cycles, functions, accessors, non-enumerable properties,
- * class instances, nesting past 32 levels, and more than 10,000 values. The
- * default stays the shallow freeze, which shares the caller's nested objects.
+ * `snapshotDetails: true` captures a deep frozen copy at construction. It
+ * accepts primitives, plain objects, arrays, and `Date`, and rejects content it
+ * cannot capture faithfully. The default is a shallow frozen copy.
  *
  * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`, `APPEX_INVALID_DETAILS`
  * @example
@@ -351,7 +357,7 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
  * import { defineException } from 'application-exception';
  * const ToolUnavailable = defineException({
  *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
- *   public: { code: 'TOOL_UNAVAILABLE', message: 'The tool is unavailable.', details: ({ tool }) => ({ tool }) },
+ *   public: { code: 'TOOL_UNAVAILABLE', message: 'The tool is unavailable.', detailsSelector: ({ tool }) => ({ tool }) },
  * });
  * const error = new ToolUnavailable({ details: { tool: 'search' }, cause: new Error('refused') });
  * console.log(error._tag, error.details.tool); // 'tools/Unavailable' 'search'
@@ -402,10 +408,7 @@ export function defineException(definition: {
   }
   const snapshot = definition.snapshotDetails;
   if (snapshot !== undefined && typeof snapshot !== 'boolean') {
-    throw invalid(
-      'APPEX_INVALID_DETAILS',
-      'snapshotDetails must be a boolean',
-    );
+    throw invalid('APPEX_INVALID_DETAILS', 'snapshotDetails must be a boolean');
   }
   const snapshotDetails = snapshot === true;
   const realm = trustRealmApi(definition.realm);
@@ -496,8 +499,8 @@ export function isTypedException(value: unknown): value is TypedException {
  * @throws `APPEX_INVALID_TRUST_REALM`
  * @example
  * ```ts
- * import { createTrustRealm, defineException, isTrustedException } from 'application-exception';
- * const realm = createTrustRealm();
+ * import { makeTrustRealm, defineException, isTrustedException } from 'application-exception';
+ * const realm = makeTrustRealm();
  * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
  * console.log(isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
  * ```
@@ -513,24 +516,18 @@ export function isTrustedException(
  * Create an explicit trust boundary that cooperating copies of this package can
  * share. Pass the returned object as `realm` to `defineException` in each copy
  * that defines failures, and as `realm` to `isTrustedException`,
- * `toPublicReport`, or `toReports` in the copy that reports them.
- * `toDiagnosticReport` takes no realm: a diagnostic report consults no
+ * `makePublicReport`, or `makeReportPair` in the copy that reports them.
+ * `makeDiagnosticReport` takes no realm: a diagnostic report consults no
  * disclosure policy, and occurrence ids already correlate across copies.
- *
- * The realm object reference *is* the capability: holding it is the trust
- * decision. Nothing is matched by `_tag`, by the global brand, or by any value
- * read off the caught object, so a forged tag or a report deserialized from the
- * wire can never acquire a public policy. Without a realm every copy keeps
- * today's isolation and foreign values stay generic.
  *
  * @example
  * ```ts
- * import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
- * const realm = createTrustRealm();
+ * import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
+ * const realm = makeTrustRealm();
  * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
- * console.log(toPublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
+ * console.log(makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
  * ```
  */
-export function createTrustRealm(): TrustRealm {
-  return makeTrustRealm();
+export function makeTrustRealm(): TrustRealm {
+  return makeInternalTrustRealm();
 }

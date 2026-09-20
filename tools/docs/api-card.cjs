@@ -17,7 +17,7 @@ const TASKS = [
   ],
   [
     'Decide what a kind discloses',
-    '`defineException({ tag, message, public: { code, message, details } })`',
+    '`defineException({ tag, message, public: { code, message, detailsSelector } })`',
   ],
   ['Create an occurrence', '`new Kind({ details, cause })`'],
   ['Narrow a caught value to one kind', '`caught instanceof Kind`'],
@@ -27,9 +27,9 @@ const TASKS = [
   ],
   [
     'Record a failure for operators',
-    '`toDiagnosticReport(caught, { context })`',
+    '`makeDiagnosticReport(caught, { context })`',
   ],
-  ['Answer an agent or user about a failure', '`toPublicReport(caught)`'],
+  ['Answer an agent or user about a failure', '`makePublicReport(caught)`'],
   [
     'Correlate the two reports',
     '`report.occurrence_id`, equal on both for any object; pass `occurrenceId` for thrown primitives',
@@ -37,19 +37,19 @@ const TASKS = [
   ['Read a public report received as JSON', '`decodePublicReport(value)`'],
   [
     'Capture both reports as one occurrence',
-    '`toReports(caught, { diagnostic, public })`',
+    '`makeReportPair(caught, { diagnostic, public })`',
   ],
   [
     'Bound the whole diagnostic report',
-    '`toDiagnosticReport(caught, { corj: { maxReportSize } })`',
+    '`makeDiagnosticReport(caught, { maxReportBytes })`',
   ],
   [
-    'Reach any option of caught-object-report-json',
-    '`{ corj: { inspection, maxDepth, fingerprintParts, … } }` on any report call',
+    'Configure CORJ inspection and fingerprinting',
+    '`{ corj: { inspection, maxDepth, fingerprintParts, … } }`; public reports accept only effective keys',
   ],
   [
     'Override what one call discloses',
-    '`toPublicReport(caught, { public: { code, message, details } })`',
+    '`makePublicReport(caught, { policyOverride: { code, message, detailsSelector } })`',
   ],
   [
     'Tell two failures apart, or recognize a repeat',
@@ -57,7 +57,7 @@ const TASKS = [
   ],
   [
     'Keep secrets out of either report',
-    '`createRedactionPolicy({ keys, paths, patterns })` passed as `redact`',
+    '`makeRedactionPolicy({ keys, paths, patterns })` passed as `redact`',
   ],
   [
     'Freeze details against later mutation',
@@ -65,7 +65,7 @@ const TASKS = [
   ],
   [
     'Trust failures from another loaded copy',
-    '`createTrustRealm()` passed as `realm` to `defineException` and `toPublicReport`',
+    '`makeTrustRealm()` passed as `realm` to `defineException` and `makePublicReport`',
   ],
   [
     'Read omitted corj fields of a diagnostic report',
@@ -77,11 +77,11 @@ const RUNTIME_ORDER = [
   'defineException',
   'isTypedException',
   'isTrustedException',
-  'createTrustRealm',
-  'createRedactionPolicy',
-  'toDiagnosticReport',
-  'toPublicReport',
-  'toReports',
+  'makeTrustRealm',
+  'makeRedactionPolicy',
+  'makeDiagnosticReport',
+  'makePublicReport',
+  'makeReportPair',
   'decodePublicReport',
   'restoreExpectedValues',
   'DIAGNOSTIC_REPORT_VERSION',

@@ -24,12 +24,12 @@ public report, decodes the public one after a JSON round trip, and checks that
 
 - `error.occurrenceId`, `diagnostic.occurrence_id`, `publicReport.occurrence_id` and the decoded
   report's `occurrence_id` are the same string, in every runtime;
-- `diagnostic.v` is `corj/v0.14` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
+- `diagnostic.v` is `corj/v0.15` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
 - `publicReport.v` is `appex/public/v4` and equals the exported `PUBLIC_REPORT_VERSION`;
-- both reports carry a `fp1_` `fingerprint`, and the pair `toReports` returns carries one
+- both reports carry a `fp1_` `fingerprint`, and the pair `makeReportPair` returns carries one
   shared value;
-- a per-call `public: { message, details: null }` override replaces the message and
-  discloses no `as_json`, and `corj: { maxReportSize: 512 }` bounds the whole report,
+- a per-call `policyOverride: { message, detailsSelector: null }` replaces the message and
+  discloses no `as_json`, and `maxReportBytes: 512 ` bounds the whole report,
   dropping `context` whole with `context_omitted: 'max_size'`;
 - `decodePublicReport` accepts an `appex/public/v3` report and keeps its `v`;
 - the public report does not carry the cause, and an invalid `public.code` still raises
@@ -69,7 +69,7 @@ left external, and after the build the emitted chunk is scanned for `node:` impo
 
 Observed: the bundle contains `application-exception`, `caught-object-report-json` and
 `nanoid/index.browser.js` and nothing from Node. `caught-object-report-json` has no dependencies
-and requires no Node builtin — corj 11 bundles its own pure-JavaScript SHA-256 for the fingerprint
+and requires no Node builtin — corj 12 bundles its own pure-JavaScript SHA-256 for the fingerprint
 rather than reaching for `node:crypto` or `crypto.subtle` — so nothing in the closure pulls Node
 `crypto` into the bundle.
 
