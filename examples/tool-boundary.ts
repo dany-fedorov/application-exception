@@ -1,4 +1,8 @@
-import { defineException, toDiagnosticReport, toPublicReport } from '../src';
+import {
+  defineException,
+  makeDiagnosticReport,
+  makePublicReport,
+} from '../src';
 import type { DiagnosticReport, PublicReport } from '../src';
 
 export const ToolUnavailable = defineException({
@@ -8,7 +12,7 @@ export const ToolUnavailable = defineException({
   public: {
     code: 'TOOL_UNAVAILABLE',
     message: 'The requested tool is temporarily unavailable.',
-    details: ({ tool }) => ({ tool }),
+    detailsSelector: ({ tool }) => ({ tool }),
   },
 });
 
@@ -29,8 +33,10 @@ export function runTool<T>(
   try {
     return { ok: true, value: execute() };
   } catch (caught: unknown) {
-    const diagnostic = toDiagnosticReport(caught, { context: { runId, tool } });
-    return { ok: false, diagnostic, response: toPublicReport(caught) };
+    const diagnostic = makeDiagnosticReport(caught, {
+      context: { runId, tool },
+    });
+    return { ok: false, diagnostic, response: makePublicReport(caught) };
   }
 }
 

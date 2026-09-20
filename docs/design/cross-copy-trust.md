@@ -1,6 +1,6 @@
 # Trust between loaded package copies — decision record (issue #46)
 
-Status: **implemented** as `createTrustRealm`.
+Status: **implemented** as `makeTrustRealm`.
 
 ## The observed behaviour, and why it was deliberate
 
@@ -35,10 +35,10 @@ report time, by the code that owns the policy.
 ## What was built
 
 ```ts
-import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
+import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
 
 // the host that owns reporting creates the realm and hands it out
-export const realm = createTrustRealm();
+export const realm = makeTrustRealm();
 
 // each cooperating copy opts in where it defines failures
 const Timeout = defineException({
@@ -48,12 +48,12 @@ const Timeout = defineException({
 });
 
 // and where it reports them
-toPublicReport(caught, { realm }).code; // 'DB_TIMEOUT' across copies
-isTypedException(caught, realm);        // true across copies
+makePublicReport(caught, { realm }).code; // 'DB_TIMEOUT' across copies
+isTrustedException(caught, realm);      // true across copies
 ```
 
-`realm` is accepted by `defineException`, `isTypedException`, `toPublicReport`,
-and `toReports`. `toDiagnosticReport` does not take one: a diagnostic report
+`realm` is accepted by `defineException`, `isTrustedException`, `makePublicReport`,
+and `makeReportPair`. `makeDiagnosticReport` does not take one: a diagnostic report
 consults no disclosure policy, and occurrence correlation across copies already
 works through `brandedOccurrenceId` without any opt-in.
 
@@ -74,7 +74,7 @@ share one registry.
 - **The realm is the decision.** A hostile value cannot nominate a realm — only
   the application chooses what it passes. An object hand-shaped like a realm
   therefore speaks only for the caller that built it, which is no more power
-  than calling `createTrustRealm` yourself.
+  than calling `makeTrustRealm` yourself.
 - **The local registry wins**, so a kind defined in the reporting copy can never
   have its policy shadowed by a realm.
 - **A hostile realm cannot break reporting.** If `has` or `policyOf` throws, or

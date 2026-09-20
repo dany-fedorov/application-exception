@@ -85,6 +85,8 @@ try {
       './schemas/diagnostic-report-v4.json',
     './schemas/diagnostic-report-v5.json':
       './schemas/diagnostic-report-v5.json',
+    './schemas/diagnostic-report-v6.json':
+      './schemas/diagnostic-report-v6.json',
     './schemas/public-report-v3.json': './schemas/public-report-v3.json',
     './schemas/public-report-v4.json': './schemas/public-report-v4.json',
   });
@@ -107,6 +109,7 @@ try {
     'schemas/diagnostic-report-v3.json',
     'schemas/diagnostic-report-v4.json',
     'schemas/diagnostic-report-v5.json',
+    'schemas/diagnostic-report-v6.json',
     'schemas/public-report-v3.json',
     'schemas/public-report-v4.json',
   ]) {
@@ -135,16 +138,16 @@ try {
     'APPEX_ERROR_CODES',
     'DIAGNOSTIC_REPORT_VERSION',
     'PUBLIC_REPORT_VERSION',
-    'createRedactionPolicy',
-    'createTrustRealm',
     'decodePublicReport',
     'defineException',
     'isTrustedException',
     'isTypedException',
+    'makeDiagnosticReport',
+    'makePublicReport',
+    'makeRedactionPolicy',
+    'makeReportPair',
+    'makeTrustRealm',
     'restoreExpectedValues',
-    'toDiagnosticReport',
-    'toPublicReport',
-    'toReports',
   ]);
   assert.throws(
     () => consumerRequire('application-exception/typed'),
@@ -154,7 +157,7 @@ try {
   const Failure = api.defineException({
     tag: 'agent/ToolFailure',
     message: ({ tool }) => `${tool} failed`,
-    public: { code: 'TOOL_FAILED', details: ({ tool }) => ({ tool }) },
+    public: { code: 'TOOL_FAILED', detailsSelector: ({ tool }) => ({ tool }) },
   });
   const cause = new Error('connection refused');
   const error = new Failure({ details: { tool: 'search' }, cause });
@@ -165,9 +168,11 @@ try {
   assert.equal(error.message, 'search failed');
   assert.equal(error.cause, cause);
 
-  const diagnostic = api.toDiagnosticReport(error, { context: { runId: 'r' } });
-  const publicReport = api.toPublicReport(error);
-  assert.equal(diagnostic.v, 'corj/v0.14');
+  const diagnostic = api.makeDiagnosticReport(error, {
+    context: { runId: 'r' },
+  });
+  const publicReport = api.makePublicReport(error);
+  assert.equal(diagnostic.v, 'corj/v0.15');
   assert.equal(diagnostic.occurrence_id, error.occurrenceId);
   assert.equal(publicReport.occurrence_id, error.occurrenceId);
   assert.match(diagnostic.fingerprint, /^fp1_[0-9a-f]{32}$/);
@@ -182,15 +187,18 @@ try {
   // Each report is fingerprinted by its own option bag; here both bags carry the
   // same (default) `corj` and `redact` and the value has a real stack, so the
   // two agree. A value with no stack publishes no public fingerprint at all.
-  const pair = api.toReports(error, {
+  const pair = api.makeReportPair(error, {
     diagnostic: { context: { runId: 'r' } },
   });
   assert.equal(pair.diagnostic.fingerprint, pair.public.fingerprint);
-  assert.equal('fingerprint' in api.toReports('socket closed').public, false);
+  assert.equal(
+    'fingerprint' in api.makeReportPair('socket closed').public,
+    false,
+  );
   // A per-call override is one `public` bag laid over the kind's policy, and
-  // `details: null` discloses no `as_json` at all.
-  const overridden = api.toPublicReport(error, {
-    public: { message: 'Search is down.', details: null },
+  // `detailsSelector: null` discloses no `as_json` at all.
+  const overridden = api.makePublicReport(error, {
+    policyOverride: { message: 'Search is down.', detailsSelector: null },
   });
   assert.deepEqual(overridden, {
     v: 'appex/public/v4',
@@ -201,9 +209,10 @@ try {
   });
   // Every corj option travels in one bag, and the budget bounds the whole
   // report: `context` goes first, whole, and the identifying fields stay.
-  const bounded = api.toDiagnosticReport(error, {
+  const bounded = api.makeDiagnosticReport(error, {
     context: { runId: 'r' },
-    corj: { maxReportSize: 512, maxDepth: 3 },
+    corj: { maxDepth: 3 },
+    maxReportBytes: 512,
   });
   assert.equal(bounded.occurrence_id, error.occurrenceId);
   assert.equal(bounded.context_omitted, 'max_size');
@@ -213,9 +222,9 @@ try {
     api.decodePublicReport(JSON.parse(JSON.stringify(publicReport))).ok,
     true,
   );
-  assert.equal(api.toPublicReport(new Error('x')).code, 'INTERNAL_ERROR');
+  assert.equal(api.makePublicReport(new Error('x')).code, 'INTERNAL_ERROR');
   assert.throws(
-    () => api.toPublicReport(error, { public: { code: '' } }),
+    () => api.makePublicReport(error, { policyOverride: { code: '' } }),
     (thrown) =>
       thrown instanceof TypeError &&
       thrown.code === 'APPEX_INVALID_PUBLIC_CODE' &&
@@ -227,7 +236,7 @@ try {
   assert.equal(
     ajv.validate(
       consumerRequire(
-        'application-exception/schemas/diagnostic-report-v5.json',
+        'application-exception/schemas/diagnostic-report-v6.json',
       ),
       JSON.parse(JSON.stringify(diagnostic)),
     ),
@@ -246,7 +255,7 @@ try {
   fs.writeFileSync(
     path.join(consumer, 'consumer.ts'),
     [
-      "import { defineException, toDiagnosticReport, toPublicReport, decodePublicReport } from 'application-exception';",
+      "import { defineException, makeDiagnosticReport, makePublicReport, decodePublicReport } from 'application-exception';",
       "import type { DiagnosticReport, PublicReport } from 'application-exception';",
       '// @ts-expect-error legacy root API was removed',
       "import { decodeDiagnosticReport } from 'application-exception';",
@@ -254,16 +263,16 @@ try {
       'const Failure = defineException({',
       "  tag: 'agent/Failure',",
       '  message: ({ tool }: { tool: string }) => `${tool} failed`,',
-      "  public: { code: 'TOOL_FAILED', details: ({ tool }) => ({ tool }) },",
+      "  public: { code: 'TOOL_FAILED', detailsSelector: ({ tool }) => ({ tool }) },",
       '});',
       "const error = new Failure({ details: { tool: 'search' } });",
       "const tag: 'agent/Failure' = error._tag;",
-      'const diagnostic: DiagnosticReport = toDiagnosticReport(error, { corj: { maxReportSize: 4096 } });',
-      "const response: PublicReport = toPublicReport(error, { public: { message: 'Down.' } });",
+      'const diagnostic: DiagnosticReport = makeDiagnosticReport(error, { maxReportBytes: 4096  });',
+      "const response: PublicReport = makePublicReport(error, { policyOverride: { message: 'Down.' } });",
       '// @ts-expect-error corj options do not live at the top level',
-      'toDiagnosticReport(error, { maxDepth: 2 });',
+      'makeDiagnosticReport(error, { maxDepth: 2 });',
       '// @ts-expect-error the per-call code moved into the public bag',
-      "toPublicReport(error, { code: 'TOOL_FAILED' });",
+      "makePublicReport(error, { code: 'TOOL_FAILED' });",
       'const decoded = decodePublicReport(response);',
       'if (decoded.ok) void decoded.report.code;',
       '// @ts-expect-error details are required',

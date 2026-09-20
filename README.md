@@ -22,7 +22,7 @@ Define a kind with typed details and a public policy. At the boundary, report
 the caught value twice: once for the trusted sink, once for the response.
 
 ```ts
-import { defineException, toDiagnosticReport, toPublicReport } from 'application-exception';
+import { defineException, makeDiagnosticReport, makePublicReport } from 'application-exception';
 
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
@@ -30,7 +30,7 @@ const ToolUnavailable = defineException({
   public: {
     code: 'TOOL_UNAVAILABLE',
     message: 'The requested tool is temporarily unavailable.',
-    details: ({ tool }) => ({ tool }),
+    detailsSelector: ({ tool }) => ({ tool }),
   },
 });
 
@@ -44,9 +44,9 @@ function runSearch(): never {
 try {
   runSearch();
 } catch (caught: unknown) {
-  const diagnostic = toDiagnosticReport(caught, { context: { runId: 'run-1' } });
+  const diagnostic = makeDiagnosticReport(caught, { context: { runId: 'run-1' } });
   console.error(JSON.stringify(diagnostic)); // trusted sink only
-  const response = toPublicReport(caught);
+  const response = makePublicReport(caught);
   console.log(JSON.stringify(response)); // safe for the agent
   console.log(response.occurrence_id === diagnostic.occurrence_id); // true
 }
@@ -73,28 +73,28 @@ A caught value without a policy, including a plain `Error`, produces
 
 | Report | Function | Audience | Content |
 | --- | --- | --- | --- |
-| Diagnostic | `toDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `fingerprint`, `context`, `reporting_errors` |
-| Public | `toPublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id`, and `fingerprint` when the hash is backed by real stack frames |
-| Both | `toReports(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence; each report is fingerprinted by its own bag, so the two agree when both bags carry the same `corj` and `redact` |
+| Diagnostic | `makeDiagnosticReport(caught, options?)` | operators, logs | a corj report: stacks, messages, `as_json` of every enumerable property, nested causes under `children`; plus `occurrence_id`, `fingerprint`, `context`, `reporting_errors` |
+| Public | `makePublicReport(caught, options?)` | agents, users, HTTP clients | `code`, `message`, `as_json` from the kind's `public` policy; plus `occurrence_id`, and `fingerprint` when the hash is backed by real stack frames |
+| Both | `makeReportPair(caught, options?)` | one boundary | `{ occurrence_id, diagnostic, public }` derived from a single occurrence; each report is fingerprinted by its own bag, so the two agree when both bags carry the same `corj` and `redact` |
 
 `occurrence_id` is the `occurrenceId` of a typed exception. Any other object
 gets one generated id, remembered for the object, so both functions agree in
 either order. A thrown primitive gets a fresh occurrence id on each call; pass
 the same `options.occurrenceId` to both calls to correlate them, or call
-`toReports`, which resolves the occurrence once for both:
+`makeReportPair`, which resolves the occurrence once for both:
 
 ```ts
-import { toReports } from 'application-exception';
+import { makeReportPair } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const reports = toReports(caught, { diagnostic: { context: { runId: 'run-1' } } });
+const reports = makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
 console.error(JSON.stringify(reports.diagnostic));
 console.log(reports.public.occurrence_id === reports.diagnostic.occurrence_id); // true
 ```
 
 ### Diagnostic report
 
-The diagnostic report is a corj report object (`v: "corj/v0.14"`). corj
+The diagnostic report is a corj report object (`v: "corj/v0.15"`). corj
 documents every field, omits fields that hold their expected value, and bounds
 the whole report (100,000 UTF-8 bytes by default). The root fields this package
 relies on:
@@ -104,17 +104,18 @@ relies on:
 | `occurrence_id` | the occurrence id this package resolves, always present and never trimmed |
 | `fingerprint` | corj's hash of the error graph's identifying parts — the constructor names and the stack text by default — equal for the same failure from the same place; `corj: { fingerprintParts: null }` turns it off. A public report carries it only when the hash is backed by real stack frames |
 | `context` | present only when `options.context` is given: that value rendered as a JSON document of its own, rooted at `$context`, with a 16,384-byte cap inside the report budget; `null` if it could not be rendered |
-| `reporting_errors` | present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, key?, prop?, error }` |
+| `reporting_errors` | present only when non-empty: up to 8 problems corj met while inspecting the value, each `{ stage, path, reportKey?, sourceProperty?, error }` |
 
-Every option of corj is reachable through one `corj` bag — `maxReportSize`,
-`maxDepth`, `maxChildren`, `stackFormat`, `inspection`, `fingerprintParts` and
-the rest — except `redact`, which both reports share at the top level. Use
+Diagnostic CORJ options are reachable through one `corj` bag — including
+`maxDepth`, `maxChildren`, `stackFormat`, `inspection`, `fingerprintParts`, and
+`maxContextSize`. Whole-report size belongs to top-level `maxReportBytes`, its
+unit is always UTF-8, and `redact` stays at the top level. Use
 `restoreExpectedValues(report)` to fill omitted fields.
 
 ```ts
-import { restoreExpectedValues, toDiagnosticReport } from 'application-exception';
+import { restoreExpectedValues, makeDiagnosticReport } from 'application-exception';
 
-const report = toDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
+const report = makeDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
   corj: { maxDepth: 2 },
 });
 const full = restoreExpectedValues(report);
@@ -146,8 +147,10 @@ hash still covers every other part of the recipe, so adding `message` to the
 public bag's recipe puts the message into the hash next to the frames; frame
 text is unguessable only to a reader who does not know the deployed source and
 its paths.
-Limits: `message` 4,096 UTF-16 units, `as_json` 16,384 bytes; cuts set
-`truncated: true`.
+Component limits are `message` 4,096 UTF-16 units and `as_json` 16,384 UTF-8
+bytes. Top-level `maxReportBytes` can optionally cap the complete compact JSON
+at 2,048 bytes or more; on overflow `as_json` is omitted whole before `message`
+is shortened. Any cut sets `truncated: true`.
 
 `occurrence_id` is a bounded printable-ASCII token, not trusted text: a branded
 value that a caller never minted can choose its own, within
@@ -156,22 +159,24 @@ value that a caller never minted can choose its own, within
 data — escape it when you render it, never interpolate it into markup, a shell
 command, or an instruction to a model.
 
-The `public` option overrides the kind's policy for this call, field by field:
-`code`, `message` (a string or a function of the details) and `details` (a
+The `policyOverride` option overrides the kind's policy for this call, field by field:
+`code`, `message` (a string or a function of the details) and `detailsSelector` (a
 selector function, or `null` to disclose nothing — not even `as_json: null`). A
 field left out keeps what the kind says, and a policy without `message` yields
 the generic message.
 
 ```ts
-import { defineException, toPublicReport } from 'application-exception';
+import { defineException, makePublicReport } from 'application-exception';
 
 const Unavailable = defineException({
   tag: 'tools/Unavailable',
   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
-  public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
+  public: { code: 'TOOL_UNAVAILABLE', detailsSelector: ({ tool }) => ({ tool }) },
 });
 const caught: unknown = new Unavailable({ details: { tool: 'search' } });
-const report = toPublicReport(caught, { public: { message: 'Search is down.', details: null } });
+const report = makePublicReport(caught, {
+  policyOverride: { message: 'Search is down.', detailsSelector: null },
+});
 console.log(report.code, report.message, 'as_json' in report); // 'TOOL_UNAVAILABLE' 'Search is down.' false
 ```
 
@@ -229,30 +234,32 @@ Errors thrown by this package carry an `APPEX_*` code and a link to
 
 ## Bound, redact, snapshot, share
 
-Four controls: one corj option and three opt-in features that leave the default
+Four controls: report byte limits and three opt-in features that leave the default
 behaviour unchanged when omitted.
 
-**Bound the whole report.** `corj: { maxReportSize }` (a safe integer of at
+**Bound the whole report.** Diagnostic `maxReportBytes` (a safe integer of at
 least 512, or `null`) holds the diagnostic report to that many UTF-8 bytes of
 compact JSON — the corj report, `context` and `reporting_errors` together. Over
 budget, corj drops `context` whole, however small it is, and sets
 `context_omitted: 'max_size'`; then drops `reporting_errors` and sets
 `reporting_errors_omitted: 'max_size'`; only then does it trim error content.
 `occurrence_id`, `fingerprint` and `v` are never trimmed, so a report always
-identifies itself and correlates. corj's default is 100,000 bytes.
+identifies itself and correlates. Omitting it keeps CORJ's 100,000-byte default;
+`null` explicitly disables only the total cap. Public `maxReportBytes` is
+opt-in, has a 2,048-byte minimum, and also accepts `null`.
 
 ```ts
-import { toDiagnosticReport } from 'application-exception';
+import { makeDiagnosticReport } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const report = toDiagnosticReport(caught, {
+const report = makeDiagnosticReport(caught, {
   context: { runId: 'run-1' },
-  corj: { maxReportSize: 32_768 },
+  maxReportBytes: 32_768,
 });
 console.log(new TextEncoder().encode(JSON.stringify(report)).byteLength <= 32_768); // true
 ```
 
-**Redact once, everywhere.** A policy built by `createRedactionPolicy` has two
+**Redact once, everywhere.** A policy built by `makeRedactionPolicy` has two
 kinds of rule. **Skip** rules (`keys`, `paths`) name properties that are never
 read, so an excluded getter never runs. **Scrub** rules (`patterns`,
 `transform`) rewrite text wherever it appears in either report. To remove a
@@ -260,17 +267,17 @@ secret's *text*, use `patterns`: skipping `message` still leaves it in `stack`.
 `paths` address three documents — `$...` the caught value, `$context...` the
 context, `$public...` the selected public details — so anchor a `RegExp` path
 with `^\$\.` to keep it on the caught value. Redaction never discloses — on a
-public report it runs on what the kind's `details` selector returned. The
+public report it runs on what the kind's `detailsSelector` returned. The
 rule-by-rule table is in
 [docs/agent/recipes.md](docs/agent/recipes.md#keep-secrets-out-of-both-reports);
 the design is in [docs/design/redaction-policy.md](docs/design/redaction-policy.md).
 
 ```ts
-import { createRedactionPolicy, toReports } from 'application-exception';
+import { makeRedactionPolicy, makeReportPair } from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const redact = createRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
-toReports(caught, { diagnostic: { redact }, public: { redact } });
+const redact = makeRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
+makeReportPair(caught, { diagnostic: { redact }, public: { redact } });
 ```
 
 **Snapshot the details.** By default `details` is shallow-frozen, so a caller
@@ -296,20 +303,20 @@ console.log(failure.details.job.name); // 'nightly'
 **Share trust between copies.** Two separately loaded copies of this package do
 not recognize each other's occurrences, by design: a disclosure policy decides
 what leaves the process, so a value that merely claims to be typed must not pick
-its own public code. `createTrustRealm()` is the explicit opt-in. The realm
+its own public code. `makeTrustRealm()` is the explicit opt-in. The realm
 object reference *is* the capability — nothing is matched by `_tag`, by the
 global brand, or by any value read off the caught object, so a forged tag or a
 report revived from JSON acquires nothing. `isTrustedException(caught, realm)` is
 the realm-aware recognizer; `isTypedException` keeps its one-argument shape.
 
 ```ts
-import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
+import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
 
-const realm = createTrustRealm();
+const realm = makeTrustRealm();
 const Timeout = defineException({
   tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm,
 });
-console.log(toPublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT' across copies
+console.log(makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT' across copies
 ```
 
 ## Runtime support
@@ -321,11 +328,12 @@ contract and its limits are in
 
 ## Schemas
 
-`application-exception/schemas/diagnostic-report-v5.json` embeds corj v0.14's
+`application-exception/schemas/diagnostic-report-v6.json` embeds corj v0.15's
 report definitions and requires `v` and `occurrence_id`;
 `application-exception/schemas/public-report-v4.json` is closed and carries the
 optional `fingerprint`. Both are JSON Schema 2020-12. The earlier schemas stay
 published unchanged for readers of older reports:
+`diagnostic-report-v5.json` for 0.5.0 (`v: "corj/v0.14"`),
 `diagnostic-report-v4.json` and `public-report-v3.json` for 0.4.0
 (`v: "corj/v0.13"`, `appex/public/v3`), and `diagnostic-report-v3.json` for
 0.3.0 (`v: "corj/v0.12"`).

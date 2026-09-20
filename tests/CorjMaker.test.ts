@@ -1,117 +1,168 @@
-import { createRedactionPolicy } from '../src/index';
-import { makerFor } from '../src/corj-maker';
+import { diagnosticMakerFor, publicMakerFor } from '../src/corj-maker';
+import { makeRedactionPolicy } from '../src/redaction';
 
-describe('makerFor', () => {
-  test('one maker per bag identity and policy', () => {
+describe('CORJ maker adapters', () => {
+  test('snapshots each caller bag without freezing or caching it', () => {
     const bag = { maxDepth: 2 };
-    const policy = createRedactionPolicy({ keys: ['password'] });
-    expect(makerFor(bag, policy)).toBe(makerFor(bag, policy));
-    expect(makerFor(bag, undefined)).toBe(makerFor(bag, undefined));
-    expect(makerFor(bag, policy)).not.toBe(makerFor(bag, undefined));
-    expect(makerFor({ maxDepth: 2 }, policy)).not.toBe(makerFor(bag, policy));
-    expect(makerFor(undefined, undefined)).toBe(makerFor(undefined, undefined));
+    const first = diagnosticMakerFor(bag, undefined, undefined);
+    bag.maxDepth = 1;
+    const second = diagnosticMakerFor(bag, undefined, undefined);
+
+    expect(first).not.toBe(second);
+    expect(first.options.maxDepth).toBe(2);
+    expect(second.options.maxDepth).toBe(1);
+    expect(Object.isFrozen(bag)).toBe(false);
   });
 
-  test('the bag is frozen on first sight, so a later mutation fails loudly', () => {
-    const bag: { maxDepth: number } = { maxDepth: 2 };
-    makerFor(bag, undefined);
-    expect(Object.isFrozen(bag)).toBe(true);
-    // Test files are modules, so this assignment runs in strict mode and throws.
-    expect(() => {
-      bag.maxDepth = 9;
-    }).toThrow(TypeError);
-  });
+  test('forces UTF-8, the diagnostic limit, metadata v, and silent reporting', () => {
+    const maker = diagnosticMakerFor(
+      { metadata: { $schema: true }, inspection: 'no-invoke' },
+      undefined,
+      512,
+    );
+    expect(maker.options).toMatchObject({
+      reportSizeUnit: 'utf8-bytes',
+      maxReportSize: 512,
+      metadata: { v: true, $schema: true },
+      inspection: 'no-invoke',
+    });
 
-  test('corj options pass through, inspection included', () => {
-    const maker = makerFor({ inspection: 'no-invoke', maxDepth: 1 }, undefined);
-    expect(maker.options.inspection).toBe('no-invoke');
-    expect(maker.options.maxDepth).toBe(1);
-  });
-
-  test('v is forced on; $schema follows the caller', () => {
-    expect(makerFor({ metadata: false }, undefined).options.metadata).toEqual({
-      v: true,
-      $schema: false,
-    });
-    expect(makerFor({ metadata: true }, undefined).options.metadata).toEqual({
-      v: true,
-      $schema: true,
-    });
-    expect(
-      makerFor({ metadata: { v: false, $schema: true } }, undefined).options
-        .metadata,
-    ).toEqual({
-      v: true,
-      $schema: true,
-    });
-    expect(makerFor({}, undefined).options.metadata).toEqual({
-      v: true,
-      $schema: false,
-    });
-  });
-
-  test('errors are silent by default and the caller can take them', () => {
     const warn = jest
       .spyOn(console, 'warn')
       .mockImplementation(() => undefined);
-    try {
-      const hostile = new Error('x');
-      Object.defineProperty(hostile, 'message', {
-        get() {
-          throw new Error('boom');
-        },
-      });
-      makerFor({}, undefined).makeReportObject(hostile);
-      // A bag built as `{ onError: config.onError }` with an absent field still
-      // spreads the key: corj would read it as "no handler" and print.
-      makerFor({ onError: undefined }, undefined).makeReportObject(hostile);
-      expect(warn).not.toHaveBeenCalled();
-      const seen: unknown[] = [];
-      makerFor(
-        { onError: (_c: unknown, record: unknown) => seen.push(record) },
-        undefined,
-      ).makeReportObject(hostile);
-      expect(seen.length).toBeGreaterThan(0);
-    } finally {
-      warn.mockRestore();
-    }
+    const hostile = Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get() {
+        throw new Error('boom');
+      },
+    });
+    maker.makeReport(hostile);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+
+    expect(
+      diagnosticMakerFor({ metadata: false }, undefined, undefined).options
+        .metadata,
+    ).toEqual({ v: true, $schema: false });
   });
 
-  test('corj.redact is rejected and names the top-level option', () => {
-    expect(() => makerFor({ redact: { keys: ['a'] } }, undefined)).toThrow(
-      /APPEX_INVALID_OPTIONS: corj\.redact is not accepted; pass the policy as the top-level redact option/,
+  test('uses a custom reporting handler and compiled redaction policy', () => {
+    const seen: unknown[] = [];
+    const maker = diagnosticMakerFor(
+      {
+        onReportingError: (_failure, record) => seen.push(record),
+      },
+      makeRedactionPolicy({ keys: ['secret'] }),
+      null,
+    );
+    const hostile = Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get() {
+        throw new Error('boom');
+      },
+    });
+    const report = maker.makeReport(hostile);
+    expect(seen).toEqual(report.reporting_errors);
+    expect(maker.options.maxReportSize).toBeNull();
+    expect(maker.makeJsonView({ secret: 'x' }).value).toEqual({
+      secret: '[redacted]',
+    });
+  });
+
+  test('public makers accept exactly the six effective CORJ keys', () => {
+    const maker = publicMakerFor(
+      {
+        inspection: 'no-invoke',
+        maxDepth: 1,
+        maxChildren: 2,
+        childrenSources: ['inner'],
+        fingerprintParts: null,
+        onReportingError: () => undefined,
+      },
+      undefined,
+    );
+    expect(maker.options).toMatchObject({
+      inspection: 'no-invoke',
+      maxDepth: 1,
+      maxChildren: 2,
+      childrenSources: ['inner'],
+      fingerprintParts: null,
+      reportSizeUnit: 'utf8-bytes',
+    });
+    expect(() =>
+      publicMakerFor({ stackFormat: 'string' } as never, undefined),
+    ).toThrow(/APPEX_INVALID_OPTIONS: unknown corj option "stackFormat"/);
+  });
+
+  test.each([5, null, [], 'x'])('rejects a CORJ slot of %p', (corj) => {
+    expect(() => diagnosticMakerFor(corj, undefined, undefined)).toThrow(
+      /APPEX_INVALID_OPTIONS: corj must be an object/,
     );
   });
 
-  test.each([[5], [null], [[]], ['x']])(
-    'a corj slot of %p is rejected',
-    (corj) => {
-      expect(() => makerFor(corj, undefined)).toThrow(
-        /APPEX_INVALID_OPTIONS: corj must be an object/,
-      );
-    },
-  );
-
-  test('a redact that createRedactionPolicy did not mint is rejected', () => {
-    expect(() => makerFor({}, { keys: ['a'] })).toThrow(
+  test('rejects unsupported keys and unminted policies', () => {
+    for (const key of ['redact', 'maxReportSize', 'reportSizeUnit']) {
+      expect(() =>
+        diagnosticMakerFor({ [key]: 1 } as never, undefined, undefined),
+      ).toThrow(/APPEX_INVALID_OPTIONS: unknown corj option/);
+    }
+    expect(() => diagnosticMakerFor({}, { keys: ['a'] }, undefined)).toThrow(
       /APPEX_INVALID_REDACTION_POLICY/,
     );
+    expect(() =>
+      diagnosticMakerFor({ maxDepth: -1 }, undefined, undefined),
+    ).toThrow(RangeError);
+    expect(() =>
+      diagnosticMakerFor(
+        { onReportingError: 5 } as never,
+        undefined,
+        undefined,
+      ),
+    ).toThrow(TypeError);
+    for (const metadata of [null, 42, 'x']) {
+      expect(() =>
+        diagnosticMakerFor({ metadata } as never, undefined, undefined),
+      ).toThrow(TypeError);
+    }
+    expect(() =>
+      diagnosticMakerFor(
+        { onReportingError: null } as never,
+        undefined,
+        undefined,
+      ),
+    ).toThrow(TypeError);
+    expect(() =>
+      publicMakerFor({ onReportingError: null } as never, undefined),
+    ).toThrow(TypeError);
   });
 
-  test('corj option errors propagate unwrapped', () => {
-    expect(() => makerFor({ maxReportSize: 100 }, undefined)).toThrow(
-      RangeError,
-    );
-    expect(() => makerFor({ nope: 1 } as never, undefined)).toThrow(TypeError);
-    expect(() => makerFor({ onError: 5 } as never, undefined)).toThrow(
-      TypeError,
-    );
-    // Forcing `v` on must not launder a metadata value corj rejects.
-    expect(() => makerFor({ metadata: 'yes' } as never, undefined)).toThrow(
-      TypeError,
-    );
-    expect(() => makerFor({ metadata: null } as never, undefined)).toThrow(
-      TypeError,
-    );
-  });
+  test.each(['redact', 'maxReportSize', 'reportSizeUnit', 'onError'])(
+    'rejects a hidden or inherited legacy %s without reading it',
+    (key) => {
+      let reads = 0;
+      const inherited = Object.create(
+        Object.defineProperty({}, key, {
+          get() {
+            reads++;
+            return true;
+          },
+        }),
+      );
+      const hidden = Object.defineProperty({}, key, {
+        get() {
+          reads++;
+          return true;
+        },
+      });
+      for (const bag of [inherited, hidden]) {
+        expect(() => diagnosticMakerFor(bag, undefined, undefined)).toThrow(
+          /APPEX_INVALID_OPTIONS: unknown corj option/,
+        );
+        expect(() => publicMakerFor(bag, undefined)).toThrow(
+          /APPEX_INVALID_OPTIONS: unknown corj option/,
+        );
+      }
+      expect(reads).toBe(0);
+    },
+  );
 });

@@ -172,7 +172,7 @@ const WithPolicy = defineException({
   public: {
     code: 'TOOL_UNAVAILABLE',
     message: ({ tool }) => `${tool} is unavailable`,
-    details: ({ tool }) => ({ tool }),
+    detailsSelector: ({ tool }) => ({ tool }),
   },
 });
 new WithPolicy({ details: { tool: 'search' } });
@@ -183,7 +183,7 @@ defineException({
   public: {
     code: 'TOOL_UNAVAILABLE',
     // @ts-expect-error the policy only sees the declared details.
-    details: ({ missing }) => ({ missing }),
+    detailsSelector: ({ missing }) => ({ missing }),
   },
 });
 
@@ -198,6 +198,6 @@ const constantPolicy: PublicPolicy = { code: 'X', message: 'constant' };
 defineException({ tag: 'X', message: 'x', public: constantPolicy });
 const detailedPolicy: PublicPolicy<{ tool: string }> = {
   code: 'X',
-  details: ({ tool }) => ({ tool }),
+  detailsSelector: ({ tool }) => ({ tool }),
 };
 void detailedPolicy;

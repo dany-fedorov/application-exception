@@ -1,9 +1,9 @@
 import {
-  toDiagnosticReport,
-  toPublicReport,
-  toReports,
+  makeDiagnosticReport,
+  makePublicReport,
+  makeReportPair,
 } from '../src/reporting';
-import { createRedactionPolicy } from '../src/redaction';
+import { makeRedactionPolicy } from '../src/redaction';
 import { defineException } from '../src/typed';
 
 const code = (value: string) => expect.objectContaining({ code: value });
@@ -19,11 +19,11 @@ const ToolUnavailable = defineException({
   public: {
     code: 'TOOL_UNAVAILABLE',
     message: ({ tool }) => `${tool} is temporarily unavailable.`,
-    details: ({ tool }) => ({ tool }),
+    detailsSelector: ({ tool }) => ({ tool }),
   },
 });
 
-describe('toReports', () => {
+describe('makeReportPair', () => {
   test('gives both reports of one capture the same occurrence id', () => {
     const caught: readonly unknown[] = [
       'socket closed',
@@ -40,44 +40,48 @@ describe('toReports', () => {
       },
     ];
     for (const value of caught) {
-      const captured = toReports(value);
+      const captured = makeReportPair(value);
       expect(captured.diagnostic.occurrence_id).toBe(
         captured.public.occurrence_id,
       );
       expect(captured.occurrence_id).toBe(captured.public.occurrence_id);
       expect(captured.occurrence_id.length).toBeGreaterThan(0);
-      expect(captured.diagnostic.v).toBe('corj/v0.14');
+      expect(captured.diagnostic.v).toBe('corj/v0.15');
       expect(captured.public.v).toBe('appex/public/v4');
     }
   });
 
   test('captures a primitive twice as two occurrences and an object once', () => {
-    const first = toReports('socket closed');
-    const second = toReports('socket closed');
+    const first = makeReportPair('socket closed');
+    const second = makeReportPair('socket closed');
     expect(first.occurrence_id).toMatch(/^AE_/);
     expect(second.occurrence_id).not.toBe(first.occurrence_id);
 
     const error = new Error('plain');
-    expect(toReports(error).occurrence_id).toBe(toReports(error).occurrence_id);
-    expect(toDiagnosticReport(error).occurrence_id).toBe(
-      toReports(error).occurrence_id,
+    expect(makeReportPair(error).occurrence_id).toBe(
+      makeReportPair(error).occurrence_id,
     );
-    expect(toPublicReport(error).occurrence_id).toBe(
-      toReports(error).occurrence_id,
+    expect(makeDiagnosticReport(error).occurrence_id).toBe(
+      makeReportPair(error).occurrence_id,
+    );
+    expect(makePublicReport(error).occurrence_id).toBe(
+      makeReportPair(error).occurrence_id,
     );
     const failure = new ToolUnavailable({
       details: { tool: 'search', secret: 'hunter2' },
     });
-    expect(toReports(failure).occurrence_id).toBe(failure.occurrenceId);
+    expect(makeReportPair(failure).occurrence_id).toBe(failure.occurrenceId);
   });
 
   test('applies an explicit occurrence id to both reports', () => {
-    const captured = toReports('socket closed', { occurrenceId: 'trace-1' });
+    const captured = makeReportPair('socket closed', {
+      occurrenceId: 'trace-1',
+    });
     expect(captured.occurrence_id).toBe('trace-1');
     expect(captured.diagnostic.occurrence_id).toBe('trace-1');
     expect(captured.public.occurrence_id).toBe('trace-1');
     for (const occurrenceId of ['', 'x'.repeat(129), 42, null]) {
-      expect(() => toReports('x', { occurrenceId } as never)).toThrow(
+      expect(() => makeReportPair('x', { occurrenceId } as never)).toThrow(
         code('APPEX_INVALID_OCCURRENCE_ID'),
       );
     }
@@ -88,20 +92,22 @@ describe('toReports', () => {
       details: { tool: 'search', secret: 'hunter2' },
       cause: new Error('postgres://user:hunter2@db'),
     });
-    const captured = toReports(error, {
+    const captured = makeReportPair(error, {
       diagnostic: {
         context: { runId: 'run-1' },
-        corj: { maxReportSize: 4_096 },
+        maxReportBytes: 4_096,
       },
-      public: { public: { message: 'Search is down.' } },
+      public: { policyOverride: { message: 'Search is down.' } },
     });
     expect(captured.public).toEqual(
-      toPublicReport(error, { public: { message: 'Search is down.' } }),
+      makePublicReport(error, {
+        policyOverride: { message: 'Search is down.' },
+      }),
     );
     expect(captured.diagnostic).toEqual(
-      toDiagnosticReport(error, {
+      makeDiagnosticReport(error, {
         context: { runId: 'run-1' },
-        corj: { maxReportSize: 4_096 },
+        maxReportBytes: 4_096,
       }),
     );
     expect(captured.public.code).toBe('TOOL_UNAVAILABLE');
@@ -109,27 +115,27 @@ describe('toReports', () => {
     expect(JSON.stringify(captured.public)).not.toContain('hunter2');
     expect(JSON.stringify(captured.diagnostic)).toContain('hunter2');
 
-    const generic = toReports(new Error('secret path'));
+    const generic = makeReportPair(new Error('secret path'));
     expect(generic.public.code).toBe('INTERNAL_ERROR');
     expect(generic.public.message).toBe('Something went wrong');
   });
 
   test('accepts the per-report option bags', () => {
-    const captured = toReports('socket closed', {
+    const captured = makeReportPair('socket closed', {
       diagnostic: {
         context: { runId: 'run-1' },
         corj: {
           maxDepth: 1,
           maxChildren: 2,
-          maxReportSize: 2_048,
           stackFormat: 'string',
         },
+        maxReportBytes: 2_048,
       },
       public: {
-        public: {
+        policyOverride: {
           code: 'SOCKET_CLOSED',
           message: 'Try again.',
-          details: () => ({ a: 1 }),
+          detailsSelector: () => ({ a: 1 }),
         },
       },
     });
@@ -145,9 +151,9 @@ describe('toReports', () => {
   });
 
   test('bounds the diagnostic report through the nested budget', () => {
-    const captured = toReports(new Error('failure'), {
+    const captured = makeReportPair(new Error('failure'), {
       diagnostic: {
-        corj: { maxReportSize: 1024 },
+        maxReportBytes: 1024,
         context: { text: 'x'.repeat(12_000) },
       },
     });
@@ -160,41 +166,41 @@ describe('toReports', () => {
 
   test('validates every option bag before building a report', () => {
     for (const options of [null, [], 'x', 42]) {
-      expect(() => toReports('x', options as never)).toThrow(
+      expect(() => makeReportPair('x', options as never)).toThrow(
         code('APPEX_INVALID_OPTIONS'),
       );
     }
-    expect(() => toReports('x', { context: {} } as never)).toThrow(
+    expect(() => makeReportPair('x', { context: {} } as never)).toThrow(
       /unknown option "context"; known options: occurrenceId, diagnostic, public/,
     );
     for (const bag of [null, [], 'x', 42]) {
-      expect(() => toReports('x', { diagnostic: bag } as never)).toThrow(
+      expect(() => makeReportPair('x', { diagnostic: bag } as never)).toThrow(
         code('APPEX_INVALID_OPTIONS'),
       );
-      expect(() => toReports('x', { public: bag } as never)).toThrow(
+      expect(() => makeReportPair('x', { public: bag } as never)).toThrow(
         code('APPEX_INVALID_OPTIONS'),
       );
     }
     expect(() =>
-      toReports('x', { diagnostic: { occurrenceId: 'a' } } as never),
+      makeReportPair('x', { diagnostic: { occurrenceId: 'a' } } as never),
     ).toThrow(
-      /unknown option "occurrenceId"; known options: context, redact, corj/,
+      /unknown option "occurrenceId"; known options: context, redact, corj, maxReportBytes/,
     );
     expect(() =>
-      toReports('x', { public: { occurrenceId: 'a' } } as never),
+      makeReportPair('x', { public: { occurrenceId: 'a' } } as never),
     ).toThrow(
-      /unknown option "occurrenceId"; known options: public, redact, realm, corj/,
+      /unknown option "occurrenceId"; known options: policyOverride, redact, realm, corj, maxReportBytes/,
     );
-    expect(() => toReports('x', { publi: { message: 'a' } } as never)).toThrow(
-      code('APPEX_INVALID_OPTIONS'),
-    );
+    expect(() =>
+      makeReportPair('x', { publi: { message: 'a' } } as never),
+    ).toThrow(code('APPEX_INVALID_OPTIONS'));
   });
 
   test('reads the public override once and builds both reports from it', () => {
     let reads = 0;
-    const captured = toReports(new Error('plain'), {
+    const captured = makeReportPair(new Error('plain'), {
       public: {
-        public: {
+        policyOverride: {
           get code(): string {
             return reads++ === 0 ? 'FIRST_READ' : ({ evil: 1 } as never);
           },
@@ -211,20 +217,22 @@ describe('toReports', () => {
   test('throws instead of returning half a pair', () => {
     const error = new Error('plain');
     expect(() =>
-      toReports(error, { public: { public: { message: 42 } } as never }),
+      makeReportPair(error, {
+        public: { policyOverride: { message: 42 } } as never,
+      }),
     ).toThrow(code('APPEX_INVALID_PUBLIC_MESSAGE'));
     expect(() =>
-      toReports(error, { public: { public: { code: '' } } }),
+      makeReportPair(error, { public: { policyOverride: { code: '' } } }),
     ).toThrow(code('APPEX_INVALID_PUBLIC_CODE'));
     expect(() =>
-      toReports(error, { diagnostic: { corj: { maxDepth: -1 } } }),
+      makeReportPair(error, { diagnostic: { corj: { maxDepth: -1 } } }),
     ).toThrow(RangeError);
     expect(() =>
-      toReports(error, { diagnostic: { corj: { maxReportSize: 100 } } }),
-    ).toThrow(RangeError);
-    expect(() => toReports(error, { public: { realm: {} as never } })).toThrow(
-      code('APPEX_INVALID_TRUST_REALM'),
-    );
+      makeReportPair(error, { diagnostic: { maxReportBytes: 100 } }),
+    ).toThrow(code('APPEX_INVALID_OPTIONS'));
+    expect(() =>
+      makeReportPair(error, { public: { realm: {} as never } }),
+    ).toThrow(code('APPEX_INVALID_TRUST_REALM'));
   });
 
   test('a bad bag is rejected before any report work, realm included', () => {
@@ -238,9 +246,9 @@ describe('toReports', () => {
     const caught = new Counting('plain');
     const before = ran; // V8 may read `name` while constructing the error
 
-    expect(() => toReports(caught, { public: { realm: {} as never } })).toThrow(
-      code('APPEX_INVALID_TRUST_REALM'),
-    );
+    expect(() =>
+      makeReportPair(caught, { public: { realm: {} as never } }),
+    ).toThrow(code('APPEX_INVALID_TRUST_REALM'));
 
     // The diagnostic report reads `name`; nothing was built before the throw.
     expect(ran).toBe(before);
@@ -263,8 +271,8 @@ describe('toReports', () => {
       },
     };
     const publicBag = {
-      get public() {
-        reads.push('public.public');
+      get policyOverride() {
+        reads.push('public.policyOverride');
         return { code: 'ONCE' };
       },
       get corj() {
@@ -281,7 +289,7 @@ describe('toReports', () => {
       },
     };
 
-    const captured = toReports(new Error('plain'), {
+    const captured = makeReportPair(new Error('plain'), {
       get occurrenceId() {
         reads.push('occurrenceId');
         return 'trace-once';
@@ -301,7 +309,7 @@ describe('toReports', () => {
     expect(reads).toEqual([
       'diagnostic',
       'public',
-      'public.public',
+      'public.policyOverride',
       'public.corj',
       'public.redact',
       'public.realm',
@@ -316,11 +324,11 @@ describe('toReports', () => {
   });
 });
 
-describe('toReports fingerprints each report from its own bag', () => {
+describe('makeReportPair fingerprints each report from its own bag', () => {
   test('the same corj and redact in both bags agree', () => {
     const corj = { maxDepth: 1 };
-    const redact = createRedactionPolicy({ patterns: [/sk-[a-z]{10}/g] });
-    const { diagnostic, public: disclosed } = toReports(
+    const redact = makeRedactionPolicy({ patterns: [/sk-[a-z]{10}/g] });
+    const { diagnostic, public: disclosed } = makeReportPair(
       new Error('key sk-abcdefghij', { cause: new Error('y') }),
       { diagnostic: { corj, redact }, public: { corj, redact } },
     );
@@ -329,7 +337,7 @@ describe('toReports fingerprints each report from its own bag', () => {
   });
 
   test('the public bag turns the published hash off on its own', () => {
-    const { diagnostic, public: disclosed } = toReports(new Error('x'), {
+    const { diagnostic, public: disclosed } = makeReportPair(new Error('x'), {
       public: { corj: { fingerprintParts: null } },
     });
     expect(diagnostic.fingerprint).toMatch(/^fp1_/);
@@ -337,7 +345,7 @@ describe('toReports fingerprints each report from its own bag', () => {
   });
 
   test('off in the diagnostic bag alone leaves the public hash standing', () => {
-    const { diagnostic, public: disclosed } = toReports(new Error('x'), {
+    const { diagnostic, public: disclosed } = makeReportPair(new Error('x'), {
       diagnostic: { corj: { fingerprintParts: null } },
     });
     expect(diagnostic).not.toHaveProperty('fingerprint');
@@ -345,7 +353,7 @@ describe('toReports fingerprints each report from its own bag', () => {
   });
 
   test('a value with no stack gets a diagnostic hash and no public one', () => {
-    const { diagnostic, public: disclosed } = toReports('socket closed');
+    const { diagnostic, public: disclosed } = makeReportPair('socket closed');
     expect(diagnostic.fingerprint).toMatch(/^fp1_/);
     expect(disclosed).not.toHaveProperty('fingerprint');
   });
@@ -354,12 +362,12 @@ describe('toReports fingerprints each report from its own bag', () => {
     // The policy scrubs the constructor name, which the default recipe hashes;
     // the stack keeps its frames, so the public hash is still published.
     const caught = new SecretNamedFailure('boom');
-    const redact = createRedactionPolicy({ patterns: [/Secret/g] });
-    const { diagnostic, public: disclosed } = toReports(caught, {
+    const redact = makeRedactionPolicy({ patterns: [/Secret/g] });
+    const { diagnostic, public: disclosed } = makeReportPair(caught, {
       public: { redact },
     });
     expect(disclosed.fingerprint).toBe(
-      toPublicReport(caught, { redact }).fingerprint,
+      makePublicReport(caught, { redact }).fingerprint,
     );
     expect(disclosed.fingerprint).not.toBe(diagnostic.fingerprint);
   });

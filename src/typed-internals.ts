@@ -130,7 +130,7 @@ export function trustRealmApi(realm: unknown): TrustRealmApi | undefined {
   if (typeof api !== 'object' || api === null)
     throw invalid(
       'APPEX_INVALID_TRUST_REALM',
-      'realm must be a value returned by createTrustRealm',
+      'realm must be a value returned by makeTrustRealm',
     );
   const candidate = api as Partial<TrustRealmApi>;
   if (candidate.protocol !== TRUST_REALM_PROTOCOL)

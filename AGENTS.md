@@ -2,8 +2,8 @@
 
 Typed failures with two reports: a corj diagnostic report for operators and a
 public report for agents and users, correlated by one `occurrence_id`. Runtime API:
-`defineException`, `toDiagnosticReport`, `toPublicReport`, `toReports`,
-`decodePublicReport`, `createRedactionPolicy`, `createTrustRealm`,
+`defineException`, `makeDiagnosticReport`, `makePublicReport`, `makeReportPair`,
+`decodePublicReport`, `makeRedactionPolicy`, `makeTrustRealm`,
 `isTrustedException`.
 
 Exact signatures and one example per call: [docs/agent/api-card.md](docs/agent/api-card.md).
@@ -19,11 +19,11 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
    `({ tool }: { tool: string }) => ...`. Details are data only: no functions,
    accessors, arrays, or class instances.
 3. Give every kind an agent or user may see a `public` policy: `code`, display
-   `message`, and a `details` selector that returns only what the audience may
+   `message`, and a `detailsSelector` that returns only what the audience may
    see. Without a policy the public report is `INTERNAL_ERROR` /
    `Something went wrong`; a policy without `message` also yields the generic
    message. That default is the safe one.
-4. At a boundary, call `toReports(caught, { diagnostic: { context } })` and send
+4. At a boundary, call `makeReportPair(caught, { diagnostic: { context } })` and send
    `reports.diagnostic` to the trusted sink and `reports.public` in the response.
    One occurrence is resolved for both, so they share `occurrence_id` for every
    caught value, thrown primitives included. Each report's `fingerprint` comes
@@ -45,17 +45,18 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
    message linking to its section in errors.md. Fix the call site; do not catch it.
 9. Translate lower-level failures into your kinds and pass the original as
    `cause` (or `causes`). The diagnostic report lists the chain under `children`.
-10. Bound what a sink receives with `corj: { maxReportSize }` (at least 512): the
+10. Bound what a sink receives with top-level `maxReportBytes` (at least 512): the
     whole report, `context` and `reporting_errors` included, is held to that many
     UTF-8 bytes. Over budget, `context` goes first, whole
     (`context_omitted: 'max_size'`), then `reporting_errors`
     (`reporting_errors_omitted`), then error content is trimmed. `occurrence_id`,
-    `fingerprint` and `v` are never trimmed. Every corj option except `redact` is
-    available in `corj` — `redact` stays a top-level option both reports share;
+    `fingerprint` and `v` are never trimmed. Diagnostic CORJ options except
+    `redact`, `maxReportSize`, and `reportSizeUnit` are available in `corj`;
+    `redact` stays a top-level option both reports share;
     `inspection: 'no-invoke'` reports an untrusted value without running its
-    getters. A custom `corj: { onError }` is called with the RAW caught value,
+    getters. A custom `corj: { onReportingError }` is called with the RAW caught value,
     unscrubbed: never log its first argument to an untrusted sink.
-11. Build one `createRedactionPolicy({ keys, paths, patterns })` per service and
+11. Build one `makeRedactionPolicy({ keys, paths, patterns })` per service and
     pass it as `redact` to both reports. `keys` and `paths` are skip rules: the
     property is never read. `patterns` (each needs the `g` flag) and `transform`
     are scrub rules: they rewrite text wherever it appears. To remove a secret's
@@ -63,23 +64,23 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
     three documents: `$...` the caught value, `$context...` the context,
     `$public...` the selected public details; anchor a `RegExp` with `^\$\.` to
     keep it on the caught value. `keys` match a name everywhere. Redaction never
-    discloses: on a public report it runs on what the `details` selector chose.
+    discloses: on a public report it runs on what `detailsSelector` chose.
 12. Use `snapshotDetails: true` on a kind whose details are mutated after the
     throw, or whose reporting is deferred across an async boundary. It captures a
     deep frozen copy and rejects anything it cannot capture faithfully.
 13. Two loaded copies of this package do not trust each other, by design. To
     share typed identity and disclosure policies between them, create one
-    `createTrustRealm()` and pass it as `realm` to `defineException` in each copy
-    and to `isTrustedException` / `toPublicReport` / `toReports` in the reporter.
-    `toDiagnosticReport` takes no realm; occurrence ids already correlate.
+    `makeTrustRealm()` and pass it as `realm` to `defineException` in each copy
+    and to `isTrustedException` / `makePublicReport` / `makeReportPair` in the reporter.
+    `makeDiagnosticReport` takes no realm; occurrence ids already correlate.
 14. Override a kind's disclosure at the call with
-    `public: { code, message, details }`; `details` is a selector function or
+    `policyOverride: { code, message, detailsSelector }`; `detailsSelector` is a selector function or
     `null`. A value with no kind stays `INTERNAL_ERROR` unless the call gives it
     a policy: never build one from `caught.message`.
 
 ## Report shapes
 
-Diagnostic report (`v: "corj/v0.14"`): a corj report plus `occurrence_id`,
+Diagnostic report (`v: "corj/v0.15"`): a corj report plus `occurrence_id`,
 `fingerprint` (absent when `corj: { fingerprintParts: null }` turns it off),
 optional `context`, optional `reporting_errors`, and the
 `context_omitted` / `reporting_errors_omitted` flags a budget sets. A missing
@@ -98,7 +99,7 @@ meanings: https://github.com/dany-fedorov/caught-object-report-json#the-report
   },
   "stack": ["tools/Unavailable: Tool search is unavailable", "    at runTool (src/tools/search/boundary.ts:12:11)"],
   "children": [{ "id": "0", "path": "$.cause", "level": 1, "stack": ["Error: connection refused", "    at connect (src/tools/search/search.ts:8:9)"] }],
-  "v": "corj/v0.14",
+  "v": "corj/v0.15",
   "context": { "runId": "run-1", "tool": "search" }
 }
 ```
@@ -127,7 +128,7 @@ One directory per module that throws; the kinds first, the boundary last.
 src/tools/search/
   errors.ts        defineException calls, exported
   search.ts        throws them; lower-level failures become cause
-  boundary.ts      toDiagnosticReport + toPublicReport at the tool edge
+  boundary.ts      makeDiagnosticReport + makePublicReport at the tool edge
   search.test.ts   asserts on response.code, response.occurrence_id, diagnostic.children
 ```
 

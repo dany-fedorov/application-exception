@@ -1,6 +1,6 @@
 # Redaction policy — decision record (issue #43)
 
-Status: **implemented** as `createRedactionPolicy`, applied by
+Status: **implemented** as `makeRedactionPolicy`, applied by
 `caught-object-report-json` while it inspects the caught value.
 
 ## The rules in one minute
@@ -53,18 +53,18 @@ bound holding.
 ## One policy, three named documents
 
 A policy now holds **one** resolved corj policy. It is forwarded to one
-`CorjMaker`, cached per (`corj` options bag identity, policy), and that maker
+`CorjMaker` built from a one-read snapshot of each call's current CORJ bag, and that maker
 produces everything: the diagnostic report, the `context` document, the public
 report's `as_json`, and the scrubbed public `message`.
 
-The split is gone because corj 11 names its documents. Every path carries the
+The split is gone because CORJ names its documents. Every path carries the
 root of the document it belongs to:
 
 | Root | Document |
 | --- | --- |
 | `$...` | the caught value and its children |
 | `$context...` | the call's `context` |
-| `$public...` | the JSON the kind's `public.details` selector returned |
+| `$public...` | the JSON the kind's `public.detailsSelector` returned |
 
 A named root matches `/^\$([A-Za-z_][A-Za-z0-9_]*)?$/` — the name is optional, so
 the bare `$` is a root too — and a property path always
@@ -86,7 +86,7 @@ public details at `$public.<key>`, and delivers the public message as
 `stage: 'warning'` at `$public.message`. A 0.4 policy keyed on the old values
 simply stops matching, and nothing is redacted — silently. A `transform` is told
 the new paths, so it can tell the documents apart from `path` alone; keying it on
-`prop` did not change and is still the simplest rule.
+`sourceProperty` names the source property and is usually the simplest rule.
 
 **Fingerprint inputs go through the policy too.** Every value a `fingerprintParts`
 entry reads is offered under its own path — `$.details` for `{ field: 'details' }`,
@@ -96,18 +96,18 @@ policy removed is not hashed, and cannot be confirmed by guessing.
 
 ## The one flat string corj never sees
 
-`reporting_errors` records are corj's own, since corj 11: corj builds one record
-per failure, puts its `path` and `prop` through the policy, scrubs the text
+`reporting_errors` records are CORJ's own: CORJ builds one record per failure,
+puts its `path` and `sourceProperty` through the policy, scrubs the text
 **before** cutting it to 256 characters, and writes the replacement rather than
 the thrown message for a `stage: 'redact'` entry. Cutting first would let a
 secret that straddles the cut lose its tail, stop matching, and leak its head.
-`stage` and `key` are corj's vocabulary and are never scrubbed. This package no
+`stage` and `reportKey` are CORJ's vocabulary and are never scrubbed. This package no
 longer collects or scrubs those records; it only asks for them, and reads them
 out of the report.
 
 That leaves one string corj never sees: the public report's `message`, which
 this package renders from the kind's policy. It goes through
-`maker.scrubText(rendered, { path: '$public.message', key: 'message' })` — the
+`maker.scrubText(rendered, { path: '$public.message', reportKey: 'message' })` — the
 maker's own policy, applied with `stage: 'warning'` — **before** the
 4,096-character cut, so a replacement longer than what it replaced can never push
 the message past the bound.
@@ -130,7 +130,7 @@ reads. The post-production walk could only rewrite a value it had already
 caused to be produced.
 
 **The size budget is spent on surviving content.** Redaction happens during
-inspection, so `corj: { maxReportSize }` measures what is actually emitted. A
+inspection, so top-level `maxReportBytes` measures what is actually emitted. A
 replacement can still be longer than what it replaced, so a policy can enlarge a
 report; corj then drops `context`, then `reporting_errors`, then trims error
 content, and never the identifying fields.
@@ -160,7 +160,7 @@ becomes `{ '[redacted]': 1 }`. Two names that scrub to the same text collapse
 into one key and the last write wins; corj documents and tests this.
 
 **Selection and redaction stay distinct.** On a public report the policy is
-given only the output of the kind's `public.details` selector; the library never
+given only the output of the kind's `public.detailsSelector`; the library never
 feeds it anything the selector left out. A kind with no selector emits no
 `as_json`, and an unknown failure keeps the generic `INTERNAL_ERROR` shape. A
 `transform` is application code and can rewrite what it is given, so keep it free
@@ -171,7 +171,7 @@ a skip rule excludes, and property names as well as values. It must never quote
 its input in an error it throws. It also does not quite run last: corj re-applies
 `patterns` to a string it returns.
 
-**A policy failure shows only in the diagnostic report.** `toPublicReport` has no
+**A policy failure shows only in the diagnostic report.** `makePublicReport` has no
 `reporting_errors`; there the value is simply the replacement.
 
 ## corj behaviours worth knowing
@@ -201,7 +201,7 @@ the fields most likely to hold a session id or a file path.
 
 **A redacted children source is marked.** Excluding the property children come
 from yields `children_omitted: 'redacted'`, and the report still validates
-against `schemas/diagnostic-report-v5.json`.
+against `schemas/diagnostic-report-v6.json`.
 
 **No policy means no change.** Reports without `redact` take the same path as
 before, apart from the format version; the suite asserts the secret comes back
@@ -213,7 +213,7 @@ corj also offers `inspection: 'no-invoke'`, which reads nothing from the caught
 object that could run application code. 0.4.0 left it unexposed on purpose: it
 changes what every report contains, not just a redacted one. 0.5.0 exposes every
 corj option through one `corj` bag, so it needs no mirror option of its own —
-`toDiagnosticReport(caught, { corj: { inspection: 'no-invoke' } })`. The two
+`makeDiagnosticReport(caught, { corj: { inspection: 'no-invoke' } })`. The two
 compose as corj documents: `redact` decides what may be reported, `inspection`
 decides how much may run to report it. This package keeps corj's default, which
 is `'default'`; reading nothing is the caller's decision, per call site.

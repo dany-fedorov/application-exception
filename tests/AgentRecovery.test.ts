@@ -1,4 +1,4 @@
-import { toPublicReport } from '../src';
+import { makePublicReport } from '../src';
 import { chooseRecoveryAction } from '../examples/agent-recovery';
 
 describe('agent recovery example', () => {
@@ -7,12 +7,12 @@ describe('agent recovery example', () => {
     retryableCodes: ['TOOL_UNAVAILABLE'],
     remainingAttempts: 1,
   };
-  const report = toPublicReport(new Error('x'), {
+  const report = makePublicReport(new Error('x'), {
     occurrenceId: 'AE_retry',
-    public: {
+    policyOverride: {
       code: 'TOOL_UNAVAILABLE',
       message: 'The requested tool is temporarily unavailable.',
-      details: () => ({ tool: 'search' }),
+      detailsSelector: () => ({ tool: 'search' }),
     },
   });
   const received = () => JSON.parse(JSON.stringify(report)) as unknown;

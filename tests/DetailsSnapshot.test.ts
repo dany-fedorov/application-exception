@@ -1,5 +1,5 @@
 import { defineException } from '../src/typed';
-import { toPublicReport } from '../src/reporting';
+import { makePublicReport } from '../src/reporting';
 
 const code = (value: string) => expect.objectContaining({ code: value });
 
@@ -7,7 +7,10 @@ const Probe = defineException({
   tag: 'Probe',
   message: ({ detail }: { detail: { text: string } }) => detail.text,
   snapshotDetails: true,
-  public: { code: 'PROBE', details: ({ detail }) => ({ text: detail.text }) },
+  public: {
+    code: 'PROBE',
+    detailsSelector: ({ detail }) => ({ text: detail.text }),
+  },
 });
 
 const Shallow = defineException({
@@ -51,7 +54,7 @@ describe('snapshotDetails', () => {
     detail.text = 'changed';
 
     expect(failure.message).toBe('first');
-    expect(toPublicReport(failure).as_json).toEqual({ text: 'first' });
+    expect(makePublicReport(failure).as_json).toEqual({ text: 'first' });
   });
 
   test('never freezes the caller record or its nested objects', () => {
@@ -247,7 +250,8 @@ describe('a hostile value cannot pass itself off as capturable', () => {
       {},
       {
         getPrototypeOf: () => Date.prototype,
-        get: (_target, key) => (key === 'getTime' ? () => 'not a number' : undefined),
+        get: (_target, key) =>
+          key === 'getTime' ? () => 'not a number' : undefined,
       },
     );
 

@@ -3,12 +3,13 @@
 Every error is a `TypeError` with an enumerable `code` and a message of the
 form `<CODE>: <text>; see <this file>#<code>`. They signal a wrong call, not a
 runtime failure of your application: fix the call site instead of catching them.
-Errors from the options in the `corj` bag (`maxDepth`, `maxChildren`,
-`maxReportSize`, `stackFormat`, `metadata`, `fingerprintParts`, and every other
-corj option) propagate unchanged as corj's `TypeError` or `RangeError`: corj
+Errors from accepted options in the `corj` bag (`maxDepth`, `maxChildren`,
+`stackFormat`, `metadata`, `fingerprintParts`, and the other audience-specific
+CORJ options) propagate unchanged as corj's `TypeError` or `RangeError`: corj
 validates them when the maker is built, and its message names the option. This
 package rejects only what is its own: an unknown key, a `corj` that is not an
-object, `corj.redact`, and the `occurrenceId`, `redact` and `public` options
+object, unsupported nested keys, and the `occurrenceId`, `maxReportBytes`,
+`redact`, and `policyOverride` options
 below.
 
 ## APPEX_INVALID_TAG
@@ -46,16 +47,16 @@ defineException({ tag: 'tools/Failed', message: 'failed', idPrefix: 'TOOL_' });
 
 ## APPEX_INVALID_PUBLIC_POLICY
 
-When: `defineException` receives a `public` policy that is not an object, whose `code` is not a nonempty string of at most 128 units, whose `message` is neither a string nor a function, or whose `details` is not a function.
-Cause: a missing `code`, or `details` given as an object instead of a selector.
-Fix: declare `code`, an optional `message`, and an optional `details` function.
+When: `defineException` receives a `public` policy that is not an object, has an unknown key, whose `code` is not a nonempty string of at most 128 units, whose `message` is neither a string nor a function, or whose `detailsSelector` is not a function.
+Cause: a missing `code`, a legacy `details` key, or `detailsSelector` given as an object instead of a selector.
+Fix: declare `code`, an optional `message`, and an optional `detailsSelector` function.
 
 ```ts
 import { defineException } from 'application-exception';
 defineException({
   tag: 'tools/Failed',
   message: ({ tool }: { tool: string }) => `${tool} failed`,
-  public: { code: 'TOOL_FAILED', message: 'The tool failed.', details: ({ tool }) => ({ tool }) },
+  public: { code: 'TOOL_FAILED', message: 'The tool failed.', detailsSelector: ({ tool }) => ({ tool }) },
 });
 ```
 
@@ -87,77 +88,79 @@ new Failed({ causes: [new Error('primary down'), new Error('fallback down')] });
 
 ## APPEX_INVALID_OPTIONS
 
-When: `toDiagnosticReport`, `toPublicReport` or `toReports` receives options that are not an object (or an array), that contain an unknown key, that put `redact` inside `corj`, or whose `public.details` is neither a selector function nor `null`. The message lists the known keys.
+When: `makeDiagnosticReport`, `makePublicReport` or `makeReportPair` receives options that are not an object (or an array), that contain an unknown key, that put a reserved size/redaction key inside `corj`, whose `maxReportBytes` is invalid, or whose `policyOverride.detailsSelector` is neither a selector function nor `null`. The message lists the known keys.
 Cause and fix, per case:
 
 | Cause | Fix |
 | --- | --- |
 | a typo such as `contxt` | use only the listed keys |
-| a corj option at the top level: `maxReportSize`, `maxFinalReportSize`, `maxDepth`, `maxChildren`, `stackFormat`, `includeStack` | move it into the `corj` bag: `{ corj: { maxDepth: 2 } }`. `maxFinalReportSize` is gone; `corj: { maxReportSize }` bounds the whole report |
+| `maxDepth`, `maxChildren`, `stackFormat`, or another accepted CORJ option at the top level | move it into the `corj` bag: `{ corj: { maxDepth: 2 } }` |
+| `corj.maxReportSize` or `corj.reportSizeUnit` | move the total limit to top-level `maxReportBytes`; application-exception always counts UTF-8 bytes |
 | `corj: { redact }` | pass the policy as the top-level `redact`, which both reports share; one policy, one meaning, in both reports |
-| the old per-call `code`, `message` or `details` of `toPublicReport` | move them into one `public` bag: `{ public: { code, message, details } }` |
-| `public: { details: <object> }` | `details` is a selector function of the kind's details, or `null` to disclose nothing |
+| the old per-call `code`, `message`, `details`, or `public` bag of `makePublicReport` | move them into `policyOverride: { code, message, detailsSelector }` |
+| `policyOverride: { detailsSelector: <object> }` | `detailsSelector` is a function of the kind's details, or `null` to disclose nothing |
+| `maxReportBytes` below 512 (diagnostic) or 2,048 (public), non-integral, or unsafe | pass a safe integer at or above the audience minimum, omit it for the default, or pass `null` to disable the total cap |
 
 ```ts
-import { toDiagnosticReport, toPublicReport } from 'application-exception';
-toDiagnosticReport(new Error('x'), { context: { runId: 'r' }, corj: { maxDepth: 2 } });
-toPublicReport(new Error('x'), { public: { code: 'X', message: 'x', details: () => ({ a: 1 }) } });
+import { makeDiagnosticReport, makePublicReport } from 'application-exception';
+makeDiagnosticReport(new Error('x'), { context: { runId: 'r' }, corj: { maxDepth: 2 } });
+makePublicReport(new Error('x'), { policyOverride: { code: 'X', message: 'x', detailsSelector: () => ({ a: 1 }) } });
 ```
 
 ## APPEX_INVALID_OCCURRENCE_ID
 
 When: `options.occurrenceId` is not 1 to 128 printable ASCII characters without spaces — `/^[\x21-\x7e]{1,128}$/`, so no space, no control character, nothing outside ASCII.
 Cause: passing an empty string, a non-string identifier, or text with a space or a non-ASCII character. The rule is what keeps the id a bounded correlation token: it bypasses redaction and is never trimmed, so it has to be small and printable.
-Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded ASCII string. `toDiagnosticReport` and `toPublicReport` validate this option before they build a corj maker, so you see this coded error rather than corj's plain `TypeError`; `toReports` resolves both option bags first, so an invalid corj option there is reported before an invalid `occurrenceId`.
+Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded ASCII string. `makeDiagnosticReport` and `makePublicReport` validate this option before they build a corj maker, so you see this coded error rather than corj's plain `TypeError`; `makeReportPair` resolves both option bags first, so an invalid corj option there is reported before an invalid `occurrenceId`.
 
 ```ts
-import { toPublicReport } from 'application-exception';
-toPublicReport('thrown text', { occurrenceId: 'trace-42' });
+import { makePublicReport } from 'application-exception';
+makePublicReport('thrown text', { occurrenceId: 'trace-42' });
 ```
 
 ## APPEX_INVALID_PUBLIC_CODE
 
-When: `toPublicReport` or `toReports` receives `public.code` that is not a nonempty string of at most 128 units.
+When: `makePublicReport` or `makeReportPair` receives `policyOverride.code` that is not a nonempty string of at most 128 units.
 Cause: an empty code or a number.
 Fix: pass an upper-case identifier, or omit `code` to use the kind's policy.
 
 ```ts
-import { toPublicReport } from 'application-exception';
-toPublicReport(new Error('x'), { public: { code: 'SEARCH_UNAVAILABLE' } });
+import { makePublicReport } from 'application-exception';
+makePublicReport(new Error('x'), { policyOverride: { code: 'SEARCH_UNAVAILABLE' } });
 ```
 
 ## APPEX_INVALID_PUBLIC_MESSAGE
 
-When: `toPublicReport` or `toReports` receives a `public.message` that is neither a string nor a function of the details.
+When: `makePublicReport` or `makeReportPair` receives a `policyOverride.message` that is neither a string nor a function of the details.
 Cause: passing an Error, a number, or an object as the message.
 Fix: pass display text, or a function of the kind's details that returns display text, or omit `message` to use the kind's policy.
 
 ```ts
-import { toPublicReport } from 'application-exception';
-toPublicReport(new Error('x'), { public: { message: 'Search is temporarily unavailable.' } });
+import { makePublicReport } from 'application-exception';
+makePublicReport(new Error('x'), { policyOverride: { message: 'Search is temporarily unavailable.' } });
 ```
 
 ## APPEX_INVALID_TRUST_REALM
 
-When: a `realm` passed to `defineException`, `isTypedException`, `toPublicReport`, or `toReports` is not a realm this copy can speak to.
-Cause: a value that did not come from `createTrustRealm`, a realm built by a copy on a different realm protocol, or an object claiming the protocol without its methods. The message names both protocols.
-Fix: create the realm once with `createTrustRealm()` and pass that same object to every cooperating copy; align the package versions when the protocols differ. Omit `realm` to keep each copy isolated.
+When: a `realm` passed to `defineException`, `isTypedException`, `makePublicReport`, or `makeReportPair` is not a realm this copy can speak to.
+Cause: a value that did not come from `makeTrustRealm`, a realm built by a copy on a different realm protocol, or an object claiming the protocol without its methods. The message names both protocols.
+Fix: create the realm once with `makeTrustRealm()` and pass that same object to every cooperating copy; align the package versions when the protocols differ. Omit `realm` to keep each copy isolated.
 
 ```ts
-import { createTrustRealm, defineException, toPublicReport } from 'application-exception';
-const realm = createTrustRealm();
+import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
+const realm = makeTrustRealm();
 const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
-toPublicReport(new Timeout(), { realm });
+makePublicReport(new Timeout(), { realm });
 ```
 
 ## APPEX_INVALID_REDACTION_POLICY
 
-When: `createRedactionPolicy` is given malformed options, or a `redact` option is not a policy it produced.
+When: `makeRedactionPolicy` is given malformed options, or a `redact` option is not a policy it produced.
 Cause: a `patterns` entry without the `g` flag (a non-global pattern would replace only its first match), `keys` or `paths` holding something other than strings and regular expressions, `patterns` holding a non-regular-expression, a `replacement` that is not a string of at most 128 characters, a `transform` that is not a function or `null`, an unknown option key, or a hand-built object passed as `redact`.
-Fix: give every pattern the `g` flag, keep the options to `keys`, `paths`, `patterns`, `replacement` and `transform`, and build the policy once with `createRedactionPolicy` and share that object between reports.
+Fix: give every pattern the `g` flag, keep the options to `keys`, `paths`, `patterns`, `replacement` and `transform`, and build the policy once with `makeRedactionPolicy` and share that object between reports.
 
 ```ts
-import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
-const redact = createRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
-toDiagnosticReport(new Error('x'), { redact });
+import { makeRedactionPolicy, makeDiagnosticReport } from 'application-exception';
+const redact = makeRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
+makeDiagnosticReport(new Error('x'), { redact });
 ```

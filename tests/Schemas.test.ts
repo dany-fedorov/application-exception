@@ -1,13 +1,13 @@
 import Ajv2020 from 'ajv/dist/2020';
 import { CORJ_VERSION, restoreExpectedValues } from 'caught-object-report-json';
 import {
-  toDiagnosticReport,
-  toPublicReport,
-  toReports,
+  makeDiagnosticReport,
+  makePublicReport,
+  makeReportPair,
 } from '../src/reporting';
 import { defineException } from '../src/typed';
 
-const diagnosticSchema = require('../schemas/diagnostic-report-v5.json') as {
+const diagnosticSchema = require('../schemas/diagnostic-report-v6.json') as {
   $defs: { appexExtension: { properties: { v: { enum: string[] } } } };
 };
 const publicSchema: object = require('../schemas/public-report-v4.json');
@@ -21,7 +21,10 @@ const json = (value: unknown): unknown =>
 const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
-  public: { code: 'TOOL_UNAVAILABLE', details: ({ tool }) => ({ tool }) },
+  public: {
+    code: 'TOOL_UNAVAILABLE',
+    detailsSelector: ({ tool }) => ({ tool }),
+  },
 });
 
 /** An error whose `message` getter throws long, so the report carries reporting errors. */
@@ -52,7 +55,7 @@ describe('shipped schemas', () => {
         throw new Error('stack boom');
       },
     });
-    const report = toDiagnosticReport(error, {
+    const report = makeDiagnosticReport(error, {
       context: { runId: 'run-1' },
     });
     expect(report.context).toEqual({ runId: 'run-1' });
@@ -60,14 +63,14 @@ describe('shipped schemas', () => {
     expect(report.children?.length).toBeGreaterThan(0);
     expect(validateDiagnostic(json(report))).toBe(true);
     for (const caught of ['text', 42, null, undefined, { plain: true }]) {
-      expect(validateDiagnostic(json(toDiagnosticReport(caught)))).toBe(true);
+      expect(validateDiagnostic(json(makeDiagnosticReport(caught)))).toBe(true);
     }
   });
 
   test('accept a report that lost its context and its reporting errors', () => {
-    const budgeted = toDiagnosticReport(failing(), {
+    const budgeted = makeDiagnosticReport(failing(), {
       context: { runId: 'r'.repeat(200) },
-      corj: { maxReportSize: 600 },
+      maxReportBytes: 600,
     });
     expect(budgeted.context_omitted).toBe('max_size');
     expect(budgeted.reporting_errors_omitted).toBe('max_size');
@@ -76,14 +79,14 @@ describe('shipped schemas', () => {
 
   test('accept a report with its expected values restored', () => {
     const restored = restoreExpectedValues(
-      toDiagnosticReport(new Error('outer', { cause: new Error('inner') })),
+      makeDiagnosticReport(new Error('outer', { cause: new Error('inner') })),
     );
     expect(restored.v).toBe(`${CORJ_VERSION}-full`);
     expect(validateDiagnostic(json(restored))).toBe(true);
   });
 
   test('reject diagnostic reports without the extension contract', () => {
-    const report = toDiagnosticReport(new Error('x'));
+    const report = makeDiagnosticReport(new Error('x'));
     expect(validateDiagnostic({ ...report, occurrence_id: undefined })).toBe(
       false,
     );
@@ -112,11 +115,11 @@ describe('shipped schemas', () => {
 
   test('accept generated public reports and reject additions', () => {
     const error = new ToolUnavailable({ details: { tool: 'search' } });
-    const report = toPublicReport(error, {
-      public: { message: 'm'.repeat(5000) },
+    const report = makePublicReport(error, {
+      policyOverride: { message: 'm'.repeat(5000) },
     });
     expect(validatePublic(json(report))).toBe(true);
-    expect(validatePublic(toPublicReport('x'))).toBe(true);
+    expect(validatePublic(makePublicReport('x'))).toBe(true);
     expect(validatePublic({ ...report, stack: [] })).toBe(false);
     expect(validatePublic({ ...report, truncated: false })).toBe(false);
     expect(validatePublic({ ...report, code: '' })).toBe(false);
@@ -125,7 +128,7 @@ describe('shipped schemas', () => {
   });
 
   test('accept a public report whose fingerprint is turned off', () => {
-    const withoutFingerprint = toPublicReport(new Error('x'), {
+    const withoutFingerprint = makePublicReport(new Error('x'), {
       corj: { fingerprintParts: null },
     });
     expect(withoutFingerprint).not.toHaveProperty('fingerprint');
@@ -133,7 +136,7 @@ describe('shipped schemas', () => {
   });
 
   test('accept the public half of a paired capture', () => {
-    const captured = toReports(
+    const captured = makeReportPair(
       new ToolUnavailable({ details: { tool: 'search' } }),
       { diagnostic: { context: { runId: 'run-1' } } },
     );
@@ -145,28 +148,34 @@ describe('shipped schemas', () => {
 describe('the frozen schemas of earlier versions', () => {
   const diagnosticV3: object = require('../schemas/diagnostic-report-v3.json');
   const diagnosticV4: object = require('../schemas/diagnostic-report-v4.json');
+  const diagnosticV5: object = require('../schemas/diagnostic-report-v5.json');
   const publicV3: object = require('../schemas/public-report-v3.json');
   const frozenAjv = new Ajv2020({ strict: true, allErrors: true });
   const validateDiagnosticV3 = frozenAjv.compile(diagnosticV3);
   const validateDiagnosticV4 = frozenAjv.compile(diagnosticV4);
+  const validateDiagnosticV5 = frozenAjv.compile(diagnosticV5);
   const validatePublicV3 = frozenAjv.compile(publicV3);
 
   test('still load', () => {
     expect(typeof validateDiagnosticV3).toBe('function');
     expect(typeof validateDiagnosticV4).toBe('function');
+    expect(typeof validateDiagnosticV5).toBe('function');
     expect(typeof validatePublicV3).toBe('function');
   });
 
   test('do not accept the reports of the version after them', () => {
-    const report = toPublicReport(new Error('x'));
+    const report = makePublicReport(new Error('x'));
     expect(report.v).toBe('appex/public/v4');
     expect(validatePublicV3(json(report))).toBe(false);
     const asV3 = { ...json(report), v: 'appex/public/v3' };
     delete (asV3 as { fingerprint?: unknown }).fingerprint;
     expect(validatePublicV3(asV3)).toBe(true);
     expect(validatePublic(asV3)).toBe(false);
-    expect(validateDiagnosticV4(json(toDiagnosticReport(new Error('x'))))).toBe(
-      false,
-    );
+    expect(
+      validateDiagnosticV4(json(makeDiagnosticReport(new Error('x')))),
+    ).toBe(false);
+    expect(
+      validateDiagnosticV5(json(makeDiagnosticReport(new Error('x')))),
+    ).toBe(false);
   });
 });

@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.0 — 2026-09-20
+
+**Breaking.** The runtime API now uses descriptive names:
+`makeDiagnosticReport`, `makePublicReport`, `makeReportPair`,
+`makeRedactionPolicy`, and `makeTrustRealm`. The paired and override types are
+`ReportPair`, `ReportPairOptions`, and `PublicPolicyOverride`. The previous
+names are removed without aliases.
+
+- Public policies use `detailsSelector`; per-call disclosure uses
+  `policyOverride`. Unknown policy keys and all legacy spellings are rejected.
+- Diagnostic and public options accept top-level `maxReportBytes`. Diagnostic
+  limits have a 512-byte minimum and retain CORJ's default when omitted; public
+  limits are opt-in with a 2,048-byte minimum. `null` disables the total cap.
+  Both measure the complete compact JSON in UTF-8. Public reports omit
+  `as_json` whole before shortening `message`, preserving Unicode pairs.
+- Caller option bags are read into a snapshot per call and remain mutable.
+  Later top-level and nested mutations affect later calls; no bag is frozen or
+  cached by identity.
+- Diagnostic CORJ options exclude `redact`, `maxReportSize`, and
+  `reportSizeUnit`. Public CORJ options are limited to `inspection`,
+  `maxDepth`, `maxChildren`, `childrenSources`, `fingerprintParts`, and
+  `onReportingError`.
+- CORJ 12 updates diagnostic reports to `corj/v0.15`, including
+  `reportKey`/`sourceProperty` reporting-error fields and the exported
+  `CorjReportNode` type. The new schema is
+  `schemas/diagnostic-report-v6.json`; prior diagnostic schemas and public v3/v4
+  decoding remain available.
+
 ## 0.5.0 — 2026-09-19
 
 corj 11 (report format `corj/v0.14`) absorbs the mechanisms this package used to

@@ -378,7 +378,7 @@ describe('public policy', () => {
       public: {
         code: 'TOOL_UNAVAILABLE',
         message: ({ tool }) => `${tool} is unavailable`,
-        details: ({ tool }) => ({ tool }),
+        detailsSelector: ({ tool }) => ({ tool }),
       },
     });
     const error = new ToolUnavailable({ details: { tool: 'search' } });
@@ -416,6 +416,8 @@ describe('public policy', () => {
     ['non-string code', { code: 42 }],
     ['non-string message', { code: 'X', message: 42 }],
     ['non-function details', { code: 'X', details: {} }],
+    ['non-function details selector', { code: 'X', detailsSelector: {} }],
+    ['an unknown key', { code: 'X', nope: true }],
   ])('rejects %s public policies', (_label, policy) => {
     expect(() =>
       defineException({

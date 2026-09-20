@@ -7,13 +7,13 @@ import type {
 import { describeValue, invalid } from './errors';
 
 /**
- * What a `transform` is told about a value: `stage`, the report `key`, the
- * source `prop`, and a `path` whose root names the document: `$` the caught
+ * What a `transform` is told about a value: `stage`, `reportKey`,
+ * `sourceProperty`, and a `path` whose root names the document: `$` the caught
  * value, `$context` the context, `$public` the public report.
  */
 export type RedactionContext = CorjContext;
 
-/** Input of `createRedactionPolicy`: corj's policy input. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional. */
+/** Input of `makeRedactionPolicy`: corj's policy input. `keys` and `paths` skip properties; `patterns` and `transform` scrub text. All optional. */
 export type RedactionPolicyOptions = CorjRedactPolicyInput;
 
 /** An opaque, reusable redaction policy. Build it once, at startup, and share it between reports. */
@@ -21,7 +21,7 @@ export interface RedactionPolicy {
   readonly [REDACTION_POLICY]: CorjRedactPolicy;
 }
 
-/** Module-private mark: only `createRedactionPolicy` can mint a policy. */
+/** Module-private mark: only `makeRedactionPolicy` can mint a policy. */
 export const REDACTION_POLICY = Symbol('application-exception/RedactionPolicy');
 
 /** corj's own explanation, without the `TypeError:` prefix `String` adds. */
@@ -31,7 +31,7 @@ function corjMessage(failure: unknown): string {
 
 /**
  * Build a reusable redaction policy, accepted as `redact` by
- * `toDiagnosticReport`, `toPublicReport`, and `toReports`.
+ * `makeDiagnosticReport`, `makePublicReport`, and `makeReportPair`.
  *
  * **Skip** rules (`keys`, `paths`) name properties corj never reads, so an
  * excluded getter never runs. **Scrub** rules (`patterns`, `transform`) rewrite
@@ -41,12 +41,8 @@ function corjMessage(failure: unknown): string {
  * - To remove a secret's *text*, use `patterns`: skipping a property does not
  *   remove its text elsewhere (`keys: ['message']` leaves it in `stack`), and
  *   hides the value, not the name.
- * - `keys` match a name everywhere. `paths` are JSON paths into three documents:
- *   `$...` the caught value, `$context...`, `$public...` the selected details;
- *   anchor a `RegExp` with `^\$\.` to keep it on the caught value.
- * - Every pattern needs the `g` flag; `replacement` is inserted literally.
  * - Redaction never discloses: on a public report the policy is given only what
- *   the kind's `public.details` selector returned.
+ *   the kind's `public.detailsSelector` returned.
  *
  * A policy that throws fails closed: the value becomes the replacement. The
  * diagnostic report lists the failure in `reporting_errors` with
@@ -56,16 +52,16 @@ function corjMessage(failure: unknown): string {
  * @throws `APPEX_INVALID_REDACTION_POLICY`
  * @example
  * ```ts
- * import { createRedactionPolicy, toDiagnosticReport } from 'application-exception';
- * const redact = createRedactionPolicy({
+ * import { makeRedactionPolicy, makeDiagnosticReport } from 'application-exception';
+ * const redact = makeRedactionPolicy({
  *   keys: ['password', /token$/i],
  *   patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
  * });
- * const report = toDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
+ * const report = makeDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
  * console.log(report.stack?.[0]); // 'Error: bad key [redacted]'
  * ```
  */
-export function createRedactionPolicy(
+export function makeRedactionPolicy(
   options: RedactionPolicyOptions = {},
 ): RedactionPolicy {
   if (typeof options !== 'object' || options === null || Array.isArray(options))
@@ -97,7 +93,7 @@ export function compiledPolicy(policy: unknown): CorjRedactPolicy | undefined {
   if (typeof compiled !== 'object' || compiled === null)
     throw invalid(
       'APPEX_INVALID_REDACTION_POLICY',
-      'redact must be a value returned by createRedactionPolicy',
+      'redact must be a value returned by makeRedactionPolicy',
     );
   return compiled as CorjRedactPolicy;
 }
