@@ -42,11 +42,28 @@ readiness.
 - corj implementation verification: 32 suites, 1,509 tests, 25 snapshots,
   100% statements/branches/functions/lines; build and packed Node CJS/ESM, Bun,
   declaration-resolution, encapsulation, and Vite/Chromium consumers passed.
-- corj draft PR: https://github.com/dany-fedorov/caught-object-report-json/pull/225.
-- Initial feature CI run: `35530794841`; independent source review is pending.
+- corj merged PR: https://github.com/dany-fedorov/caught-object-report-json/pull/225.
+- Feature CI run `35530794841` passed all jobs (test and Node 20/24 consumers).
+- Independent corj spec and quality review approved without findings.
 - Release coordination ruling: run feature CI, then integrate the reviewed tree
   with a `[skip ci]` merge and annotated tag pushed atomically. This avoids
   concurrent automated/manual npm publication. Publish the exact checked tgz.
   Generate tracked corj Typedoc locally; merge schemas before npm publication
   because their URLs resolve from GitHub main. Manual publication does not claim
   GitHub Actions provenance.
+
+- corj release merge: `db067389d76ae52545de342b58687978b2e18cb8`, tag
+  `v12.0.0`; release tree matched reviewed implementation byte for byte. Fresh
+  merged-tree coverage/build checks passed. Main and tag were pushed atomically;
+  only Pages deployment ran, with no competing package release workflow.
+- All six public v0.15/v0.15-full schema URLs returned HTTP 200 and valid JSON.
+- npm published corj 12.0.0; registry version and latest tag verified.
+  Registry integrity and downloaded bytes match the reviewed tarball. Artifact SHA256:
+  `cbfd3740685b433e15e6a5a77ca2fa4f36f9305b3776cbb1467eda5ab2995048`.
+- Original corj main checkout fast-forwarded cleanly to the release merge.
+
+- Clean registry installation passed descriptive-export, removed-alias,
+  merged-bag rejection and v0.15 report checks. Used an isolated fresh npm cache
+  because the existing cache briefly retained pre-publication metadata.
+- corj GitHub release:
+  https://github.com/dany-fedorov/caught-object-report-json/releases/tag/v12.0.0.
