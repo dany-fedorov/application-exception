@@ -99,3 +99,32 @@ those steps are complete.
   artifact. CI [35537320361](https://github.com/dany-fedorov/application-exception/actions/runs/35537320361)
   passed Node 18/20/24, Bun and browser on the implementation commit.
   Final approval/release results are recorded below.
+
+## Final review and downstream release
+
+- Final independent Sol medium review approved both libraries and the complete
+  integration. No findings remain open. The only downstream corrections were
+  the upstream migration link and repacking its included changelog; runtime
+  code did not change after the full test gate.
+- Final source/documentation CI
+  [35537520146](https://github.com/dany-fedorov/application-exception/actions/runs/35537520146)
+  passed all Node 18/20/24, Bun and browser jobs on `5f3ee47`. Subsequent
+  pre-merge commits updated only this release record.
+- PR #53 merged as `a1795f9db43d79a485b0b05ac714f9bc8a5be6be`, with a tree
+  identical to the reviewed feature head. Main and annotated `v0.7.0` were
+  pushed atomically; no competing publication workflow ran. npm accepted the
+  exact final tarball. The [GitHub release](https://github.com/dany-fedorov/application-exception/releases/tag/v0.7.0)
+  contains before/after examples, a migration checklist and upstream links.
+- Both original checkouts were fast-forwarded to released main and rebuilt;
+  application-exception's installed dependency was updated to registry corj13.
+  Registry download verification and final cleanup follow below.
+- Final registry verification succeeded: application-exception latest is
+  0.7.0, SHA-512 integrity and downloaded bytes match the reviewed artifact.
+  A fresh registry installation passed the independent integration smoke.
+  Both GitHub releases are published (not draft/prerelease), and both PRs are
+  merged. Temporary publication credentials are removed during final cleanup.
+- Declaration removal checks distinguish absent exports from private helper
+  declarations; TS2305/2459/2724 are accepted only when every removed name is
+  rejected. No public compatibility alias was retained.
+
+All implementation, review, release and verification tasks are complete.
