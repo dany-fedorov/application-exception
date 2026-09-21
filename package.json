@@ -76,7 +76,7 @@
     "ajv": "^8.11.2",
     "axios": "^1.2.1",
     "chokidar": "^3.5.3",
-    "date-fns": "^2.29.3",
+    "date-fns": "^4.4.0",
     "effect": "3.22.2",
     "eslint": "8.31.0",
     "eslint-config-prettier": "8.6.0",
