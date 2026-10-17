@@ -164,6 +164,29 @@ describe('the frozen schemas of earlier versions', () => {
     expect(typeof validatePublicV3).toBe('function');
   });
 
+  test.each([
+    [
+      'v5',
+      validateDiagnosticV5,
+      { v: 'corj/v0.14', occurrence_id: 'AE_fixture' },
+    ],
+    ['v6', validateDiagnostic, json(makeDiagnosticReport('x'))],
+  ])(
+    '%s diagnostic roots allow extensions but validate known fields',
+    (_version, validate, report) => {
+      expect(validate(report)).toBe(true);
+      expect(validate({ ...report, contxt: {} })).toBe(true);
+      expect(
+        validate({
+          ...report,
+          $schema: 'https://json-schema.org/draft/2020-12/schema',
+        }),
+      ).toBe(true);
+      expect(validate({ ...report, context_omitted: 'typo' })).toBe(false);
+      expect(validate({ ...report, occurrence_id: '' })).toBe(false);
+    },
+  );
+
   test('do not accept the reports of the version after them', () => {
     const report = makePublicReport(new Error('x'));
     expect(report.v).toBe('appex/public/v4');

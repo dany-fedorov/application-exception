@@ -287,7 +287,7 @@ describe('decodePublicReport', () => {
       'an unknown field',
       { ...valid, stack: [] },
       'Unexpected field',
-      '$.stack',
+      '$["stack"]',
     ],
     [
       'another version',
@@ -329,13 +329,13 @@ describe('decodePublicReport', () => {
       'a non-finite number',
       { ...valid, as_json: { n: Number.NaN } },
       'Expected a finite number',
-      '$.as_json.n',
+      '$.as_json["n"]',
     ],
     [
       'an undefined value',
       { ...valid, as_json: { n: undefined } },
       'Expected a JSON value',
-      '$.as_json.n',
+      '$.as_json["n"]',
     ],
     [
       'a function',
@@ -347,7 +347,7 @@ describe('decodePublicReport', () => {
       'a class instance inside',
       { ...valid, as_json: { d: new Date() } },
       'Expected a JSON value',
-      '$.as_json.d',
+      '$.as_json["d"]',
     ],
   ])('rejects %s', (_label, input, reason, path) => {
     expect(decodePublicReport(input)).toEqual({ ok: false, reason, path });
@@ -871,7 +871,9 @@ describe('decodePublicReport reads v3 and v4', () => {
     const decoded = decodePublicReport({ ...v4, as_json: { [key]: deep } });
     if (decoded.ok) throw new Error('expected a rejection');
     expect(decoded.path.length).toBeLessThanOrEqual(256);
-    expect(decoded.path.startsWith(`$.as_json.${key.slice(0, 64)}`)).toBe(true);
+    expect(
+      decoded.path.startsWith(`$.as_json[${JSON.stringify(key.slice(0, 64))}]`),
+    ).toBe(true);
     expect(decoded.path).not.toContain('A'.repeat(65));
 
     // Bounded segments still add up, so the whole path is cut too.
@@ -881,7 +883,7 @@ describe('decodePublicReport reads v3 and v4', () => {
     expect(deepPath).toEqual({
       ok: false,
       reason: 'Expected a JSON value',
-      path: `$.as_json.${long}.${long}.${long}.${long}`.slice(0, 256),
+      path: '$.as_json' + `["${long}"]`.repeat(3) + '…',
     });
   });
 

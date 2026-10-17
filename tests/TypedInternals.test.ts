@@ -11,6 +11,48 @@ import {
 } from '../src/typed-internals';
 
 describe('typed internals', () => {
+  test.each(['A', 'azAZ09_.:-', 'a'.repeat(128)])(
+    'adopts narrow foreign id %s',
+    (occurrenceId) => {
+      expect(
+        brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, occurrenceId }),
+      ).toBe(occurrenceId);
+    },
+  );
+
+  test.each([
+    '<img/src/onerror=alert(1)>',
+    '"quoted"',
+    "'quoted'",
+    'a/b',
+    'a\\b',
+    'a'.repeat(129),
+    '',
+  ])('rejects unsafe foreign id %s', (occurrenceId) => {
+    expect(
+      brandedOccurrenceId({ [TYPED_EXCEPTION_BRAND]: true, occurrenceId }),
+    ).toBeUndefined();
+  });
+
+  test('does not read brand or occurrence accessors', () => {
+    let reads = 0;
+    const brandGetter = {
+      get [TYPED_EXCEPTION_BRAND]() {
+        reads++;
+        return true;
+      },
+    };
+    const idGetter = {
+      [TYPED_EXCEPTION_BRAND]: true,
+      get occurrenceId() {
+        reads++;
+        return 'AE_ok';
+      },
+    };
+    expect(brandedOccurrenceId(brandGetter)).toBeUndefined();
+    expect(brandedOccurrenceId(idGetter)).toBeUndefined();
+    expect(reads).toBe(0);
+  });
   test('registers instances and their public policy', () => {
     const withPolicy = new Error('a');
     const withoutPolicy = new Error('b');

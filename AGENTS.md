@@ -73,7 +73,10 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
     share typed identity and disclosure policies between them, create one
     `makeTrustRealm()` and pass it as `realm` to `defineException` in each copy
     and to `isTrustedException` / `makePublicReport` / `makeReportPair` in the reporter.
-    `makeDiagnosticReport` takes no realm; occurrence ids already correlate.
+    `makeDiagnosticReport` takes no realm. Foreign IDs correlate automatically
+    only within `/^[A-Za-z0-9_.:-]{1,128}$/`; other IDs get a memoized replacement.
+    For older-copy or standalone-corj correlation, use an explicit trusted
+    `occurrenceId`; see docs/design/cross-copy-trust.md.
 14. Override a kind's disclosure at the call with
     `policyOverride: { code, message, detailsSelector }`; `detailsSelector` is a selector function or
     `null`. A value with no kind stays `INTERNAL_ERROR` unless the call gives it

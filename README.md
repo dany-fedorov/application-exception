@@ -145,19 +145,28 @@ frameless prose, and any recipe without `stack` — `['message']` included — g
 and a reader who can guess that text could confirm the guess. A stack-backed
 hash still covers every other part of the recipe, so adding `message` to the
 public bag's recipe puts the message into the hash next to the frames; frame
-text is unguessable only to a reader who does not know the deployed source and
-its paths.
-Component limits are `message` 4,096 UTF-16 units and `as_json` 16,384 UTF-8
+text does not prevent chosen-call comparisons. A reader who can trigger the same
+failure site with candidate sensitive text can compare the resulting hashes and
+confirm a guess without knowing the frames. Exclude sensitive recipe parts,
+redact their inputs, or withhold the public fingerprint. This warning applies
+when the recipe includes sensitive text; the default recipe does not necessarily
+hash message text.
+Producer component limits remain `message` 4,096 UTF-16 units and `as_json` 16,384 UTF-8
 bytes. Top-level `maxReportBytes` can optionally cap the complete compact JSON
 at 2,048 bytes or more; on overflow `as_json` is omitted whole before `message`
 is shortened. Any cut sets `truncated: true`.
 
-`occurrence_id` is a bounded printable-ASCII token, not trusted text: a branded
-value that a caller never minted can choose its own, within
-`/^[\x21-\x7e]{1,128}$/` (see
-[docs/design/cross-copy-trust.md](docs/design/cross-copy-trust.md)). Treat it as
-data — escape it when you render it, never interpolate it into markup, a shell
-command, or an instruction to a model.
+Automatic adoption of a foreign branded value's `occurrenceId` accepts only
+`/^[A-Za-z0-9_.:-]{1,128}$/`. Other foreign IDs get a memoized generated ID, so
+paired and standalone reports from this copy still correlate. Locally registered
+instances and explicit caller IDs retain the printable-ASCII rule
+`/^[\x21-\x7e]{1,128}$/`. Older package copies or standalone corj may preserve an
+ID this release replaces; use the same explicit trusted `occurrenceId` override
+where cross-version correlation is required (see
+[docs/design/cross-copy-trust.md](docs/design/cross-copy-trust.md)). Neither
+alphabet authenticates an ID or makes it secret. Treat it as data: escape it
+when rendering it; never interpolate it into markup, a shell command, or a model
+instruction.
 
 The `policyOverride` option overrides the kind's policy for this call, field by field:
 `code`, `message` (a string or a function of the details) and `detailsSelector` (a
@@ -193,6 +202,21 @@ if (decoded.ok && decoded.report.code === 'TOOL_UNAVAILABLE') {
   console.log('retry', decoded.report.occurrence_id);
 }
 ```
+
+The decoder measures field text limits in Unicode code points, as JSON Schema
+does. Its receiver resource policy also limits `as_json` to depth 32, 10,000
+values, and 16,384 UTF-8 bytes of compact JSON, counting keys, delimiters,
+escaping, and punctuation. It rejects excess data and sparse arrays rather than
+truncating received content. These resource limits go beyond wire-schema
+validation; producer limits above are unchanged. Enforce transport byte limits
+before parsing JSON as well.
+
+Rejection `path` values use JSON-quoted bracket notation for dynamic keys,
+retaining at most 64 UTF-16 units per key without splitting a surrogate pair and
+256 units overall. If a complete segment does not fit, it is omitted and the
+path ends in an ellipsis. Quoting and bounding do not make the sender-influenced
+path trusted: escape it for its destination and treat it as data. The decoder
+does not promise accessor-free handling of arbitrary Proxy inputs.
 
 ## Define and handle kinds
 
@@ -337,6 +361,11 @@ published unchanged for readers of older reports:
 `diagnostic-report-v4.json` and `public-report-v3.json` for 0.4.0
 (`v: "corj/v0.13"`, `appex/public/v3`), and `diagnostic-report-v3.json` for
 0.3.0 (`v: "corj/v0.12"`).
+
+Diagnostic roots are intentionally open for extension compatibility: v5 and v6
+accept unknown fields such as `contxt` and valid `$schema` metadata, while still
+validating known fields. Optional-field typos therefore pass validation. Public
+roots are closed. Historical schemas retain their published behavior.
 
 ## Validate a change
 

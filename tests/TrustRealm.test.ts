@@ -4,9 +4,14 @@ import {
   isTrustedException,
   isTypedException,
   makePublicReport,
+  makeReportPair,
 } from '../src/index';
 import type { TrustRealm } from '../src/index';
-import { TRUST_REALM_API, TYPED_EXCEPTION_BRAND } from '../src/typed-internals';
+import {
+  TRUST_REALM_API,
+  TYPED_EXCEPTION_BRAND,
+  trustedPublicPolicyOf,
+} from '../src/typed-internals';
 
 const code = (value: string) => expect.objectContaining({ code: value });
 
@@ -312,6 +317,80 @@ describe('a realm may not hand back a policy the package would reject', () => {
     }) as unknown as TrustRealm;
 
   const foreign = () => new Error('boom');
+
+  test('uses the first changing code and message renderer on a standalone report', () => {
+    let codeReads = 0;
+    let messageReads = 0;
+    const policy = {
+      get code() {
+        return ++codeReads === 1 ? 'OK' : '';
+      },
+      get message() {
+        return ++messageReads === 1 ? () => 'Safe message' : 7;
+      },
+    };
+    const report = makePublicReport(foreign(), { realm: withPolicy(policy) });
+    expect(report.code).toBe('OK');
+    expect(report.message).toBe('Safe message');
+    expect(codeReads).toBe(1);
+    expect(messageReads).toBe(1);
+  });
+
+  test('reads each foreign policy field once and uses only its validated value', () => {
+    const reads = { code: 0, message: 0, details: 0 };
+    const policy = {
+      get code() {
+        if (++reads.code > 1) throw new Error('second code read');
+        return 'OK';
+      },
+      get message() {
+        return ++reads.message === 1 ? 'Safe message' : 'Changed message';
+      },
+      get details() {
+        return ++reads.details === 1
+          ? () => ({ safe: true })
+          : () => ({ secret: 'leaked' });
+      },
+    };
+    const report = makeReportPair(foreign(), {
+      public: { realm: withPolicy(policy) },
+    });
+    expect(report.public.code).toBe('OK');
+    expect(report.public.message).toBe('Safe message');
+    expect(report.public.as_json).toEqual({ safe: true });
+    expect(reads).toEqual({ code: 1, message: 1, details: 1 });
+  });
+
+  test('detaches and freezes a validated policy, including optional fields', () => {
+    const policy = { code: 'OK', message: 'Safe' };
+    const snapshot = trustedPublicPolicyOf(
+      foreign(),
+      withPolicy(policy)[TRUST_REALM_API],
+    );
+    expect(snapshot).not.toBe(policy);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    policy.code = 'CHANGED';
+    expect(snapshot?.code).toBe('OK');
+    expect(
+      makePublicReport(foreign(), {
+        realm: withPolicy(Object.freeze({ code: 'FROZEN' })),
+      }).code,
+    ).toBe('FROZEN');
+  });
+
+  test.each(['code', 'message', 'details'])(
+    'fails closed when the first %s read throws',
+    (field) => {
+      const policy = Object.defineProperty({ code: 'OK' }, field, {
+        get() {
+          throw new Error('first read');
+        },
+      });
+      expect(
+        makePublicReport(foreign(), { realm: withPolicy(policy) }).code,
+      ).toBe('INTERNAL_ERROR');
+    },
+  );
 
   test.each([
     ['an empty code', { code: '' }],

@@ -5,10 +5,12 @@ form `<CODE>: <text>; see <this file>#<code>`. They signal a wrong call, not a
 runtime failure of your application: fix the call site instead of catching them.
 Errors from accepted options in the `corj` bag (`maxDepth`, `maxChildren`,
 `stackFormat`, `metadata`, `fingerprintParts`, and the other audience-specific
-CORJ options) propagate unchanged as corj's `TypeError` or `RangeError`: corj
-validates them when the maker is built, and its message names the option. This
-package rejects only what is its own: an unknown key, a `corj` that is not an
-object, unsupported nested keys, and the `occurrenceId`, `maxReportBytes`,
+CORJ options) propagate unchanged as corj's `TypeError` or `RangeError`, except
+that an array supplied as diagnostic `corj.metadata` throws
+`APPEX_INVALID_OPTIONS` from this package. Corj validates other accepted values
+when the maker is built, and its message names the option. This package also
+rejects an unknown key, a `corj` that is not an object, unsupported nested keys,
+and the `occurrenceId`, `maxReportBytes`,
 `redact`, and `policyOverride` options
 below.
 
@@ -88,7 +90,7 @@ new Failed({ causes: [new Error('primary down'), new Error('fallback down')] });
 
 ## APPEX_INVALID_OPTIONS
 
-When: `makeDiagnosticReport`, `makePublicReport` or `makeReportPair` receives options that are not an object (or an array), that contain an unknown key, that put a reserved size/redaction key inside `corj`, whose `maxReportBytes` is invalid, or whose `policyOverride.detailsSelector` is neither a selector function nor `null`. The message lists the known keys.
+When: `makeDiagnosticReport`, `makePublicReport` or `makeReportPair` receives options that are not an object (or an array), that contain an unknown key, that put a reserved size/redaction key inside `corj`, whose diagnostic `corj.metadata` is an array, whose `maxReportBytes` is invalid, or whose `policyOverride.detailsSelector` is neither a selector function nor `null`. Unknown-key messages list the known keys.
 Cause and fix, per case:
 
 | Cause | Fix |
@@ -97,6 +99,7 @@ Cause and fix, per case:
 | `maxDepth`, `maxChildren`, `stackFormat`, or another accepted CORJ option at the top level | move it into the `corj` bag: `{ corj: { maxDepth: 2 } }` |
 | `corj.maxReportSize` or `corj.reportSizeUnit` | move the total limit to top-level `maxReportBytes`; application-exception always counts UTF-8 bytes |
 | `corj: { redact }` | pass the policy as the top-level `redact`, which both reports share; one policy, one meaning, in both reports |
+| an array as diagnostic `corj.metadata` | use a boolean or metadata options object, or omit it; arrays throw `APPEX_INVALID_OPTIONS: corj metadata must not be an array` |
 | the old per-call `code`, `message`, `details`, or `public` bag of `makePublicReport` | move them into `policyOverride: { code, message, detailsSelector }` |
 | `policyOverride: { detailsSelector: <object> }` | `detailsSelector` is a function of the kind's details, or `null` to disclose nothing |
 | `maxReportBytes` below 512 (diagnostic) or 2,048 (public), non-integral, or unsafe | pass a safe integer at or above the audience minimum, omit it for the default, or pass `null` to disable the total cap |

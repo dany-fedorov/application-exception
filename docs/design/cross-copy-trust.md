@@ -17,9 +17,21 @@ process, so a value that merely *claims* to be a typed exception must not be
 able to pick its own public code.
 
 One thing already crossed the boundary and still does: `brandedOccurrenceId`
-reads `occurrenceId` from a foreign branded value's data properties, so
-correlation between copies survives with or without a realm. Only the policy
-needed a decision.
+reads `occurrenceId` from a foreign branded value's data properties. Automatic
+adoption now requires `/^[A-Za-z0-9_.:-]{1,128}$/`, independently of realm policy
+trust. Other foreign IDs receive a memoized generated replacement. Paired and
+standalone reports from this package copy use the same resolved ID.
+
+Locally registered occurrences and explicit caller IDs retain the existing
+printable-ASCII rule `/^[\x21-\x7e]{1,128}$/`. Older copies and standalone corj
+reporters may retain a foreign ID that this release replaces, so correlation
+with them is not unconditional. Where required, validate an ID from a trusted
+source and pass the same explicit `occurrenceId` override to each reporter.
+Application-exception passes its resolved ID explicitly to corj; no corj change
+is required. Reports received from older senders still decode according to
+their published schemas. The narrower automatic alphabet is neither
+authentication nor secrecy: escape IDs for their destination and treat them as
+data, never as markup, shell commands, or model instructions.
 
 ## The assumption
 
@@ -54,8 +66,9 @@ isTrustedException(caught, realm);      // true across copies
 
 `realm` is accepted by `defineException`, `isTrustedException`, `makePublicReport`,
 and `makeReportPair`. `makeDiagnosticReport` does not take one: a diagnostic report
-consults no disclosure policy, and occurrence correlation across copies already
-works through `brandedOccurrenceId` without any opt-in.
+consults no disclosure policy. Foreign IDs that pass the automatic adoption rule
+correlate across copies through `brandedOccurrenceId` without any opt-in; the
+compatibility limits above apply independently of a realm.
 
 A realm holds its own `WeakSet`/`WeakMap` behind a frozen method table published
 under `Symbol.for('application-exception/TrustRealm')`. The methods, not the
@@ -79,7 +92,8 @@ share one registry.
   have its policy shadowed by a realm.
 - **A hostile realm cannot break reporting.** If `has` or `policyOf` throws, or
   returns something that is not a policy, the value falls back to the safe
-  generic behaviour.
+  generic behaviour. A foreign policy is read once into a validated snapshot;
+  its fields are not read again when applying disclosure.
 - **Version mismatch is explicit.** A realm records the protocol it speaks
   (`appex/realm/v1`). A copy meeting a different protocol, or a realm claiming
   the protocol without its methods, throws `APPEX_INVALID_TRUST_REALM` naming

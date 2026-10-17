@@ -104,8 +104,8 @@ Create an explicit trust boundary that cooperating copies of this package can
 share. Pass the returned object as `realm` to `defineException` in each copy
 that defines failures, and as `realm` to `isTrustedException`,
 `makePublicReport`, or `makeReportPair` in the copy that reports them.
-`makeDiagnosticReport` takes no realm: a diagnostic report consults no
-disclosure policy, and occurrence ids already correlate across copies.
+`makeDiagnosticReport` takes no realm; foreign ids correlate automatically
+only when they match `[A-Za-z0-9_.:-]{1,128}`. See the trust realm recipe.
 
 ```ts
 import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
@@ -244,11 +244,11 @@ console.log(disclosed.code, occurrence_id); // 'INTERNAL_ERROR' 'AE_…'
 function decodePublicReport(value: unknown): DecodePublicReportResult;
 ```
 
-Validate a public report received as JSON and return a detached copy, or
-the first reason it is not a public report. Branch on `report.code` after
-`ok`; escalate on `!ok` with `reason` and `path`. Both `appex/public/v3` and
-`appex/public/v4` are accepted, and the decoded report keeps the `v` it
-arrived with, so a v3 sender stays readable while services upgrade.
+Detach a v3/v4 public report, keeping its version. Branch on `report.code`
+after `ok`; escalate `!ok` with `reason` and sender-influenced `path` data.
+Text bounds count code points; reject details beyond depth 32, 10,000 values,
+or 16,384 UTF-8 compact JSON bytes. Paths quote keys (64 UTF-16 units, surrogate
+safe) in complete bracket segments within 256 units, with an ellipsis if cut.
 
 ```ts
 import { decodePublicReport } from 'application-exception';

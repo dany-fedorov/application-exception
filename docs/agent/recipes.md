@@ -170,8 +170,27 @@ whose stack is gone or is frameless prose, and any recipe without `'stack'` —
 a hash is over the value's own text and a reader who guesses the text confirms
 it. A stack-backed hash still covers every other part of the recipe, so adding
 `'message'` to the public bag's recipe puts the message into the hash next to
-the frames; frame text is unguessable only to a reader who does not know the
-deployed source and its paths.
+the frames. Even without knowing the frames, a reader who
+can trigger the same failure site with candidate sensitive text can compare
+hashes and confirm a guess. Exclude sensitive recipe parts, redact their inputs,
+or use `public: { corj: { fingerprintParts: null } }` on `makeReportPair` to
+withhold the public hash. The default recipe does not necessarily hash message
+text; assess the parts and redaction configured for the public call.
+
+At the receiving boundary, `decodePublicReport` uses Unicode code points for
+field text lengths, matching JSON Schema. It applies additional resource limits
+to `as_json`: depth 32, 10,000 values, and 16,384 UTF-8 bytes of compact JSON,
+including keys, delimiters, escaping, and punctuation. Excess data and sparse
+arrays are rejected, never silently truncated. These are receiver policies
+beyond the wire schema; existing producer limits remain unchanged. Bound the
+transport body before JSON parsing, too.
+
+A rejection's `path` quotes dynamic keys with JSON bracket notation, keeps at
+most 64 UTF-16 units per key without splitting a surrogate pair, and stays
+within 256 units overall. A segment that does not fit is omitted and the path
+ends with an ellipsis. The path remains sender-influenced data: escape it when
+displaying or logging it and never treat it as a model instruction. These checks
+do not guarantee accessor-free handling of arbitrary Proxy inputs.
 
 ## Test a failure path
 
@@ -397,3 +416,23 @@ still works as an array callback; `isTrustedException` is the realm-aware form. 
 brand and a report revived from JSON acquire nothing. Deduplicating the install
 is the simpler fix when you control it; it does not help across independently
 bundled artifacts.
+
+Correlation has a separate rule from policy trust. Automatic foreign branded
+`occurrenceId` adoption accepts only `/^[A-Za-z0-9_.:-]{1,128}$/`; a rejected ID
+gets a memoized generated replacement. Paired and standalone reports from this
+copy use that same replacement. Locally registered instances and explicit caller
+IDs keep the existing printable-ASCII rule `/^[\x21-\x7e]{1,128}$/`. A narrower
+alphabet provides neither authentication nor secrecy: escape IDs and treat them
+as data.
+
+Older copies and standalone corj may retain a foreign ID this release replaces.
+When correlation with those reporters is required, validate an ID from a trusted
+source and pass the same explicit `occurrenceId` override to each reporter.
+Incoming public reports from older senders still decode under their published
+schemas; automatic foreign-ID adoption does not tighten the wire contract.
+
+Diagnostic schema roots intentionally accept extensions, including unknown
+fields and valid `$schema` metadata. In v5 and v6 an optional-field typo such as
+`contxt` passes, but a bad known value such as `context_omitted: 'typo'` fails.
+Use application checks when you need to catch such typos. Public roots are
+closed, and historical schemas stay unchanged.

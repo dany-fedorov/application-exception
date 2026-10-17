@@ -58,6 +58,11 @@ function silent(): void {
 function metadataFor(value: unknown): CorjOptionsInput['metadata'] {
   if (value === undefined) return { v: true };
   if (typeof value === 'boolean') return { v: true, $schema: value };
+  if (Array.isArray(value))
+    throw invalid(
+      'APPEX_INVALID_OPTIONS',
+      'corj metadata must not be an array',
+    );
   if (typeof value === 'object' && value !== null)
     return { ...(value as object), v: true };
   return value as CorjOptionsInput['metadata'];
