@@ -517,8 +517,8 @@ export function isTrustedException(
  * share. Pass the returned object as `realm` to `defineException` in each copy
  * that defines failures, and as `realm` to `isTrustedException`,
  * `makePublicReport`, or `makeReportPair` in the copy that reports them.
- * `makeDiagnosticReport` takes no realm: a diagnostic report consults no
- * disclosure policy, and occurrence ids already correlate across copies.
+ * `makeDiagnosticReport` takes no realm; foreign ids correlate automatically
+ * only when they match `[A-Za-z0-9_.:-]{1,128}`. See the trust realm recipe.
  *
  * @example
  * ```ts

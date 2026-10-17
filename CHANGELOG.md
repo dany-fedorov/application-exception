@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.8.0 — 2026-10-17
+
+**Compatibility.** This pre-1.0 minor release tightens decoder input acceptance
+and automatic foreign-ID adoption. Some inputs accepted by 0.7.0 now reject or
+receive replacement IDs; producer limits, exported signatures, report versions,
+and published schemas remain unchanged. For cross-version or standalone-corj
+correlation, pass the same explicit trusted `occurrenceId` to each reporter.
+
+- Harden `decodePublicReport` traversal: reject sparse arrays, avoid repeated
+  top-level field and array-element reads, and measure field text in Unicode
+  code points, matching JSON Schema. Rejection paths use bounded JSON-quoted
+  key segments and remain untrusted data.
+- Add a receiver limit of 16,384 UTF-8 bytes of compact JSON for `as_json`,
+  including keys and escaping, alongside depth 32 and 10,000 values. Oversized
+  input is rejected. Producer limits and published report schemas are unchanged.
+- Read foreign public policy fields once into a validated snapshot before use.
+- Reject arrays supplied as diagnostic `corj.metadata` with
+  `APPEX_INVALID_OPTIONS` rather than treating them as metadata options objects.
+- Narrow automatic foreign branded occurrence-ID adoption to
+  `/^[A-Za-z0-9_.:-]{1,128}$/`; other foreign IDs get a memoized generated
+  replacement shared by this copy's paired and standalone reports. Local and
+  explicit IDs keep the printable-ASCII rule. Older copies or standalone corj
+  may retain IDs this release replaces; pass the same explicit trusted
+  `occurrenceId` override when cross-version correlation is required.
+- Clarify chosen-call comparisons against public fingerprints containing
+  sensitive recipe inputs, receiver resource policies, and intentionally open
+  diagnostic schema roots. Optional-field typos remain accepted for extension
+  compatibility; public roots remain closed.
+
 ## 0.7.0 — 2026-09-20
 
 **Breaking.** CORJ's one-off utilities now live on its frozen `Corj` object.

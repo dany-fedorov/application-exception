@@ -42,6 +42,9 @@ function ownData(value: object, key: PropertyKey): unknown {
 /** Ids this package accepts and emits: printable ASCII without spaces, at most 128 characters. */
 export const ID_PATTERN = /^[\x21-\x7e]{1,128}$/;
 
+/** Automatically adopted foreign IDs use a restricted alphabet; this does not authenticate their source. */
+const FOREIGN_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,128}$/;
+
 /** The `occurrenceId` of a branded occurrence (local or from another package copy), read from data properties only. */
 export function brandedOccurrenceId(value: unknown): string | undefined {
   try {
@@ -52,7 +55,8 @@ export function brandedOccurrenceId(value: unknown): string | undefined {
     )
       return undefined;
     const id = ownData(value, 'occurrenceId');
-    return typeof id === 'string' && ID_PATTERN.test(id) ? id : undefined;
+    const pattern = instances.has(value) ? ID_PATTERN : FOREIGN_ID_PATTERN;
+    return typeof id === 'string' && pattern.test(id) ? id : undefined;
   } catch {
     return undefined;
   }
@@ -198,5 +202,13 @@ function validForeignPolicy(policy: unknown): PublicPolicyRecord | undefined {
   )
     return undefined;
   if (details !== undefined && typeof details !== 'function') return undefined;
-  return policy as PublicPolicyRecord;
+  return Object.freeze({
+    code,
+    ...(message === undefined
+      ? {}
+      : { message: message as NonNullable<PublicPolicyRecord['message']> }),
+    ...(details === undefined
+      ? {}
+      : { details: details as NonNullable<PublicPolicyRecord['details']> }),
+  });
 }

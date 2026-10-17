@@ -1,7 +1,27 @@
 import { diagnosticMakerFor, publicMakerFor } from '../src/corj-maker';
 import { makeRedactionPolicy } from '../src/redaction';
+import { makeDiagnosticReport } from '../src/index';
 
 describe('CORJ maker adapters', () => {
+  test('rejects metadata arrays before reading the caught value', () => {
+    let reads = 0;
+    const caught = {
+      get value() {
+        reads++;
+        return 'caught';
+      },
+    };
+    expect(() =>
+      diagnosticMakerFor({ metadata: [] }, undefined, undefined),
+    ).toThrow(TypeError);
+    expect(() =>
+      diagnosticMakerFor({ metadata: [] }, undefined, undefined),
+    ).toThrow(expect.objectContaining({ code: 'APPEX_INVALID_OPTIONS' }));
+    expect(() =>
+      makeDiagnosticReport(caught, { corj: { metadata: [] } as never }),
+    ).toThrow(TypeError);
+    expect(reads).toBe(0);
+  });
   test('snapshots each caller bag without freezing or caching it', () => {
     const bag = { maxDepth: 2 };
     const first = diagnosticMakerFor(bag, undefined, undefined);

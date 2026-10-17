@@ -73,6 +73,7 @@ const PUBLIC_REPORT_VERSION_V3: PublicReportVersion = 'appex/public/v3';
 const FINGERPRINT_PATTERN = /^[\x21-\x7e]{1,64}$/;
 const DECODE_MAX_DEPTH = 32;
 const DECODE_MAX_VALUES = 10_000;
+const DECODE_MAX_JSON_BYTES = 16_384;
 const DECODE_MAX_PATH_KEY = 64;
 const DECODE_MAX_PATH = 256;
 
@@ -529,16 +530,20 @@ class Rejection {
   ) {}
 }
 
-/**
- * A rejection `path` is built from keys the sender chose and the recipes hand it
- * to an agent, so it is bounded like any other text that crosses the boundary:
- * each key segment at 64 characters, the whole path at 256.
- */
+/** Append only complete, quoted segments and reserve room for an ellipsis. */
+function appendDecodePath(path: string, key: string | number): string {
+  if (path.endsWith('…')) return path;
+  const segment =
+    typeof key === 'number'
+      ? `[${key}]`
+      : `[${JSON.stringify(unicodeSafePrefix(key, DECODE_MAX_PATH_KEY))}]`;
+  return path.length + segment.length < DECODE_MAX_PATH
+    ? path + segment
+    : path + '…';
+}
+
 function reject(reason: string, path: string): never {
-  throw new Rejection(
-    reason,
-    path.length > DECODE_MAX_PATH ? path.slice(0, DECODE_MAX_PATH) : path,
-  );
+  throw new Rejection(reason, path);
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -548,39 +553,103 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function detachJson(
-  value: unknown,
+interface DecodeBudget {
+  values: number;
+  bytes: number;
+}
+
+function reserveDecodeValues(
+  count: number,
   path: string,
-  depth: number,
-  budget: { values: number },
-): CorjJsonValue {
-  if (++budget.values > DECODE_MAX_VALUES)
+  budget: DecodeBudget,
+): void {
+  if (count > DECODE_MAX_VALUES - budget.values)
     reject(
       `as_json exceeds ${DECODE_MAX_VALUES.toLocaleString('en-US')} values`,
       path,
     );
+  budget.values += count;
+}
+
+function addDecodeBytes(
+  bytes: number,
+  path: string,
+  budget: DecodeBudget,
+): void {
+  if (bytes > DECODE_MAX_JSON_BYTES - budget.bytes)
+    reject(
+      `as_json exceeds ${DECODE_MAX_JSON_BYTES.toLocaleString('en-US')} UTF-8 bytes`,
+      path,
+    );
+  budget.bytes += bytes;
+}
+
+function addDecodeString(
+  value: string,
+  path: string,
+  budget: DecodeBudget,
+): void {
+  // Every UTF-16 unit needs at least one JSON byte. Bound the source before
+  // allocating the escaped encoding; never serialize a sender's container.
+  if (value.length > DECODE_MAX_JSON_BYTES - budget.bytes - 2)
+    reject(
+      `as_json exceeds ${DECODE_MAX_JSON_BYTES.toLocaleString('en-US')} UTF-8 bytes`,
+      path,
+    );
+  addDecodeBytes(utf8JsonBytes(value), path, budget);
+}
+
+function detachJson(
+  value: unknown,
+  path: string,
+  depth: number,
+  budget: DecodeBudget,
+): CorjJsonValue {
   if (depth > DECODE_MAX_DEPTH)
     reject(`as_json exceeds depth ${DECODE_MAX_DEPTH}`, path);
-  if (value === null || typeof value === 'string' || typeof value === 'boolean')
+  if (typeof value === 'string') {
+    addDecodeString(value, path, budget);
     return value;
-  if (typeof value === 'number')
-    return Number.isFinite(value)
-      ? value
-      : reject('Expected a finite number', path);
-  if (Array.isArray(value))
-    return value.map((item, index) =>
-      detachJson(item, `${path}[${index}]`, depth + 1, budget),
-    );
+  }
+  if (value === null || typeof value === 'boolean') {
+    addDecodeBytes(value === null || value === true ? 4 : 5, path, budget);
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) reject('Expected a finite number', path);
+    addDecodeBytes(utf8JsonBytes(value), path, budget);
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const length = value.length;
+    if (!Number.isInteger(length) || length < 0)
+      reject('Expected a nonnegative integer array length', path);
+    reserveDecodeValues(length, path, budget);
+    addDecodeBytes(2 + Math.max(0, length - 1), path, budget);
+    const output: CorjJsonValue[] = [];
+    for (let index = 0; index < length; index++) {
+      const itemPath = appendDecodePath(path, index);
+      if (!Object.prototype.hasOwnProperty.call(value, index))
+        reject('Expected an own array element', itemPath);
+      const item: unknown = value[index];
+      output.push(detachJson(item, itemPath, depth + 1, budget));
+    }
+    return output;
+  }
   if (!isPlainObject(value)) reject('Expected a JSON value', path);
+  const keys = Object.keys(value);
+  reserveDecodeValues(keys.length, path, budget);
   const output: Record<string, CorjJsonValue> = {};
-  for (const [key, item] of Object.entries(value)) {
+  addDecodeBytes(2, path, budget);
+  let first = true;
+  for (const key of keys) {
+    const itemPath = appendDecodePath(path, key);
+    addDecodeBytes(first ? 1 : 2, itemPath, budget); // colon, plus comma
+    first = false;
+    addDecodeString(key, itemPath, budget);
+    const item = value[key];
     Object.defineProperty(output, key, {
-      value: detachJson(
-        item,
-        `${path}.${key.slice(0, DECODE_MAX_PATH_KEY)}`,
-        depth + 1,
-        budget,
-      ),
+      value: detachJson(item, itemPath, depth + 1, budget),
       enumerable: true,
       writable: true,
       configurable: true,
@@ -596,8 +665,11 @@ function boundedText(
   max: number,
 ): string {
   if (typeof value !== 'string') reject('Expected a string', path);
-  if (value.length < min || value.length > max)
-    reject(`Expected ${min} to ${max} characters`, path);
+  let length = 0;
+  for (const _point of value) {
+    if (++length > max) reject(`Expected ${min} to ${max} characters`, path);
+  }
+  if (length < min) reject(`Expected ${min} to ${max} characters`, path);
   return value;
 }
 
@@ -641,11 +713,11 @@ function fingerprintOf(value: unknown): string {
 }
 
 /**
- * Validate a public report received as JSON and return a detached copy, or
- * the first reason it is not a public report. Branch on `report.code` after
- * `ok`; escalate on `!ok` with `reason` and `path`. Both `appex/public/v3` and
- * `appex/public/v4` are accepted, and the decoded report keeps the `v` it
- * arrived with, so a v3 sender stays readable while services upgrade.
+ * Detach a v3/v4 public report, keeping its version. Branch on `report.code`
+ * after `ok`; escalate `!ok` with `reason` and sender-influenced `path` data.
+ * Text bounds count code points; reject details beyond depth 32, 10,000 values,
+ * or 16,384 UTF-8 compact JSON bytes. Paths quote keys (64 UTF-16 units, surrogate
+ * safe) in complete bracket segments within 256 units, with an ellipsis if cut.
  *
  * @example
  * ```ts
@@ -661,42 +733,44 @@ export function decodePublicReport(value: unknown): DecodePublicReportResult {
     if (!isPlainObject(value)) reject('Expected an object', '$');
     for (const key of Object.keys(value)) {
       if (!PUBLIC_FIELDS.has(key))
-        reject('Unexpected field', `$.${key.slice(0, DECODE_MAX_PATH_KEY)}`);
+        reject('Unexpected field', appendDecodePath('$', key));
     }
-    const version = publicVersionOf(value['v']);
+    const versionValue = value['v'];
+    const occurrenceId = value['occurrence_id'];
+    const fingerprint = value['fingerprint'];
+    const code = value['code'];
+    const message = value['message'];
+    const asJson = value['as_json'];
+    const truncated = value['truncated'];
+    const version = publicVersionOf(versionValue);
     // `fingerprint` arrived with v4: a v3 report that carries the key at all was
     // built by something that is not that format, so it is an unexpected field,
     // whatever its value. On a v4 report it is an optional field, and a key
     // explicitly set to `undefined` reads as absent, as `truncated` does.
     if ('fingerprint' in value && version === PUBLIC_REPORT_VERSION_V3)
       reject('Unexpected field', '$.fingerprint');
-    const fingerprint = value['fingerprint'];
     const base = {
       v: version,
-      occurrence_id: decodedOccurrenceIdOf(value['occurrence_id'], version),
+      occurrence_id: decodedOccurrenceIdOf(occurrenceId, version),
       ...(fingerprint === undefined
         ? {}
         : { fingerprint: fingerprintOf(fingerprint) }),
-      code: boundedText(value['code'], '$.code', 1, 128),
-      message: boundedText(
-        value['message'],
-        '$.message',
-        0,
-        PUBLIC_MESSAGE_MAX_LENGTH,
-      ),
-      ...(value['as_json'] !== undefined
+      code: boundedText(code, '$.code', 1, 128),
+      message: boundedText(message, '$.message', 0, PUBLIC_MESSAGE_MAX_LENGTH),
+      ...(asJson !== undefined
         ? {
-            as_json: detachJson(value['as_json'], '$.as_json', 0, {
-              values: 0,
+            as_json: detachJson(asJson, '$.as_json', 0, {
+              values: 1,
+              bytes: 0,
             }),
           }
         : {}),
     };
-    if (value['truncated'] !== undefined && value['truncated'] !== true)
+    if (truncated !== undefined && truncated !== true)
       reject('Expected true', '$.truncated');
     const report: PublicReport = {
       ...base,
-      ...(value['truncated'] === true ? { truncated: true } : {}),
+      ...(truncated === true ? { truncated: true } : {}),
     };
     return { ok: true, report };
   } catch (failure: unknown) {
