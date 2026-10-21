@@ -88,7 +88,7 @@
     "tsx": "4.23.13",
     "typedoc": "0.28.20",
     "typescript": "5.9.3",
-    "vite": "^5.4.21"
+    "vite": "^8.3.0"
   },
   "dependencies": {
     "caught-object-report-json": "^13.0.0",
