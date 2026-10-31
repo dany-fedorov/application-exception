@@ -47,20 +47,20 @@ report time, by the code that owns the policy.
 ## What was built
 
 ```ts
-import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 // the host that owns reporting creates the realm and hands it out
-export const realm = makeTrustRealm();
+export const realm = AppEx.makeTrustRealm();
 
 // each cooperating copy opts in where it defines failures
-const Timeout = defineException({
+const Timeout = AppEx.defineException({
   tag: 'db/Timeout', message: 'Timed out',
   public: { code: 'DB_TIMEOUT' },
   realm,
 });
 
 // and where it reports them
-makePublicReport(caught, { realm }).code; // 'DB_TIMEOUT' across copies
+AppEx.makePublicReport(caught, { realm }).code; // 'DB_TIMEOUT' across copies
 isTrustedException(caught, realm);      // true across copies
 ```
 

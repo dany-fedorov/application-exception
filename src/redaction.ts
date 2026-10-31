@@ -52,12 +52,12 @@ function corjMessage(failure: unknown): string {
  * @throws `APPEX_INVALID_REDACTION_POLICY`
  * @example
  * ```ts
- * import { makeRedactionPolicy, makeDiagnosticReport } from 'application-exception';
- * const redact = makeRedactionPolicy({
+ * import * as AppEx from 'application-exception';
+ * const redact = AppEx.makeRedactionPolicy({
  *   keys: ['password', /token$/i],
  *   patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
  * });
- * const report = makeDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
+ * const report = AppEx.makeDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
  * console.log(report.stack?.[0]); // 'Error: bad key [redacted]'
  * ```
  */

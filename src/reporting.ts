@@ -278,9 +278,9 @@ function diagnosticReportOf(
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_REDACTION_POLICY`; corj option errors propagate.
  * @example
  * ```ts
- * import { makeDiagnosticReport } from 'application-exception';
+ * import * as AppEx from 'application-exception';
  * const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
- * const report = makeDiagnosticReport(caught, {
+ * const report = AppEx.makeDiagnosticReport(caught, {
  *   context: { runId: 'run-1' },
  *   maxReportBytes: 4096,
  * });
@@ -400,16 +400,16 @@ function selectPublicDetails(
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
  * ```ts
- * import { defineException, makePublicReport } from 'application-exception';
- * const ToolUnavailable = defineException({
+ * import * as AppEx from 'application-exception';
+ * const ToolUnavailable = AppEx.defineException({
  *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
  *   public: { code: 'TOOL_UNAVAILABLE', detailsSelector: ({ tool }) => ({ tool }) },
  * });
  * const failure = new ToolUnavailable({ details: { tool: 'search' } });
- * const report = makePublicReport(failure, { policyOverride: { message: 'Search is down.' } });
+ * const report = AppEx.makePublicReport(failure, { policyOverride: { message: 'Search is down.' } });
  * // { v: 'appex/public/v4', occurrence_id: 'AE_…', fingerprint: 'fp1_…',
  * //   code: 'TOOL_UNAVAILABLE', message: 'Search is down.', as_json: { tool: 'search' } }
- * console.log(report.code, makePublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
+ * console.log(report.code, AppEx.makePublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
  * ```
  */
 export function makePublicReport(
@@ -484,8 +484,8 @@ function publicReportOf(
  * @throws `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
  * @example
  * ```ts
- * import { makeReportPair } from 'application-exception';
- * const { occurrence_id, diagnostic, public: disclosed } = makeReportPair('socket closed', {
+ * import * as AppEx from 'application-exception';
+ * const { occurrence_id, diagnostic, public: disclosed } = AppEx.makeReportPair('socket closed', {
  *   diagnostic: { context: { runId: 'run-1' }, maxReportBytes: 4096 },
  * });
  * console.error(JSON.stringify(diagnostic)); // the operator copy
@@ -722,9 +722,9 @@ function fingerprintOf(value: unknown): string {
  *
  * @example
  * ```ts
- * import { decodePublicReport } from 'application-exception';
+ * import * as AppEx from 'application-exception';
  * const json = '{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
- * const decoded = decodePublicReport(JSON.parse(json) as unknown);
+ * const decoded = AppEx.decodePublicReport(JSON.parse(json) as unknown);
  * // { ok: true, report: { v: 'appex/public/v3', occurrence_id: 'AE_1', code: 'TOOL_UNAVAILABLE', message: 'Down.' } }
  * if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
  * else console.log(decoded.reason, decoded.path); // e.g. 'Expected a string' '$.code'

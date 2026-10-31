@@ -354,8 +354,8 @@ function validatePublicPolicy(policy: unknown): PublicPolicyRecord | undefined {
  * @throws `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`, `APPEX_INVALID_DETAILS`
  * @example
  * ```ts
- * import { defineException } from 'application-exception';
- * const ToolUnavailable = defineException({
+ * import * as AppEx from 'application-exception';
+ * const ToolUnavailable = AppEx.defineException({
  *   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
  *   public: { code: 'TOOL_UNAVAILABLE', message: 'The tool is unavailable.', detailsSelector: ({ tool }) => ({ tool }) },
  * });
@@ -480,10 +480,10 @@ export function defineException(definition: {
  *
  * @example
  * ```ts
- * import { defineException, isTypedException } from 'application-exception';
- * const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
+ * import * as AppEx from 'application-exception';
+ * const Unavailable = AppEx.defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
  * const caught: unknown = new Unavailable();
- * if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId); // 'app/Unavailable' 'AE_…'
+ * if (AppEx.isTypedException(caught)) console.log(caught._tag, caught.occurrenceId); // 'app/Unavailable' 'AE_…'
  * if (caught instanceof Unavailable) console.log(caught.details); // {}
  * ```
  */
@@ -499,10 +499,10 @@ export function isTypedException(value: unknown): value is TypedException {
  * @throws `APPEX_INVALID_TRUST_REALM`
  * @example
  * ```ts
- * import { makeTrustRealm, defineException, isTrustedException } from 'application-exception';
- * const realm = makeTrustRealm();
- * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
- * console.log(isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
+ * import * as AppEx from 'application-exception';
+ * const realm = AppEx.makeTrustRealm();
+ * const Timeout = AppEx.defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
+ * console.log(AppEx.isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
  * ```
  */
 export function isTrustedException(
@@ -522,10 +522,10 @@ export function isTrustedException(
  *
  * @example
  * ```ts
- * import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
- * const realm = makeTrustRealm();
- * const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
- * console.log(makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
+ * import * as AppEx from 'application-exception';
+ * const realm = AppEx.makeTrustRealm();
+ * const Timeout = AppEx.defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
+ * console.log(AppEx.makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
  * ```
  */
 export function makeTrustRealm(): TrustRealm {

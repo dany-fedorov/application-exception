@@ -12,6 +12,10 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
 
 ## Rules
 
+0. Import the package as a namespace, `import * as AppEx from
+   'application-exception'`, and call `AppEx.defineException`,
+   `AppEx.makeReportPair`, and so on. Named imports work; the docs use the
+   namespace form so every snippet reads the same way.
 1. Define each error kind once with `defineException({ tag, message })` next to
    the code that throws it, and export the kind. The tag is stable; the wording
    may change.

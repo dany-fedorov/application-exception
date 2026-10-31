@@ -53,8 +53,8 @@ cannot capture faithfully. The default is a shallow frozen copy.
 Throws: `APPEX_INVALID_TAG`, `APPEX_INVALID_MESSAGE`, `APPEX_INVALID_ID_PREFIX`, `APPEX_INVALID_PUBLIC_POLICY`, `APPEX_INVALID_DETAILS`
 
 ```ts
-import { defineException } from 'application-exception';
-const ToolUnavailable = defineException({
+import * as AppEx from 'application-exception';
+const ToolUnavailable = AppEx.defineException({
   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
   public: { code: 'TOOL_UNAVAILABLE', message: 'The tool is unavailable.', detailsSelector: ({ tool }) => ({ tool }) },
 });
@@ -72,10 +72,10 @@ Whether a value is an occurrence created by this loaded copy of the package.
 Narrow a specific kind with `instanceof` before reading its details.
 
 ```ts
-import { defineException, isTypedException } from 'application-exception';
-const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
+import * as AppEx from 'application-exception';
+const Unavailable = AppEx.defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
 const caught: unknown = new Unavailable();
-if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId); // 'app/Unavailable' 'AE_…'
+if (AppEx.isTypedException(caught)) console.log(caught._tag, caught.occurrenceId); // 'app/Unavailable' 'AE_…'
 if (caught instanceof Unavailable) console.log(caught.details); // {}
 ```
 
@@ -92,10 +92,10 @@ shape, so it still works as an array callback; this is the realm-aware form.
 Throws: `APPEX_INVALID_TRUST_REALM`
 
 ```ts
-import { makeTrustRealm, defineException, isTrustedException } from 'application-exception';
-const realm = makeTrustRealm();
-const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
-console.log(isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
+import * as AppEx from 'application-exception';
+const realm = AppEx.makeTrustRealm();
+const Timeout = AppEx.defineException({ tag: 'db/Timeout', message: 'Timed out', realm });
+console.log(AppEx.isTrustedException(new Timeout(), realm)); // true, in any copy sharing the realm
 ```
 
 ### `makeTrustRealm`
@@ -112,10 +112,10 @@ that defines failures, and as `realm` to `isTrustedException`,
 only when they match `[A-Za-z0-9_.:-]{1,128}`. See the trust realm recipe.
 
 ```ts
-import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
-const realm = makeTrustRealm();
-const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
-console.log(makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
+import * as AppEx from 'application-exception';
+const realm = AppEx.makeTrustRealm();
+const Timeout = AppEx.defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
+console.log(AppEx.makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT'
 ```
 
 ### `makeRedactionPolicy`
@@ -146,12 +146,12 @@ the policy was protecting.
 Throws: `APPEX_INVALID_REDACTION_POLICY`
 
 ```ts
-import { makeRedactionPolicy, makeDiagnosticReport } from 'application-exception';
-const redact = makeRedactionPolicy({
+import * as AppEx from 'application-exception';
+const redact = AppEx.makeRedactionPolicy({
   keys: ['password', /token$/i],
   patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
 });
-const report = makeDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
+const report = AppEx.makeDiagnosticReport(new Error('bad key sk-abcdefgh'), { redact });
 console.log(report.stack?.[0]); // 'Error: bad key [redacted]'
 ```
 
@@ -176,9 +176,9 @@ at `'max_size'` — and only then trims error content. `occurrence_id`,
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_REDACTION_POLICY`; corj option errors propagate.
 
 ```ts
-import { makeDiagnosticReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 const caught: unknown = new Error('connection refused', { cause: { code: 'ECONNREFUSED' } });
-const report = makeDiagnosticReport(caught, {
+const report = AppEx.makeDiagnosticReport(caught, {
   context: { runId: 'run-1' },
   maxReportBytes: 4096,
 });
@@ -206,16 +206,16 @@ what the kind says.
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
 
 ```ts
-import { defineException, makePublicReport } from 'application-exception';
-const ToolUnavailable = defineException({
+import * as AppEx from 'application-exception';
+const ToolUnavailable = AppEx.defineException({
   tag: 'tools/Unavailable', message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
   public: { code: 'TOOL_UNAVAILABLE', detailsSelector: ({ tool }) => ({ tool }) },
 });
 const failure = new ToolUnavailable({ details: { tool: 'search' } });
-const report = makePublicReport(failure, { policyOverride: { message: 'Search is down.' } });
+const report = AppEx.makePublicReport(failure, { policyOverride: { message: 'Search is down.' } });
 // { v: 'appex/public/v4', occurrence_id: 'AE_…', fingerprint: 'fp1_…',
 //   code: 'TOOL_UNAVAILABLE', message: 'Search is down.', as_json: { tool: 'search' } }
-console.log(report.code, makePublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
+console.log(report.code, AppEx.makePublicReport(new Error('secret')).code); // … 'INTERNAL_ERROR'
 ```
 
 ### `makeReportPair`
@@ -234,8 +234,8 @@ report is built. Each report's fingerprint comes from its own bag.
 Throws: `APPEX_INVALID_OPTIONS`, `APPEX_INVALID_OCCURRENCE_ID`, `APPEX_INVALID_PUBLIC_CODE`, `APPEX_INVALID_PUBLIC_MESSAGE`; corj option errors propagate.
 
 ```ts
-import { makeReportPair } from 'application-exception';
-const { occurrence_id, diagnostic, public: disclosed } = makeReportPair('socket closed', {
+import * as AppEx from 'application-exception';
+const { occurrence_id, diagnostic, public: disclosed } = AppEx.makeReportPair('socket closed', {
   diagnostic: { context: { runId: 'run-1' }, maxReportBytes: 4096 },
 });
 console.error(JSON.stringify(diagnostic)); // the operator copy
@@ -256,9 +256,9 @@ The decoder enforces the receiver limits in the README's Limits table on
 `path` is bounded and JSON-quoted but still untrusted data.
 
 ```ts
-import { decodePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 const json = '{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
-const decoded = decodePublicReport(JSON.parse(json) as unknown);
+const decoded = AppEx.decodePublicReport(JSON.parse(json) as unknown);
 // { ok: true, report: { v: 'appex/public/v3', occurrence_id: 'AE_1', code: 'TOOL_UNAVAILABLE', message: 'Down.' } }
 if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
 else console.log(decoded.reason, decoded.path); // e.g. 'Expected a string' '$.code'
@@ -273,9 +273,9 @@ const Corj: { readonly makeReport: (caught: unknown, input?: CorjReportInput) =>
 The exact frozen CORJ utility namespace for one-off reports, policy resolution, and restoration of omitted fields.
 
 ```ts
-import { Corj, makeDiagnosticReport } from 'application-exception';
-const report = makeDiagnosticReport(new Error('connection refused'));
-const full = Corj.restoreExpectedValues(report);
+import * as AppEx from 'application-exception';
+const report = AppEx.makeDiagnosticReport(new Error('connection refused'));
+const full = AppEx.Corj.restoreExpectedValues(report);
 console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
 ```
 

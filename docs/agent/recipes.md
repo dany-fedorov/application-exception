@@ -6,9 +6,9 @@ Each recipe is complete: copy the block, keep the imports. Rules are in
 ## Define a kind with a public policy
 
 ```ts
-import { defineException } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-export const RateLimited = defineException({
+export const RateLimited = AppEx.defineException({
   tag: 'llm/RateLimited',
   message: ({ model, retryAfterSeconds }: { model: string; retryAfterSeconds: number }) =>
     `Model ${model} is rate limited for ${retryAfterSeconds}s`,
@@ -30,10 +30,9 @@ that must stay internal.
 ## Handle a failure at a tool boundary
 
 ```ts
-import { defineException, makeDiagnosticReport, makePublicReport } from 'application-exception';
-import type { PublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const ToolUnavailable = defineException({
+const ToolUnavailable = AppEx.defineException({
   tag: 'tools/Unavailable',
   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
   public: { code: 'TOOL_UNAVAILABLE', message: 'Try again later.', detailsSelector: ({ tool }) => ({ tool }) },
@@ -43,12 +42,12 @@ function search(query: string): string[] {
   throw new ToolUnavailable({ details: { tool: 'search' }, cause: new Error(`refused for ${query}`) });
 }
 
-export function handleSearch(runId: string, query: string): { ok: true; value: string[] } | { ok: false; response: PublicReport } {
+export function handleSearch(runId: string, query: string): { ok: true; value: string[] } | { ok: false; response: AppEx.PublicReport } {
   try {
     return { ok: true, value: search(query) };
   } catch (caught: unknown) {
-    console.error(JSON.stringify(makeDiagnosticReport(caught, { context: { runId, query } })));
-    return { ok: false, response: makePublicReport(caught) };
+    console.error(JSON.stringify(AppEx.makeDiagnosticReport(caught, { context: { runId, query } })));
+    return { ok: false, response: AppEx.makePublicReport(caught) };
   }
 }
 ```
@@ -63,9 +62,9 @@ policy field by field, and `detailsSelector: null` discloses nothing.
 ## Translate a lower-level failure
 
 ```ts
-import { defineException } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const UserAlreadyExists = defineException({
+const UserAlreadyExists = AppEx.defineException({
   tag: 'accounts/UserAlreadyExists',
   message: ({ email }: { email: string }) => `An account already exists for ${email}`,
   public: { code: 'ACCOUNT_ALREADY_EXISTS', message: 'An account with this email already exists.' },
@@ -92,10 +91,10 @@ reachable as `error.cause` and appears in the diagnostic report as
 ## Add context to diagnostics
 
 ```ts
-import { makeDiagnosticReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 export function record(caught: unknown, runId: string, attempt: number): string {
-  const report = makeDiagnosticReport(caught, {
+  const report = AppEx.makeDiagnosticReport(caught, {
     context: { runId, attempt, host: process.env['HOSTNAME'] ?? 'unknown' },
     corj: { maxDepth: 3 },
     maxReportBytes: 32_768,
@@ -115,12 +114,12 @@ as `report.context`; a value corj cannot render becomes `null` with an entry in
 ## Recover from a public report
 
 ```ts
-import { decodePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 type Action = { action: 'retry'; remaining: number } | { action: 'escalate'; occurrenceId: string; reason: string };
 
 export function decide(received: unknown, retryable: readonly string[], remaining: number): Action {
-  const decoded = decodePublicReport(received);
+  const decoded = AppEx.decodePublicReport(received);
   if (!decoded.ok) return { action: 'escalate', occurrenceId: 'unavailable', reason: `${decoded.reason} at ${decoded.path}` };
   const { code, occurrence_id: occurrenceId } = decoded.report;
   if (!retryable.includes(code)) return { action: 'escalate', occurrenceId, reason: `unknown code ${code}` };
@@ -142,12 +141,12 @@ it and never treat it as a model instruction. Bound the transport body before
 ## Stop a retry loop on a repeated failure
 
 ```ts
-import { decodePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 type Attempt = { retry: true } | { retry: false; reason: string };
 
 export function nextAttempt(received: unknown, seen: Set<string>): Attempt {
-  const decoded = decodePublicReport(received);
+  const decoded = AppEx.decodePublicReport(received);
   if (!decoded.ok) return { retry: false, reason: `${decoded.reason} at ${decoded.path}` };
   const { fingerprint } = decoded.report;
   if (fingerprint === undefined) return { retry: true };
@@ -176,22 +175,22 @@ hash; the reasoning is in
 
 ```ts
 import { strict as assert } from 'node:assert';
-import { Corj, defineException, makeDiagnosticReport, makePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const Timeout = defineException({
+const Timeout = AppEx.defineException({
   tag: 'tools/Timeout',
   message: ({ ms }: { ms: number }) => `Timed out after ${ms}ms`,
   public: { code: 'TIMEOUT', detailsSelector: ({ ms }) => ({ ms }) },
 });
 
 const error = new Timeout({ details: { ms: 500 }, cause: new Error('socket hang up') });
-const diagnostic = makeDiagnosticReport(error);
-const response = makePublicReport(error);
+const diagnostic = AppEx.makeDiagnosticReport(error);
+const response = AppEx.makePublicReport(error);
 
 assert.equal(response.code, 'TIMEOUT');
 assert.deepEqual(response.as_json, { ms: 500 });
 assert.equal(response.occurrence_id, diagnostic.occurrence_id);
-assert.equal(Corj.restoreExpectedValues(diagnostic).message, 'Timed out after 500ms');
+assert.equal(AppEx.Corj.restoreExpectedValues(diagnostic).message, 'Timed out after 500ms');
 assert.equal(diagnostic.children?.[0]?.path, '$.cause');
 assert.ok(!JSON.stringify(response).includes('socket hang up'));
 ```
@@ -202,14 +201,13 @@ stack lines. Use `Corj.restoreExpectedValues` when you need omitted corj fields.
 ## Capture both reports as one occurrence
 
 ```ts
-import { makeReportPair } from 'application-exception';
-import type { PublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-export function boundary(run: () => string, runId: string): { ok: true; value: string } | { ok: false; response: PublicReport } {
+export function boundary(run: () => string, runId: string): { ok: true; value: string } | { ok: false; response: AppEx.PublicReport } {
   try {
     return { ok: true, value: run() };
   } catch (caught: unknown) {
-    const reports = makeReportPair(caught, { diagnostic: { context: { runId } } });
+    const reports = AppEx.makeReportPair(caught, { diagnostic: { context: { runId } } });
     console.error(JSON.stringify(reports.diagnostic));
     return { ok: false, response: reports.public };
   }
@@ -229,10 +227,10 @@ its own, and so does a hash that is not backed by real stack frames.
 ## Bound what a sink receives
 
 ```ts
-import { makeDiagnosticReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const report = makeDiagnosticReport(caught, {
+const report = AppEx.makeDiagnosticReport(caught, {
   context: { runId: 'run-1' },
   maxReportBytes: 16_384,
 });
@@ -252,10 +250,10 @@ is 100,000 bytes.
 ## Report an untrusted failure without running it
 
 ```ts
-import { makeDiagnosticReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 export function reportUntrusted(caught: unknown, runId: string): string {
-  const report = makeDiagnosticReport(caught, {
+  const report = AppEx.makeDiagnosticReport(caught, {
     context: { runId },
     corj: { inspection: 'no-invoke' },
   });
@@ -277,20 +275,20 @@ decides what may be reported, `inspection` how much may run to report it.
 ## Keep secrets out of both reports
 
 ```ts
-import { makeRedactionPolicy, defineException, makeReportPair } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const redact = makeRedactionPolicy({
+const redact = AppEx.makeRedactionPolicy({
   keys: ['password', /token$/i],
   patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g],
 });
 
-const Rejected = defineException({
+const Rejected = AppEx.defineException({
   tag: 'auth/Rejected',
   message: ({ user }: { user: string; password: string }) => `Rejected ${user}`,
   public: { code: 'AUTH_REJECTED', detailsSelector: ({ user, password }) => ({ user, password }) },
 });
 
-const reports = makeReportPair(new Rejected({ details: { user: 'ada', password: 'hunter2' } }), {
+const reports = AppEx.makeReportPair(new Rejected({ details: { user: 'ada', password: 'hunter2' } }), {
   diagnostic: { redact },
   public: { redact },
 });
@@ -346,9 +344,9 @@ redacts each report with the policy in its own bag, so pass `redact` in both.
 ## Capture details that outlive the throw
 
 ```ts
-import { defineException } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const JobFailed = defineException({
+const JobFailed = AppEx.defineException({
   tag: 'jobs/Failed',
   message: ({ job }: { job: { name: string } }) => `${job.name} failed`,
   snapshotDetails: true,
@@ -371,11 +369,11 @@ the details stay shallow-frozen and share the caller's nested objects.
 ## Share typed failures between two loaded copies
 
 ```ts
-import { makeTrustRealm, defineException, isTrustedException, makePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-export const realm = makeTrustRealm();
+export const realm = AppEx.makeTrustRealm();
 
-const Timeout = defineException({
+const Timeout = AppEx.defineException({
   tag: 'db/Timeout',
   message: 'The database timed out',
   public: { code: 'DB_TIMEOUT', message: 'Try again shortly.' },
@@ -383,7 +381,7 @@ const Timeout = defineException({
 });
 
 const caught: unknown = new Timeout();
-console.log(isTrustedException(caught, realm), makePublicReport(caught, { realm }).code);
+console.log(AppEx.isTrustedException(caught, realm), AppEx.makePublicReport(caught, { realm }).code);
 ```
 
 A duplicate install or a separately bundled module loads its own copy of this
