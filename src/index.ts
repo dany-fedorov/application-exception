@@ -53,9 +53,9 @@ export {
    *
    * @example
    * ```ts
-   * import { Corj, makeDiagnosticReport } from 'application-exception';
-   * const report = makeDiagnosticReport(new Error('connection refused'));
-   * const full = Corj.restoreExpectedValues(report);
+   * import * as AppEx from 'application-exception';
+   * const report = AppEx.makeDiagnosticReport(new Error('connection refused'));
+   * const full = AppEx.Corj.restoreExpectedValues(report);
    * console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
    * ```
    */

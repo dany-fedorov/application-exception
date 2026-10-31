@@ -3,7 +3,7 @@ import {
   makeDiagnosticReport,
   makePublicReport,
 } from '../src';
-import type { DiagnosticReport, PublicReport } from '../src';
+import * as AppEx from '../src';
 
 export const ToolUnavailable = defineException({
   tag: 'tools/Unavailable',
@@ -20,8 +20,8 @@ export type ToolOutcome<T> =
   | { readonly ok: true; readonly value: T }
   | {
       readonly ok: false;
-      readonly diagnostic: DiagnosticReport;
-      readonly response: PublicReport;
+      readonly diagnostic: AppEx.DiagnosticReport;
+      readonly response: AppEx.PublicReport;
     };
 
 /** Run a tool; on failure return the operator report and the agent-facing report, correlated by occurrence id. */

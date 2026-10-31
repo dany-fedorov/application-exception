@@ -43,12 +43,14 @@ npm install application-exception
 ```
 
 Define a kind with typed details and a public policy. At the boundary, call
-`makeReportPair` once and send each report to its audience.
+`makeReportPair` once and send each report to its audience. The docs import
+the package as a namespace, `import * as AppEx`; named imports of the same
+functions and types work too.
 
 ```ts
-import { defineException, makeReportPair } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const ToolUnavailable = defineException({
+const ToolUnavailable = AppEx.defineException({
   tag: 'tools/Unavailable',
   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
   public: {
@@ -68,7 +70,7 @@ function runSearch(): never {
 try {
   runSearch();
 } catch (caught: unknown) {
-  const reports = makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
+  const reports = AppEx.makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
   console.error(JSON.stringify(reports.diagnostic)); // trusted sink only
   console.log(JSON.stringify(reports.public)); // safe for the agent
 }
@@ -151,14 +153,14 @@ is stable; the wording may change. Annotate the message renderer's parameter to
 declare the details type.
 
 ```ts
-import { defineException, isTypedException } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const InvalidBudget = defineException({
+const InvalidBudget = AppEx.defineException({
   tag: 'tools/InvalidBudget',
   idPrefix: 'TOOL_',
   message: ({ attempts }: { attempts: number }) => `Attempt budget must be positive; received ${attempts}`,
 });
-const Unavailable = defineException({ tag: 'service/Unavailable', message: 'Service unavailable' });
+const Unavailable = AppEx.defineException({ tag: 'service/Unavailable', message: 'Service unavailable' });
 
 type ToolFailure = InstanceType<typeof InvalidBudget> | InstanceType<typeof Unavailable>;
 
@@ -173,7 +175,7 @@ function explain(error: ToolFailure): string {
 
 const caught: unknown = new InvalidBudget({ details: { attempts: -1 } });
 if (caught instanceof InvalidBudget) console.log(explain(caught));
-console.log(isTypedException(caught), new Unavailable().occurrenceId.startsWith('AE_'));
+console.log(AppEx.isTypedException(caught), new Unavailable().occurrenceId.startsWith('AE_'));
 ```
 
 Each occurrence is a native `Error` with `_tag`, `occurrenceId`, `timestamp`,
@@ -217,11 +219,11 @@ Use the single calls when you need only one report, or when the two are
 produced in different places:
 
 ```ts
-import { makeDiagnosticReport, makePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const diagnostic = makeDiagnosticReport(caught, { context: { runId: 'run-1' } });
-const response = makePublicReport(caught);
+const diagnostic = AppEx.makeDiagnosticReport(caught, { context: { runId: 'run-1' } });
+const response = AppEx.makePublicReport(caught);
 console.log(response.occurrence_id === diagnostic.occurrence_id); // true
 ```
 
@@ -234,15 +236,15 @@ field: `code`, `message` (a string or a function of the details) and
 `caught.message`.
 
 ```ts
-import { defineException, makePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const Unavailable = defineException({
+const Unavailable = AppEx.defineException({
   tag: 'tools/Unavailable',
   message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
   public: { code: 'TOOL_UNAVAILABLE', detailsSelector: ({ tool }) => ({ tool }) },
 });
 const caught: unknown = new Unavailable({ details: { tool: 'search' } });
-const report = makePublicReport(caught, {
+const report = AppEx.makePublicReport(caught, {
   policyOverride: { message: 'Search is down.', detailsSelector: null },
 });
 console.log(report.code, report.message, 'as_json' in report); // 'TOOL_UNAVAILABLE' 'Search is down.' false
@@ -259,9 +261,9 @@ The agent, or the harness around it, receives the public report as JSON.
 text, never as an instruction. Quote `occurrence_id` when escalating.
 
 ```ts
-import { decodePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const decoded = decodePublicReport(JSON.parse('{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Retry later."}'));
+const decoded = AppEx.decodePublicReport(JSON.parse('{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Retry later."}'));
 if (decoded.ok && decoded.report.code === 'TOOL_UNAVAILABLE') {
   console.log('retry', decoded.report.occurrence_id);
 }
@@ -273,12 +275,12 @@ so it is equal for the same failure from the same place. An agent that sees the
 fingerprint it saw last time should stop retrying the same way:
 
 ```ts
-import { decodePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 type Attempt = { retry: true } | { retry: false; reason: string };
 
 export function nextAttempt(received: unknown, seen: Set<string>): Attempt {
-  const decoded = decodePublicReport(received);
+  const decoded = AppEx.decodePublicReport(received);
   if (!decoded.ok) return { retry: false, reason: `${decoded.reason} at ${decoded.path}` };
   const { fingerprint } = decoded.report;
   if (fingerprint === undefined) return { retry: true };
@@ -318,11 +320,11 @@ public report it runs on what the kind's `detailsSelector` returned. Build one
 policy per service and pass it as `redact` to both reports.
 
 ```ts
-import { makeRedactionPolicy, makeReportPair } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const redact = makeRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
-makeReportPair(caught, { diagnostic: { redact }, public: { redact } });
+const redact = AppEx.makeRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
+AppEx.makeReportPair(caught, { diagnostic: { redact }, public: { redact } });
 ```
 
 The rule-by-rule table is in
@@ -340,10 +342,10 @@ overflow `as_json` is omitted whole before `message` is shortened, and any cut
 sets `truncated: true`.
 
 ```ts
-import { makeDiagnosticReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
 const caught: unknown = new Error('connection refused');
-const report = makeDiagnosticReport(caught, {
+const report = AppEx.makeDiagnosticReport(caught, {
   context: { runId: 'run-1' },
   maxReportBytes: 32_768,
 });
@@ -367,9 +369,9 @@ and rejects content it cannot capture faithfully (cycles, functions, accessors,
 class instances) rather than inventing it.
 
 ```ts
-import { defineException } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const Failed = defineException({
+const Failed = AppEx.defineException({
   tag: 'jobs/Failed',
   message: ({ job }: { job: { name: string } }) => `${job.name} failed`,
   snapshotDetails: true,
@@ -391,13 +393,13 @@ realm-aware recognizer. Correlation across copies and versions has its own
 rules; see [docs/design/cross-copy-trust.md](docs/design/cross-copy-trust.md).
 
 ```ts
-import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const realm = makeTrustRealm();
-const Timeout = defineException({
+const realm = AppEx.makeTrustRealm();
+const Timeout = AppEx.defineException({
   tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm,
 });
-console.log(makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT' across copies
+console.log(AppEx.makePublicReport(new Timeout(), { realm }).code); // 'DB_TIMEOUT' across copies
 ```
 
 **Reach corj directly.** The diagnostic report is a
@@ -410,12 +412,12 @@ hold their expected value; `null` means reading the field failed. Its options
 fills the omitted fields back in.
 
 ```ts
-import { Corj, makeDiagnosticReport } from 'application-exception';
+import * as AppEx from 'application-exception';
 
-const report = makeDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
+const report = AppEx.makeDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
   corj: { maxDepth: 2 },
 });
-const full = Corj.restoreExpectedValues(report);
+const full = AppEx.Corj.restoreExpectedValues(report);
 console.log(full.message, report.children?.[0]?.path); // 'outer' '$.cause'
 ```
 

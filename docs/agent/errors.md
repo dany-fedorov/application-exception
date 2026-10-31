@@ -33,8 +33,8 @@ Cause: an empty or whitespace-only tag, a very long tag, or a non-string.
 Fix: use a short, stable, path-like tag.
 
 ```ts
-import { defineException } from 'application-exception';
-defineException({ tag: 'tools/Unavailable', message: 'Unavailable' });
+import * as AppEx from 'application-exception';
+AppEx.defineException({ tag: 'tools/Unavailable', message: 'Unavailable' });
 ```
 
 ## APPEX_INVALID_MESSAGE
@@ -44,8 +44,8 @@ Cause: a template object, `undefined`, or a number.
 Fix: pass a constant string, or a function of the details that returns a string.
 
 ```ts
-import { defineException } from 'application-exception';
-defineException({ tag: 'tools/Failed', message: ({ tool }: { tool: string }) => `${tool} failed` });
+import * as AppEx from 'application-exception';
+AppEx.defineException({ tag: 'tools/Failed', message: ({ tool }: { tool: string }) => `${tool} failed` });
 ```
 
 ## APPEX_INVALID_ID_PREFIX
@@ -55,8 +55,8 @@ Cause: an empty prefix, a very long one, or one with a space or a non-ASCII char
 Fix: omit `idPrefix` (ids start with `AE_`) or pass a short one.
 
 ```ts
-import { defineException } from 'application-exception';
-defineException({ tag: 'tools/Failed', message: 'failed', idPrefix: 'TOOL_' });
+import * as AppEx from 'application-exception';
+AppEx.defineException({ tag: 'tools/Failed', message: 'failed', idPrefix: 'TOOL_' });
 ```
 
 ## APPEX_INVALID_PUBLIC_POLICY
@@ -66,8 +66,8 @@ Cause: a missing `code`, a legacy `details` key, or `detailsSelector` given as a
 Fix: declare `code`, an optional `message`, and an optional `detailsSelector` function.
 
 ```ts
-import { defineException } from 'application-exception';
-defineException({
+import * as AppEx from 'application-exception';
+AppEx.defineException({
   tag: 'tools/Failed',
   message: ({ tool }: { tool: string }) => `${tool} failed`,
   public: { code: 'TOOL_FAILED', message: 'The tool failed.', detailsSelector: ({ tool }) => ({ tool }) },
@@ -81,8 +81,8 @@ Cause: `null`, an array, a class instance with methods, a getter, a function-val
 Fix: pass a plain object of data; convert instances with a projection first. The message names the offending path, such as `details.session.token`.
 
 ```ts
-import { defineException } from 'application-exception';
-const Failed = defineException({ tag: 'tools/Failed', message: ({ tool }: { tool: string }) => `${tool} failed` });
+import * as AppEx from 'application-exception';
+const Failed = AppEx.defineException({ tag: 'tools/Failed', message: ({ tool }: { tool: string }) => `${tool} failed` });
 const instance = new Date(0);
 new Failed({ details: { tool: `job-${instance.toISOString()}` } });
 ```
@@ -95,8 +95,8 @@ Fix: pass one of them. Two or more causes become an `AggregateError`; a
 single-element list is installed directly; an empty list installs nothing.
 
 ```ts
-import { defineException } from 'application-exception';
-const Failed = defineException({ tag: 'tools/Failed', message: 'failed' });
+import * as AppEx from 'application-exception';
+const Failed = AppEx.defineException({ tag: 'tools/Failed', message: 'failed' });
 new Failed({ causes: [new Error('primary down'), new Error('fallback down')] });
 ```
 
@@ -117,9 +117,9 @@ Cause and fix, per case:
 | `maxReportBytes` below 512 (diagnostic) or 2,048 (public), non-integral, or unsafe | pass a safe integer at or above the audience minimum, omit it for the default, or pass `null` to disable the total cap |
 
 ```ts
-import { makeDiagnosticReport, makePublicReport } from 'application-exception';
-makeDiagnosticReport(new Error('x'), { context: { runId: 'r' }, corj: { maxDepth: 2 } });
-makePublicReport(new Error('x'), { policyOverride: { code: 'X', message: 'x', detailsSelector: () => ({ a: 1 }) } });
+import * as AppEx from 'application-exception';
+AppEx.makeDiagnosticReport(new Error('x'), { context: { runId: 'r' }, corj: { maxDepth: 2 } });
+AppEx.makePublicReport(new Error('x'), { policyOverride: { code: 'X', message: 'x', detailsSelector: () => ({ a: 1 }) } });
 ```
 
 ## APPEX_INVALID_OCCURRENCE_ID
@@ -129,8 +129,8 @@ Cause: passing an empty string, a non-string identifier, or text with a space or
 Fix: omit `occurrenceId` (the occurrence id of the exception or a memoized `AE_` id is used) or pass a bounded ASCII string. `makeDiagnosticReport` and `makePublicReport` validate this option before they build a corj maker, so you see this coded error rather than corj's plain `TypeError`; `makeReportPair` resolves both option bags first, so an invalid corj option there is reported before an invalid `occurrenceId`.
 
 ```ts
-import { makePublicReport } from 'application-exception';
-makePublicReport('thrown text', { occurrenceId: 'trace-42' });
+import * as AppEx from 'application-exception';
+AppEx.makePublicReport('thrown text', { occurrenceId: 'trace-42' });
 ```
 
 ## APPEX_INVALID_PUBLIC_CODE
@@ -140,8 +140,8 @@ Cause: an empty code or a number.
 Fix: pass an upper-case identifier, or omit `code` to use the kind's policy.
 
 ```ts
-import { makePublicReport } from 'application-exception';
-makePublicReport(new Error('x'), { policyOverride: { code: 'SEARCH_UNAVAILABLE' } });
+import * as AppEx from 'application-exception';
+AppEx.makePublicReport(new Error('x'), { policyOverride: { code: 'SEARCH_UNAVAILABLE' } });
 ```
 
 ## APPEX_INVALID_PUBLIC_MESSAGE
@@ -151,8 +151,8 @@ Cause: passing an Error, a number, or an object as the message.
 Fix: pass display text, or a function of the kind's details that returns display text, or omit `message` to use the kind's policy.
 
 ```ts
-import { makePublicReport } from 'application-exception';
-makePublicReport(new Error('x'), { policyOverride: { message: 'Search is temporarily unavailable.' } });
+import * as AppEx from 'application-exception';
+AppEx.makePublicReport(new Error('x'), { policyOverride: { message: 'Search is temporarily unavailable.' } });
 ```
 
 ## APPEX_INVALID_TRUST_REALM
@@ -162,10 +162,10 @@ Cause: a value that did not come from `makeTrustRealm`, a realm built by a copy 
 Fix: create the realm once with `makeTrustRealm()` and pass that same object to every cooperating copy; align the package versions when the protocols differ. Omit `realm` to keep each copy isolated.
 
 ```ts
-import { makeTrustRealm, defineException, makePublicReport } from 'application-exception';
-const realm = makeTrustRealm();
-const Timeout = defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
-makePublicReport(new Timeout(), { realm });
+import * as AppEx from 'application-exception';
+const realm = AppEx.makeTrustRealm();
+const Timeout = AppEx.defineException({ tag: 'db/Timeout', message: 'Timed out', public: { code: 'DB_TIMEOUT' }, realm });
+AppEx.makePublicReport(new Timeout(), { realm });
 ```
 
 ## APPEX_INVALID_REDACTION_POLICY
@@ -175,7 +175,7 @@ Cause: a `patterns` entry without the `g` flag (a non-global pattern would repla
 Fix: give every pattern the `g` flag, keep the options to `keys`, `paths`, `patterns`, `replacement` and `transform`, and build the policy once with `makeRedactionPolicy` and share that object between reports.
 
 ```ts
-import { makeRedactionPolicy, makeDiagnosticReport } from 'application-exception';
-const redact = makeRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
-makeDiagnosticReport(new Error('x'), { redact });
+import * as AppEx from 'application-exception';
+const redact = AppEx.makeRedactionPolicy({ keys: ['password', /token$/i], patterns: [/\bsk-[A-Za-z0-9]{8,}\b/g] });
+AppEx.makeDiagnosticReport(new Error('x'), { redact });
 ```

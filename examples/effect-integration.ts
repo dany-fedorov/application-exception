@@ -1,7 +1,7 @@
 import { Effect } from 'effect';
-import { defineException } from '../src';
+import * as AppEx from '../src';
 
-const SearchFailed = defineException({
+const SearchFailed = AppEx.defineException({
   tag: 'agent/SearchFailed',
   message: ({ query }: { query: string }) => `Search failed for ${query}`,
 });

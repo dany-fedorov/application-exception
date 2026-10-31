@@ -1,4 +1,4 @@
-import { decodePublicReport } from '../src';
+import * as AppEx from '../src';
 
 export interface RetryPolicy {
   readonly operation: string;
@@ -38,7 +38,7 @@ export function chooseRecoveryAction(
   externalValue: unknown,
   policy: RetryPolicy,
 ): RecoveryAction {
-  const decoded = decodePublicReport(externalValue);
+  const decoded = AppEx.decodePublicReport(externalValue);
   if (!decoded.ok) {
     return {
       action: 'escalate',
