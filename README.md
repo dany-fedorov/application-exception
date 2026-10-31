@@ -3,59 +3,11 @@
 Typed failures and deliberate disclosure for TypeScript services and LLM
 harnesses.
 
-Your agent reads your error messages. A stack trace in a tool result hands it a
-database host, a file path, a user's email, and it will happily repeat them to
-whoever asked. Hiding everything is no better: an agent that only sees
-`"Something went wrong"` retries blindly, and an operator who only sees the
-agent's transcript cannot find the failure in the logs.
+An error message used to be read by a developer. Now it is read by a model,
+and whatever it says becomes the next prompt.
 
-This package gives every failure two reports from one `catch`: a diagnostic
-report with the full error graph for your logs, and a public report with only
-what the kind's policy chose for the agent or user. Both carry the same
-`occurrence_id`, so the operator can go from the agent's one line to the whole
-stack. A kind without a policy discloses nothing. That default is the safe one.
-
-[Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Examples](https://github.com/dany-fedorov/application-exception/blob/main/examples) · [Changelog](CHANGELOG.md)
-
-## Quick start
-
-```sh
-npm install application-exception
-```
-
-Define a kind with typed details and a public policy. At the boundary, call
-`makeReportPair` once and send each report to its audience.
-
-```ts
-import { defineException, makeReportPair } from 'application-exception';
-
-const ToolUnavailable = defineException({
-  tag: 'tools/Unavailable',
-  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
-  public: {
-    code: 'TOOL_UNAVAILABLE',
-    message: 'The requested tool is temporarily unavailable.',
-    detailsSelector: ({ tool }) => ({ tool }),
-  },
-});
-
-function runSearch(): never {
-  throw new ToolUnavailable({
-    details: { tool: 'search' },
-    cause: new Error('connect ECONNREFUSED 10.0.0.7:5432'),
-  });
-}
-
-try {
-  runSearch();
-} catch (caught: unknown) {
-  const reports = makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
-  console.error(JSON.stringify(reports.diagnostic)); // trusted sink only
-  console.log(JSON.stringify(reports.public)); // safe for the agent
-}
-```
-
-The two reports, side by side (stack frames shortened):
+Same failure, twice. Left is your log. Right is what the agent gets. Find the
+database host.
 
 <table><tr><th>reports.diagnostic — for your logs</th><th>reports.public — for the agent</th></tr><tr><td>
 
@@ -100,12 +52,59 @@ The two reports, side by side (stack frames shortened):
 
 </td></tr></table>
 
-`10.0.0.7:5432` is in one report and not the other. The agent gets a `code` to
-branch on, a `message` to display, the `as_json` the policy selected, and an
-`occurrence_id` to quote when it escalates. A caught value without a policy,
-a plain `Error` included, produces `code: "INTERNAL_ERROR"` and
-`message: "Something went wrong"` with the same `occurrence_id` as its
-diagnostic report.
+This package gives every failure two reports from one `catch`: a diagnostic
+report with the full error graph for your logs, and a public report with only
+what the kind's policy chose for the agent or user. Both carry the same
+`occurrence_id`, so the operator can go from the agent's one line to the whole
+stack. A kind without a policy discloses nothing, and neither does a plain
+`Error` or a thrown string: they become `INTERNAL_ERROR` /
+`Something went wrong`, still correlated. That default is the safe one.
+
+[Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Examples](https://github.com/dany-fedorov/application-exception/blob/main/examples) · [Changelog](CHANGELOG.md)
+
+## Quick start
+
+```sh
+npm install application-exception
+```
+
+The code that produced the two reports above. Define a kind with typed details
+and a public policy; at the boundary, call `makeReportPair` once and send each
+report to its audience.
+
+```ts
+import { defineException, makeReportPair } from 'application-exception';
+
+const ToolUnavailable = defineException({
+  tag: 'tools/Unavailable',
+  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+  public: {
+    code: 'TOOL_UNAVAILABLE',
+    message: 'The requested tool is temporarily unavailable.',
+    detailsSelector: ({ tool }) => ({ tool }),
+  },
+});
+
+function runSearch(): never {
+  throw new ToolUnavailable({
+    details: { tool: 'search' },
+    cause: new Error('connect ECONNREFUSED 10.0.0.7:5432'),
+  });
+}
+
+try {
+  runSearch();
+} catch (caught: unknown) {
+  const reports = makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
+  console.error(JSON.stringify(reports.diagnostic)); // trusted sink only
+  console.log(JSON.stringify(reports.public)); // safe for the agent
+}
+```
+
+The agent gets a `code` to branch on, a `message` to display, the `as_json` the
+policy selected, and an `occurrence_id` to quote when it escalates. The
+operator gets the stack, the cause chain under `children`, the `details`, and
+the `context` you attached.
 
 ### Why not just…
 
