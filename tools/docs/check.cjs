@@ -21,8 +21,10 @@ const LINK_SOURCES = [
   'docs/README.md',
 ];
 // The card is generated, so these bound drift, not prose. 0.4.0 added five
-// runtime exports and six types; the card budget rose with the surface.
-const BUDGETS = { 'AGENTS.md': 170, 'docs/agent/api-card.md': 650 };
+// runtime exports and six types; the card budget rose with the surface, and
+// again when every example gained an output line and the task table grew.
+const BUDGETS = { 'AGENTS.md': 170, 'docs/agent/api-card.md': 700 };
+const EXAMPLES_DIR = path.join(ROOT, 'examples');
 const findings = [];
 const finding = (text) => findings.push(text);
 const read = (relative) => fs.readFileSync(path.join(ROOT, relative), 'utf8');
@@ -231,12 +233,49 @@ function typeCheckSnippets(snippets) {
   return files.length;
 }
 
+// The examples are linked from the README, so they must compile against src
+// under the project's own tsconfig, like the snippets do under theirs.
+function checkExamples() {
+  const config = ts.readConfigFile(
+    path.join(ROOT, 'tsconfig.json'),
+    ts.sys.readFile,
+  );
+  if (config.error)
+    throw new Error(
+      ts.flattenDiagnosticMessageText(config.error.messageText, '\n'),
+    );
+  const { options } = ts.parseJsonConfigFileContent(config.config, ts.sys, ROOT);
+  const files = fs
+    .readdirSync(EXAMPLES_DIR)
+    .filter((name) => name.endsWith('.ts'))
+    .map((name) => path.join(EXAMPLES_DIR, name));
+  if (files.length === 0) finding('examples/ holds no .ts files');
+  const program = ts.createProgram(files, { ...options, noEmit: true });
+  for (const diagnostic of ts.getPreEmitDiagnostics(program)) {
+    const where = diagnostic.file
+      ? `${path.relative(ROOT, diagnostic.file.fileName)}:${
+          diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start || 0)
+            .line + 1
+        }`
+      : 'examples';
+    finding(
+      `${where}: ${ts.flattenDiagnosticMessageText(
+        diagnostic.messageText,
+        ' ',
+      )}`,
+    );
+  }
+  return files.length;
+}
+
 let count = 0;
+let examples = 0;
 try {
   checkCard();
   checkBudgets();
   checkErrorSections();
   checkLinks();
+  examples = checkExamples();
   count = checkSnippets();
 } catch (error) {
   // A missing document or a generator that throws is a documentation finding, not a crash.
@@ -251,5 +290,5 @@ if (findings.length > 0) {
   process.exit(1);
 }
 process.stdout.write(
-  `Documentation checks passed (${count} snippets type-checked).\n`,
+  `Documentation checks passed (${count} snippets and ${examples} examples type-checked).\n`,
 );

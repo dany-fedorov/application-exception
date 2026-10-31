@@ -7,6 +7,8 @@
 | [API card](agent/api-card.md) | Generated signatures, summaries, and examples for every export | yes |
 | [Recipes](agent/recipes.md) | Thirteen complete tasks, each a compiling snippet | yes |
 | [Errors](agent/errors.md) | One section per `APPEX_*` code: when, cause, fix | yes |
+| [Design records](design) | Why the public fingerprint, redaction, and cross-copy trust are built as they are | yes |
+| [Examples](../examples) | Runnable programs: a tool boundary, agent recovery, Effect integration | no |
 | [Schemas](../schemas) | JSON Schemas for both reports | yes |
 | [Changelog](../CHANGELOG.md) | Changes by release | yes |
 | [Vocabulary](../CONTEXT.md) | The terms the code and docs use | no |
@@ -23,6 +25,8 @@
 | A library error, its cause, and its fix | `docs/agent/errors.md`; error messages carry the section URL |
 | corj field meanings | the caught-object-report-json README and schema |
 | Extension and public field meanings | `README.md` and the schema descriptions |
+| A numeric limit | the `Limits` table in `README.md` |
+| Why a disclosure rule is shaped the way it is | `docs/design/*.md` |
 | Vocabulary | `CONTEXT.md` |
 | Which runtimes are supported and what was observed | `docs/runtime-support.md` |
 
@@ -31,8 +35,9 @@
 `npm run docs:generate` rewrites the API card from JSDoc. `npm run docs:check`
 regenerates it in memory and fails on drift, type-checks every fenced `ts`
 block in `README.md`, `AGENTS.md`, and `docs/agent/*.md` against `src`,
-enforces the size budgets (`AGENTS.md` 170 lines, the card 650), requires one
-errors.md section per code, and resolves every relative link. Use `json` or
+enforces the size budgets (`AGENTS.md` 170 lines, the card 700), requires one
+errors.md section per code, type-checks `examples/*.ts`, and resolves every
+relative link. Use `json` or
 `text` fences for fragments that are not complete programs; a first line
 `// expect-error: <fragment>` marks a block that must fail to compile with a
 diagnostic containing the fragment.

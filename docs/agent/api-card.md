@@ -16,9 +16,13 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 | Answer an agent or user about a failure | `makePublicReport(caught)` |
 | Correlate the two reports | `report.occurrence_id`, equal on both for any object; pass `occurrenceId` for thrown primitives |
 | Read a public report received as JSON | `decodePublicReport(value)` |
+| Decide whether to retry after a public report | branch on `report.code`; never on `message` |
+| Escalate a failure to a human or operator | quote `report.occurrence_id`; the operator finds the diagnostic report by it |
 | Capture both reports as one occurrence | `makeReportPair(caught, { diagnostic, public })` |
+| Report a thrown primitive with both reports correlated | `makeReportPair(caught)`, or the same `occurrenceId` option in both single calls |
 | Bound the whole diagnostic report | `makeDiagnosticReport(caught, { maxReportBytes })` |
-| Configure CORJ inspection and fingerprinting | `{ corj: { inspection, maxDepth, fingerprintParts, … } }`; public reports accept only effective keys |
+| Report an untrusted value without running its code | `makeDiagnosticReport(caught, { corj: { inspection: 'no-invoke' } })` |
+| Configure CORJ inspection and fingerprinting | `{ corj: { inspection, maxDepth, fingerprintParts, … } }`; the public bag accepts only the keys that reach `as_json` or the fingerprint |
 | Override what one call discloses | `makePublicReport(caught, { policyOverride: { code, message, detailsSelector } })` |
 | Tell two failures apart, or recognize a repeat | `report.fingerprint`, equal on both reports of one occurrence |
 | Keep secrets out of either report | `makeRedactionPolicy({ keys, paths, patterns })` passed as `redact` |
@@ -71,8 +75,8 @@ Narrow a specific kind with `instanceof` before reading its details.
 import { defineException, isTypedException } from 'application-exception';
 const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
 const caught: unknown = new Unavailable();
-if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId);
-if (caught instanceof Unavailable) console.log(caught.details);
+if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId); // 'app/Unavailable' 'AE_…'
+if (caught instanceof Unavailable) console.log(caught.details); // {}
 ```
 
 ### `isTrustedException`
@@ -235,7 +239,8 @@ const { occurrence_id, diagnostic, public: disclosed } = makeReportPair('socket 
   diagnostic: { context: { runId: 'run-1' }, maxReportBytes: 4096 },
 });
 console.error(JSON.stringify(diagnostic)); // the operator copy
-console.log(disclosed.code, occurrence_id); // 'INTERNAL_ERROR' 'AE_…'
+// { v: 'appex/public/v4', occurrence_id: 'AE_…', code: 'INTERNAL_ERROR', message: 'Something went wrong' }
+console.log(disclosed.code, occurrence_id === diagnostic.occurrence_id); // 'INTERNAL_ERROR' true
 ```
 
 ### `decodePublicReport`
@@ -245,17 +250,18 @@ function decodePublicReport(value: unknown): DecodePublicReportResult;
 ```
 
 Detach a v3/v4 public report, keeping its version. Branch on `report.code`
-after `ok`; escalate `!ok` with `reason` and sender-influenced `path` data.
-Text bounds count code points; reject details beyond depth 32, 10,000 values,
-or 16,384 UTF-8 compact JSON bytes. Paths quote keys (64 UTF-16 units, surrogate
-safe) in complete bracket segments within 256 units, with an ellipsis if cut.
+after `ok`; escalate `!ok` with `reason` and the sender-influenced `path`.
+The decoder enforces the receiver limits in the README's Limits table on
+`as_json` and on text fields, rejecting rather than truncating; a rejection
+`path` is bounded and JSON-quoted but still untrusted data.
 
 ```ts
 import { decodePublicReport } from 'application-exception';
 const json = '{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
 const decoded = decodePublicReport(JSON.parse(json) as unknown);
+// { ok: true, report: { v: 'appex/public/v3', occurrence_id: 'AE_1', code: 'TOOL_UNAVAILABLE', message: 'Down.' } }
 if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
-else console.log(decoded.reason, decoded.path);
+else console.log(decoded.reason, decoded.path); // e.g. 'Expected a string' '$.code'
 ```
 
 ### `Corj`
@@ -267,7 +273,10 @@ const Corj: { readonly makeReport: (caught: unknown, input?: CorjReportInput) =>
 The exact frozen CORJ utility namespace for one-off reports, policy resolution, and restoration of omitted fields.
 
 ```ts
-import { Corj, makeDiagnosticReport } from 'application-exception'; console.log(Corj.restoreExpectedValues(makeDiagnosticReport(new Error('x'))).v); // 'corj/v0.15-full'
+import { Corj, makeDiagnosticReport } from 'application-exception';
+const report = makeDiagnosticReport(new Error('connection refused'));
+const full = Corj.restoreExpectedValues(report);
+console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
 ```
 
 ### `DIAGNOSTIC_REPORT_VERSION`
@@ -477,7 +486,11 @@ export type PublicReportCorjOptions = Pick<
 >;
 ```
 
-The CORJ settings that affect public detail serialization or fingerprinting.
+The CORJ settings that affect a public report. `inspection`, `maxDepth`,
+`maxChildren`, and `childrenSources` bound how the selected details are
+inspected into `as_json` and which nodes of the error graph the fingerprint
+walks; `fingerprintParts` is the hash recipe (`null` withholds the public
+fingerprint); `onReportingError` receives the raw reporting failure.
 
 ### `PublicReportOptions`
 

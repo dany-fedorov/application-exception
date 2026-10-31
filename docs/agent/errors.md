@@ -1,18 +1,30 @@
 # Errors thrown by application-exception
 
-Every error is a `TypeError` with an enumerable `code` and a message of the
-form `<CODE>: <text>; see <this file>#<code>`. They signal a wrong call, not a
-runtime failure of your application: fix the call site instead of catching them.
-Errors from accepted options in the `corj` bag (`maxDepth`, `maxChildren`,
-`stackFormat`, `metadata`, `fingerprintParts`, and the other audience-specific
-CORJ options) propagate unchanged as corj's `TypeError` or `RangeError`, except
-that an array supplied as diagnostic `corj.metadata` throws
-`APPEX_INVALID_OPTIONS` from this package. Corj validates other accepted values
-when the maker is built, and its message names the option. This package also
-rejects an unknown key, a `corj` that is not an object, unsupported nested keys,
-and the `occurrenceId`, `maxReportBytes`,
-`redact`, and `policyOverride` options
-below.
+Every error this package throws is a `TypeError` with an enumerable `code` and
+a message of the form `<CODE>: <text>; see <this file>#<code>`. It signals a
+wrong call, not a runtime failure of your application: fix the call site instead
+of catching it.
+
+| Code | Thrown by | Fix in one line |
+| --- | --- | --- |
+| [`APPEX_INVALID_TAG`](#appex_invalid_tag) | `defineException` | a nonempty `tag` of at most 128 UTF-16 units |
+| [`APPEX_INVALID_MESSAGE`](#appex_invalid_message) | `defineException` | `message` is a string or a function of the details |
+| [`APPEX_INVALID_ID_PREFIX`](#appex_invalid_id_prefix) | `defineException` | `idPrefix` is 1 to 32 printable ASCII characters |
+| [`APPEX_INVALID_PUBLIC_POLICY`](#appex_invalid_public_policy) | `defineException` | `public` is `{ code, message?, detailsSelector? }` |
+| [`APPEX_INVALID_DETAILS`](#appex_invalid_details) | `new Kind(...)` | `details` is a plain data-only object |
+| [`APPEX_INVALID_CAUSES`](#appex_invalid_causes) | `new Kind(...)` | pass `cause` or an array `causes`, not both |
+| [`APPEX_INVALID_OPTIONS`](#appex_invalid_options) | the three report functions | only the documented keys; CORJ options go in `corj` |
+| [`APPEX_INVALID_OCCURRENCE_ID`](#appex_invalid_occurrence_id) | the three report functions | `occurrenceId` is 1 to 128 printable ASCII characters |
+| [`APPEX_INVALID_PUBLIC_CODE`](#appex_invalid_public_code) | `makePublicReport`, `makeReportPair` | `policyOverride.code` is a nonempty string |
+| [`APPEX_INVALID_PUBLIC_MESSAGE`](#appex_invalid_public_message) | `makePublicReport`, `makeReportPair` | `policyOverride.message` is a string or a function |
+| [`APPEX_INVALID_TRUST_REALM`](#appex_invalid_trust_realm) | anything that takes `realm` | pass the object `makeTrustRealm()` returned |
+| [`APPEX_INVALID_REDACTION_POLICY`](#appex_invalid_redaction_policy) | `makeRedactionPolicy`, `redact` | build the policy with `makeRedactionPolicy`; every pattern has the `g` flag |
+
+Errors from accepted values inside the `corj` bag (`maxDepth`, `maxChildren`,
+`stackFormat`, `fingerprintParts`, and the other CORJ options) propagate
+unchanged as corj's own `TypeError` or `RangeError`, whose message names the
+option. One exception: an array given as diagnostic `corj.metadata` throws
+`APPEX_INVALID_OPTIONS` from this package.
 
 ## APPEX_INVALID_TAG
 
@@ -145,7 +157,7 @@ makePublicReport(new Error('x'), { policyOverride: { message: 'Search is tempora
 
 ## APPEX_INVALID_TRUST_REALM
 
-When: a `realm` passed to `defineException`, `isTypedException`, `makePublicReport`, or `makeReportPair` is not a realm this copy can speak to.
+When: a `realm` passed to `defineException`, `isTrustedException`, `makePublicReport`, or `makeReportPair` is not a realm this copy can speak to.
 Cause: a value that did not come from `makeTrustRealm`, a realm built by a copy on a different realm protocol, or an object claiming the protocol without its methods. The message names both protocols.
 Fix: create the realm once with `makeTrustRealm()` and pass that same object to every cooperating copy; align the package versions when the protocols differ. Omit `realm` to keep each copy isolated.
 

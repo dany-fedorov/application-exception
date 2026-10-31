@@ -9,7 +9,13 @@ export type DiagnosticReportCorjOptions = Omit<
   'redact' | 'maxReportSize' | 'reportSizeUnit'
 >;
 
-/** The CORJ settings that affect public detail serialization or fingerprinting. */
+/**
+ * The CORJ settings that affect a public report. `inspection`, `maxDepth`,
+ * `maxChildren`, and `childrenSources` bound how the selected details are
+ * inspected into `as_json` and which nodes of the error graph the fingerprint
+ * walks; `fingerprintParts` is the hash recipe (`null` withholds the public
+ * fingerprint); `onReportingError` receives the raw reporting failure.
+ */
 export type PublicReportCorjOptions = Pick<
   CorjOptionsInput,
   | 'inspection'

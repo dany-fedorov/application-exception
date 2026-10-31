@@ -132,6 +132,13 @@ export function decide(received: unknown, retryable: readonly string[], remainin
 `code` selects the action; `message` never does. Carry the decremented budget
 into the next attempt. The host owns idempotency and backoff.
 
+The decoder validates shape and enforces receiver limits on `as_json` (depth,
+value count, compact-JSON bytes), rejecting rather than truncating; the exact
+numbers are in the [limits table](../../README.md#limits). A rejection's `path`
+is bounded, JSON-quoted, and still sender-influenced: escape it when you log
+it and never treat it as a model instruction. Bound the transport body before
+`JSON.parse` as well.
+
 ## Stop a retry loop on a repeated failure
 
 ```ts
@@ -155,42 +162,15 @@ constructor name and the stack text of every node of the error graph — so two
 reports with the same value describe the same failure from the same place. Equal
 means retrying the same way will fail the same way: change the call or escalate.
 Unequal means a different failure, not progress. It is a retry signal, not a
-lookup key: `occurrence_id` is what you quote when escalating. It is absent when
-the sender turned it off with `corj: { fingerprintParts: null }`, on a report of
-format `appex/public/v3`, which predates it, and whenever the hash is not backed
-by real stack frames.
+lookup key: `occurrence_id` is what you quote when escalating.
 
-Publishing a fingerprint publishes a hash of values the reader may be able to
-guess, so **a public report carries one only when the hash is backed by real
-stack frames**: the recipe must include `'stack'`, the root's stack must have
-been read, and after redaction and the header cut it must still hold frames. A
-thrown string or number, a plain object, an object with a `toString`, an `Error`
-whose stack is gone or is frameless prose, and any recipe without `'stack'` —
-`corj: { fingerprintParts: ['message'] }` included — publish none, because such
-a hash is over the value's own text and a reader who guesses the text confirms
-it. A stack-backed hash still covers every other part of the recipe, so adding
-`'message'` to the public bag's recipe puts the message into the hash next to
-the frames. Even without knowing the frames, a reader who
-can trigger the same failure site with candidate sensitive text can compare
-hashes and confirm a guess. Exclude sensitive recipe parts, redact their inputs,
-or use `public: { corj: { fingerprintParts: null } }` on `makeReportPair` to
-withhold the public hash. The default recipe does not necessarily hash message
-text; assess the parts and redaction configured for the public call.
-
-At the receiving boundary, `decodePublicReport` uses Unicode code points for
-field text lengths, matching JSON Schema. It applies additional resource limits
-to `as_json`: depth 32, 10,000 values, and 16,384 UTF-8 bytes of compact JSON,
-including keys, delimiters, escaping, and punctuation. Excess data and sparse
-arrays are rejected, never silently truncated. These are receiver policies
-beyond the wire schema; existing producer limits remain unchanged. Bound the
-transport body before JSON parsing, too.
-
-A rejection's `path` quotes dynamic keys with JSON bracket notation, keeps at
-most 64 UTF-16 units per key without splitting a surrogate pair, and stays
-within 256 units overall. A segment that does not fit is omitted and the path
-ends with an ellipsis. The path remains sender-influenced data: escape it when
-displaying or logging it and never treat it as a model instruction. These checks
-do not guarantee accessor-free handling of arbitrary Proxy inputs.
+It is absent when the sender turned it off with `corj: { fingerprintParts: null }`,
+on a report of format `appex/public/v3`, which predates it, and whenever the
+hash is not backed by real stack frames: a thrown primitive, a plain object, a
+stackless `Error`, or a recipe without `'stack'`. A sender whose recipe includes
+sensitive text should exclude it, redact its inputs, or withhold the public
+hash; the reasoning is in
+[../design/public-fingerprint.md](../design/public-fingerprint.md).
 
 ## Test a failure path
 
@@ -417,22 +397,10 @@ brand and a report revived from JSON acquire nothing. Deduplicating the install
 is the simpler fix when you control it; it does not help across independently
 bundled artifacts.
 
-Correlation has a separate rule from policy trust. Automatic foreign branded
-`occurrenceId` adoption accepts only `/^[A-Za-z0-9_.:-]{1,128}$/`; a rejected ID
-gets a memoized generated replacement. Paired and standalone reports from this
-copy use that same replacement. Locally registered instances and explicit caller
-IDs keep the existing printable-ASCII rule `/^[\x21-\x7e]{1,128}$/`. A narrower
-alphabet provides neither authentication nor secrecy: escape IDs and treat them
-as data.
-
-Older copies and standalone corj may retain a foreign ID this release replaces.
-When correlation with those reporters is required, validate an ID from a trusted
-source and pass the same explicit `occurrenceId` override to each reporter.
-Incoming public reports from older senders still decode under their published
-schemas; automatic foreign-ID adoption does not tighten the wire contract.
-
-Diagnostic schema roots intentionally accept extensions, including unknown
-fields and valid `$schema` metadata. In v5 and v6 an optional-field typo such as
-`contxt` passes, but a bad known value such as `context_omitted: 'typo'` fails.
-Use application checks when you need to catch such typos. Public roots are
-closed, and historical schemas stay unchanged.
+Correlation has a separate rule from policy trust. A foreign branded
+`occurrenceId` is adopted automatically only when it matches
+`/^[A-Za-z0-9_.:-]{1,128}$/`; any other gets a memoized generated replacement,
+shared by this copy's paired and standalone reports. To correlate with an older
+copy or with standalone corj, validate an ID from a trusted source and pass the
+same explicit `occurrenceId` to each reporter. The full rules are in
+[../design/cross-copy-trust.md](../design/cross-copy-trust.md).
