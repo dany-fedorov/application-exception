@@ -1,5 +1,7 @@
 # application-exception
 
+[![npm](https://img.shields.io/npm/v/application-exception)](https://www.npmjs.com/package/application-exception)
+
 A small utility for the error-handling chores in a TypeScript service: define
 an error kind in one call, get typed details and a stable tag, serialize any
 caught value to bounded JSON, and decide once what a client is allowed to see.
@@ -34,7 +36,7 @@ caught value to bounded JSON, and decide once what a client is allowed to see.
 - **Nothing exotic.** CommonJS, Node 18+, Bun, browsers via a bundler. Two
   runtime dependencies. JSON Schemas for both reports ship in the package.
 
-[Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Examples](https://github.com/dany-fedorov/application-exception/blob/main/examples) · [Changelog](CHANGELOG.md)
+[npm](https://www.npmjs.com/package/application-exception) · [Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Examples](https://github.com/dany-fedorov/application-exception/blob/main/examples) · [Changelog](CHANGELOG.md)
 
 ## Quick start
 
