@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.1 — 2026-10-31
+
+Documentation only. No runtime change; the emitted declarations differ in
+their comments alone.
+
+- README: opens with a description of the utility and a feature list; adds a
+  "Why not just…" section, an "On the agent's side" section, and a Limits
+  table; shows both reports of one failure side by side from a real run.
+- Every snippet and example uses `import * as AppEx from 'application-exception'`;
+  AGENTS.md rule 0 records the convention. Named imports are unchanged.
+- New `docs/design/public-fingerprint.md` holds the public-fingerprint threat
+  model; README, recipes, and AGENTS.md link to it instead of repeating it.
+- API card: four new task rows (retry, escalate, thrown primitive, untrusted
+  value), an output line on every example, and a description of what each
+  `PublicReportCorjOptions` key does.
+- errors.md: a code-to-fix table at the top; `APPEX_INVALID_TRUST_REALM` now
+  names `isTrustedException`, the function that takes a realm.
+- AGENTS.md rule 10 split into one fact per rule; recipe prose trimmed to each
+  task; decoder limits and foreign-ID adoption notes deduplicated.
+- Repository: process documents removed; `docs:check` type-checks
+  `examples/*.ts`; dev dependencies moved to Jest 30.
+
 ## 0.8.0 — 2026-10-17
 
 **Compatibility.** This pre-1.0 minor release tightens decoder input acceptance
