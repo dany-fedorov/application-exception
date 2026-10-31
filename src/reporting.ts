@@ -489,7 +489,8 @@ function publicReportOf(
  *   diagnostic: { context: { runId: 'run-1' }, maxReportBytes: 4096 },
  * });
  * console.error(JSON.stringify(diagnostic)); // the operator copy
- * console.log(disclosed.code, occurrence_id); // 'INTERNAL_ERROR' 'AE_…'
+ * // { v: 'appex/public/v4', occurrence_id: 'AE_…', code: 'INTERNAL_ERROR', message: 'Something went wrong' }
+ * console.log(disclosed.code, occurrence_id === diagnostic.occurrence_id); // 'INTERNAL_ERROR' true
  * ```
  */
 export function makeReportPair(
@@ -714,18 +715,19 @@ function fingerprintOf(value: unknown): string {
 
 /**
  * Detach a v3/v4 public report, keeping its version. Branch on `report.code`
- * after `ok`; escalate `!ok` with `reason` and sender-influenced `path` data.
- * Text bounds count code points; reject details beyond depth 32, 10,000 values,
- * or 16,384 UTF-8 compact JSON bytes. Paths quote keys (64 UTF-16 units, surrogate
- * safe) in complete bracket segments within 256 units, with an ellipsis if cut.
+ * after `ok`; escalate `!ok` with `reason` and the sender-influenced `path`.
+ * The decoder enforces the receiver limits in the README's Limits table on
+ * `as_json` and on text fields, rejecting rather than truncating; a rejection
+ * `path` is bounded and JSON-quoted but still untrusted data.
  *
  * @example
  * ```ts
  * import { decodePublicReport } from 'application-exception';
  * const json = '{"v":"appex/public/v3","occurrence_id":"AE_1","code":"TOOL_UNAVAILABLE","message":"Down."}';
  * const decoded = decodePublicReport(JSON.parse(json) as unknown);
+ * // { ok: true, report: { v: 'appex/public/v3', occurrence_id: 'AE_1', code: 'TOOL_UNAVAILABLE', message: 'Down.' } }
  * if (decoded.ok) console.log(decoded.report.code); // 'TOOL_UNAVAILABLE'
- * else console.log(decoded.reason, decoded.path);
+ * else console.log(decoded.reason, decoded.path); // e.g. 'Expected a string' '$.code'
  * ```
  */
 export function decodePublicReport(value: unknown): DecodePublicReportResult {

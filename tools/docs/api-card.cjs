@@ -36,16 +36,32 @@ const TASKS = [
   ],
   ['Read a public report received as JSON', '`decodePublicReport(value)`'],
   [
+    'Decide whether to retry after a public report',
+    'branch on `report.code`; never on `message`',
+  ],
+  [
+    'Escalate a failure to a human or operator',
+    'quote `report.occurrence_id`; the operator finds the diagnostic report by it',
+  ],
+  [
     'Capture both reports as one occurrence',
     '`makeReportPair(caught, { diagnostic, public })`',
+  ],
+  [
+    'Report a thrown primitive with both reports correlated',
+    '`makeReportPair(caught)`, or the same `occurrenceId` option in both single calls',
   ],
   [
     'Bound the whole diagnostic report',
     '`makeDiagnosticReport(caught, { maxReportBytes })`',
   ],
   [
+    'Report an untrusted value without running its code',
+    '`makeDiagnosticReport(caught, { corj: { inspection: \'no-invoke\' } })`',
+  ],
+  [
     'Configure CORJ inspection and fingerprinting',
-    '`{ corj: { inspection, maxDepth, fingerprintParts, … } }`; public reports accept only effective keys',
+    '`{ corj: { inspection, maxDepth, fingerprintParts, … } }`; the public bag accepts only the keys that reach `as_json` or the fingerprint',
   ],
   [
     'Override what one call discloses',

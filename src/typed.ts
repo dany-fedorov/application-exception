@@ -483,8 +483,8 @@ export function defineException(definition: {
  * import { defineException, isTypedException } from 'application-exception';
  * const Unavailable = defineException({ tag: 'app/Unavailable', message: 'Unavailable' });
  * const caught: unknown = new Unavailable();
- * if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId);
- * if (caught instanceof Unavailable) console.log(caught.details);
+ * if (isTypedException(caught)) console.log(caught._tag, caught.occurrenceId); // 'app/Unavailable' 'AE_…'
+ * if (caught instanceof Unavailable) console.log(caught.details); // {}
  * ```
  */
 export function isTypedException(value: unknown): value is TypedException {

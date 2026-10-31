@@ -53,7 +53,10 @@ export {
    *
    * @example
    * ```ts
-   * import { Corj, makeDiagnosticReport } from 'application-exception'; console.log(Corj.restoreExpectedValues(makeDiagnosticReport(new Error('x'))).v); // 'corj/v0.15-full'
+   * import { Corj, makeDiagnosticReport } from 'application-exception';
+   * const report = makeDiagnosticReport(new Error('connection refused'));
+   * const full = Corj.restoreExpectedValues(report);
+   * console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
    * ```
    */
   Corj,
