@@ -85,6 +85,24 @@ describe('cross-copy trust', () => {
       expect(isTrustedException(foreign, realm)).toBe(true);
     });
 
+    test('registers a kind without a public policy: trusted, yet generic', () => {
+      const realm = makeTrustRealm();
+      const Internal = defineException({
+        tag: 'db/Internal',
+        message: 'Internal database failure',
+        realm,
+      });
+      const failure = new Internal();
+
+      expect(isTrustedException(failure, realm)).toBe(true);
+      expect(trustedPublicPolicyOf(failure, realm[TRUST_REALM_API])).toBe(
+        undefined,
+      );
+      expect(makePublicReport(failure, { realm })).toEqual(
+        code('INTERNAL_ERROR'),
+      );
+    });
+
     test('recognizes locally defined kinds through the realm too', () => {
       const realm = makeTrustRealm();
       const Local = defineTimeout(
