@@ -1,13 +1,80 @@
 # application-exception
 
-Typed failures and deliberate disclosure for TypeScript services and LLM
-harnesses.
+A small utility for the error-handling chores in a TypeScript service: define
+an error kind in one call, get typed details and a stable tag, serialize any
+caught value to bounded JSON, and decide once what a client is allowed to see.
 
-An error message used to be read by a developer. Now it is read by a model,
-and whatever it says becomes the next prompt.
+- **One call per error kind.** `defineException({ tag, message })` returns a
+  native `Error` subclass. No class body, no `super`, no prototype fixing.
+- **Typed details, inferred.** The message renderer's parameter type is the
+  details type: `new Kind({ details })` is checked, `caught.details` is typed
+  after `instanceof`, and `_tag` is a literal, so a `switch` over kinds is
+  exhaustive and `Effect.catchTag` works.
+- **Id, timestamp, and cause on every occurrence.** `occurrenceId` and
+  `timestamp` are set at construction; `cause`, or `causes` as an ordered
+  `AggregateError`, is wired in.
+- **Any caught value to JSON.** `makeDiagnosticReport(caught)` turns an
+  `Error`, a thrown string, `undefined`, or an object with throwing getters
+  into one bounded JSON report: stacks, cause chain under `children`, every
+  enumerable property. Byte budget, depth, and child caps included.
+- **A client-facing code without a rewrite.** Give a kind
+  `public: { code, message, detailsSelector }` and `makePublicReport(caught)`
+  produces what the client sees. Anything without a policy is
+  `INTERNAL_ERROR`. Both reports share an `occurrence_id`.
+- **Redact once.** One `makeRedactionPolicy({ keys, paths, patterns })` serves
+  both reports: skip properties before they are read, scrub text wherever it
+  appears, stacks included.
+- **Group repeats.** `fingerprint` is equal for the same failure from the
+  same place.
+- **Guards you would forget.** A renderer that throws yields
+  `<tag> [message rendering failed: …]` instead of a second exception inside
+  your `catch`; `snapshotDetails` freezes a deep copy against later mutation;
+  `inspection: 'no-invoke'` reports a hostile value without running its
+  getters; `decodePublicReport` validates a report received as JSON.
+- **Nothing exotic.** CommonJS, Node 18+, Bun, browsers via a bundler. Two
+  runtime dependencies. JSON Schemas for both reports ship in the package.
 
-Same failure, twice. Left is your log. Right is what the agent gets. Find the
-database host.
+[Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Examples](https://github.com/dany-fedorov/application-exception/blob/main/examples) · [Changelog](CHANGELOG.md)
+
+## Quick start
+
+```sh
+npm install application-exception
+```
+
+Define a kind with typed details and a public policy. At the boundary, call
+`makeReportPair` once and send each report to its audience.
+
+```ts
+import { defineException, makeReportPair } from 'application-exception';
+
+const ToolUnavailable = defineException({
+  tag: 'tools/Unavailable',
+  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
+  public: {
+    code: 'TOOL_UNAVAILABLE',
+    message: 'The requested tool is temporarily unavailable.',
+    detailsSelector: ({ tool }) => ({ tool }),
+  },
+});
+
+function runSearch(): never {
+  throw new ToolUnavailable({
+    details: { tool: 'search' },
+    cause: new Error('connect ECONNREFUSED 10.0.0.7:5432'),
+  });
+}
+
+try {
+  runSearch();
+} catch (caught: unknown) {
+  const reports = makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
+  console.error(JSON.stringify(reports.diagnostic)); // trusted sink only
+  console.log(JSON.stringify(reports.public)); // safe for the agent
+}
+```
+
+The two reports, from a real run (stack frames shortened):
 
 <table><tr><th>reports.diagnostic — for your logs</th><th>reports.public — for the agent</th></tr><tr><td>
 
@@ -52,59 +119,13 @@ database host.
 
 </td></tr></table>
 
-This package gives every failure two reports from one `catch`: a diagnostic
-report with the full error graph for your logs, and a public report with only
-what the kind's policy chose for the agent or user. Both carry the same
-`occurrence_id`, so the operator can go from the agent's one line to the whole
-stack. A kind without a policy discloses nothing, and neither does a plain
-`Error` or a thrown string: they become `INTERNAL_ERROR` /
-`Something went wrong`, still correlated. That default is the safe one.
-
-[Agent guide](AGENTS.md) · [API card](docs/agent/api-card.md) · [Recipes](docs/agent/recipes.md) · [Errors](docs/agent/errors.md) · [Examples](https://github.com/dany-fedorov/application-exception/blob/main/examples) · [Changelog](CHANGELOG.md)
-
-## Quick start
-
-```sh
-npm install application-exception
-```
-
-The code that produced the two reports above. Define a kind with typed details
-and a public policy; at the boundary, call `makeReportPair` once and send each
-report to its audience.
-
-```ts
-import { defineException, makeReportPair } from 'application-exception';
-
-const ToolUnavailable = defineException({
-  tag: 'tools/Unavailable',
-  message: ({ tool }: { tool: string }) => `Tool ${tool} is unavailable`,
-  public: {
-    code: 'TOOL_UNAVAILABLE',
-    message: 'The requested tool is temporarily unavailable.',
-    detailsSelector: ({ tool }) => ({ tool }),
-  },
-});
-
-function runSearch(): never {
-  throw new ToolUnavailable({
-    details: { tool: 'search' },
-    cause: new Error('connect ECONNREFUSED 10.0.0.7:5432'),
-  });
-}
-
-try {
-  runSearch();
-} catch (caught: unknown) {
-  const reports = makeReportPair(caught, { diagnostic: { context: { runId: 'run-1' } } });
-  console.error(JSON.stringify(reports.diagnostic)); // trusted sink only
-  console.log(JSON.stringify(reports.public)); // safe for the agent
-}
-```
-
-The agent gets a `code` to branch on, a `message` to display, the `as_json` the
-policy selected, and an `occurrence_id` to quote when it escalates. The
-operator gets the stack, the cause chain under `children`, the `details`, and
-the `context` you attached.
+`10.0.0.7:5432` is in one report and not the other. The client gets a `code` to
+branch on, a `message` to display, the `as_json` the policy selected, and an
+`occurrence_id` to quote when escalating. The operator gets the stack, the
+cause chain under `children`, the `details`, and the `context` you attached. A
+caught value without a policy, a plain `Error` included, produces
+`code: "INTERNAL_ERROR"` and `message: "Something went wrong"` with the same
+`occurrence_id` as its diagnostic report.
 
 ### Why not just…
 
