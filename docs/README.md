@@ -13,7 +13,6 @@
 | [Changelog](../CHANGELOG.md) | Changes by release | yes |
 | [Vocabulary](../CONTEXT.md) | The terms the code and docs use | no |
 | [Runtime support](runtime-support.md) | Which runtimes are exercised, how, and the limits | no |
-| [Specs and plans](superpowers) | Design decisions and implementation plans | no |
 
 ## Where a fact lives
 
