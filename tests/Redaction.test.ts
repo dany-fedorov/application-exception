@@ -557,11 +557,15 @@ describe('makeRedactionPolicy', () => {
     );
 
     test('a failure at any other stage is still scrubbed by the transform', () => {
-      const caught = {
-        get boom(): string {
+      // A getter on a plain object would not do: since corj 14 a policy with a
+      // transform snapshots containers without running getters. The error's own
+      // `message` is still read, so its getter fails at `prop-access`.
+      const caught = new Error('base');
+      Object.defineProperty(caught, 'message', {
+        get(): string {
           throw new Error('getter exploded');
         },
-      };
+      });
 
       const report = makeDiagnosticReport(caught, {
         redact: makeRedactionPolicy({
@@ -571,14 +575,39 @@ describe('makeRedactionPolicy', () => {
               : value,
         }),
       });
-      const entries = report.reporting_errors ?? [];
+      const entries = (report.reporting_errors ?? []).filter(
+        (entry) => entry.reportKey !== 'fingerprint',
+      );
 
       expect(entries.length).toBeGreaterThan(0);
       for (const entry of entries) {
         expect(entry.stage).not.toBe('redact');
         expect(entry.error).toBe('[gone]');
       }
+      expect(JSON.stringify(report)).not.toContain('getter exploded');
       expect(validateDiagnostic(report)).toBeNull();
+    });
+
+    test("a policy with a transform leaves the caught value's getters unread", () => {
+      let reads = 0;
+      const caught = {
+        get boom(): string {
+          reads += 1;
+          return 'value';
+        },
+      };
+
+      const plain = makeDiagnosticReport(caught, {
+        redact: makeRedactionPolicy({ keys: ['other'] }),
+      });
+      expect(plain.as_json).toEqual({ boom: 'value' });
+      expect(reads).toBe(1);
+
+      const transformed = makeDiagnosticReport(caught, {
+        redact: makeRedactionPolicy({ transform: (value) => value }),
+      });
+      expect(transformed.as_json).toEqual({ boom: '[not-inspected]' });
+      expect(reads).toBe(1);
     });
 
     test('keeps the public report safe and observable', () => {

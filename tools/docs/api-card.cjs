@@ -85,7 +85,7 @@ const TASKS = [
   ],
   [
     'Read omitted corj fields of a diagnostic report',
-    '`Corj.restoreExpectedValues(report)`',
+    '`Corj.restoreCaughtObjectReportExpectedValues(report)`',
   ],
 ];
 
@@ -180,9 +180,23 @@ function describeExport(symbol, checker) {
         const signatures = propertyType.getCallSignatures();
         if (signatures.length !== 1)
           throw new Error(`Corj.${property.name} must have one call signature`);
+        // Print each member in the scope of corj's own declaration, where its
+        // types are named, not in src/index.ts, where they would print as
+        // absolute import() paths.
+        const valueSymbol = ts.isShorthandPropertyAssignment(
+          propertyDeclaration,
+        )
+          ? checker.getShorthandAssignmentValueSymbol(propertyDeclaration)
+          : undefined;
+        const source =
+          valueSymbol && valueSymbol.flags & ts.SymbolFlags.Alias
+            ? checker.getAliasedSymbol(valueSymbol)
+            : valueSymbol;
+        const scope =
+          (source && (source.declarations || [])[0]) || propertyDeclaration;
         return `readonly ${property.name}: ${checker.signatureToString(
           signatures[0],
-          propertyDeclaration,
+          scope,
           FORMAT | ts.TypeFormatFlags.WriteArrowStyleSignature,
         )};`;
       });

@@ -410,7 +410,7 @@ report (`v: "corj/v0.15"`). corj documents every field and omits fields that
 hold their expected value; `null` means reading the field failed. Its options
 (`maxDepth`, `maxChildren`, `stackFormat`, `inspection`, `fingerprintParts`,
 `maxContextSize`, and the rest) live in the `corj` bag; `redact` and
-`maxReportBytes` stay at the top level. `Corj.restoreExpectedValues(report)`
+`maxReportBytes` stay at the top level. `Corj.restoreCaughtObjectReportExpectedValues(report)`
 fills the omitted fields back in.
 
 ```ts
@@ -419,7 +419,7 @@ import * as AppEx from 'application-exception';
 const report = AppEx.makeDiagnosticReport(new Error('outer', { cause: new Error('inner') }), {
   corj: { maxDepth: 2 },
 });
-const full = AppEx.Corj.restoreExpectedValues(report);
+const full = AppEx.Corj.restoreCaughtObjectReportExpectedValues(report);
 console.log(full.message, report.children?.[0]?.path); // 'outer' '$.cause'
 ```
 
@@ -458,7 +458,8 @@ markup, a shell command, or a model instruction.
 ## Formats and schemas
 
 The diagnostic report is `v: "corj/v0.15"`: a corj report plus `occurrence_id`,
-`fingerprint` (absent under `corj: { fingerprintParts: null }`), optional
+`fingerprint` (absent under `corj: { fingerprintParts: null }`, or with a
+`reporting_errors` row when corj cannot hash the error faithfully), optional
 `context`, optional `reporting_errors`, and the `context_omitted` /
 `reporting_errors_omitted` flags a budget sets. The public report is
 `v: "appex/public/v4"`: exactly `v`, `occurrence_id`, optional `fingerprint`,

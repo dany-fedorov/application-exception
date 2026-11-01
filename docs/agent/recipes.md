@@ -190,13 +190,13 @@ const response = AppEx.makePublicReport(error);
 assert.equal(response.code, 'TIMEOUT');
 assert.deepEqual(response.as_json, { ms: 500 });
 assert.equal(response.occurrence_id, diagnostic.occurrence_id);
-assert.equal(AppEx.Corj.restoreExpectedValues(diagnostic).message, 'Timed out after 500ms');
+assert.equal(AppEx.Corj.restoreCaughtObjectReportExpectedValues(diagnostic).message, 'Timed out after 500ms');
 assert.equal(diagnostic.children?.[0]?.path, '$.cause');
 assert.ok(!JSON.stringify(response).includes('socket hang up'));
 ```
 
 Assert on `code`, `occurrence_id`, `as_json`, and `children`; do not assert on
-stack lines. Use `Corj.restoreExpectedValues` when you need omitted corj fields.
+stack lines. Use `Corj.restoreCaughtObjectReportExpectedValues` when you need omitted corj fields.
 
 ## Capture both reports as one occurrence
 
@@ -334,8 +334,9 @@ Six things to remember:
    `/^[\x21-\x7e]{1,128}$/`. Treat it as data: escape it when you render it,
    never interpolate it into markup or into an instruction to a model.
 
-A `transform` sees raw input — whole objects, including members a skip rule
-excludes — so key it on `sourceProperty` and never quote its input in an error. If the
+A `transform` sees a detached snapshot — skipped members already `[redacted]`,
+getters and functions `[not-inspected]`, and no getter runs to build it — so key
+it on `sourceProperty` and never quote its input in an error. If the
 policy throws, the value becomes the replacement and the diagnostic report lists
 the failure in `reporting_errors` with `stage: 'redact'`; the thrown message is
 withheld, because it may quote what the policy was protecting. `makeReportPair`

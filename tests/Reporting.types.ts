@@ -38,8 +38,9 @@ const version: 'corj/v0.15' | 'corj/v0.15-full' = diagnostic.v;
 const fingerprint: string | undefined = diagnostic.fingerprint;
 void fingerprint;
 const stack: string | string[] | null | undefined = diagnostic.stack;
-const restored: DiagnosticReport = Corj.restoreExpectedValues(diagnostic);
-const restoredWithExtension = Corj.restoreExpectedValues({
+const restored: DiagnosticReport =
+  Corj.restoreCaughtObjectReportExpectedValues(diagnostic);
+const restoredWithExtension = Corj.restoreCaughtObjectReportExpectedValues({
   ...diagnostic,
   applicationField: true,
 });

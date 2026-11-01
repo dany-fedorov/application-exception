@@ -1,3 +1,10 @@
+import {
+  makeCaughtObjectReport,
+  makeCaughtObjectReportArray,
+  resolveCaughtObjectReportRedactPolicy,
+  restoreCaughtObjectReportExpectedValues,
+} from 'caught-object-report-json';
+
 export {
   makeTrustRealm,
   defineException,
@@ -47,20 +54,25 @@ export type {
 } from './report-types';
 export { APPEX_ERROR_CODES } from './errors';
 export type { AppexErrorCode, AppexTypeError } from './errors';
-export {
-  /**
-   * The exact frozen CORJ utility namespace for one-off reports, policy resolution, and restoration of omitted fields.
-   *
-   * @example
-   * ```ts
-   * import * as AppEx from 'application-exception';
-   * const report = AppEx.makeDiagnosticReport(new Error('connection refused'));
-   * const full = AppEx.Corj.restoreExpectedValues(report);
-   * console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
-   * ```
-   */
-  Corj,
-} from 'caught-object-report-json';
+/**
+ * The four stateless CORJ utilities under their corj names, frozen: one-off
+ * reports, redaction-policy resolution, and restoration of omitted fields. Each
+ * member is the dependency's own root function.
+ *
+ * @example
+ * ```ts
+ * import * as AppEx from 'application-exception';
+ * const report = AppEx.makeDiagnosticReport(new Error('connection refused'));
+ * const full = AppEx.Corj.restoreCaughtObjectReportExpectedValues(report);
+ * console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
+ * ```
+ */
+export const Corj = Object.freeze({
+  makeCaughtObjectReport,
+  makeCaughtObjectReportArray,
+  restoreCaughtObjectReportExpectedValues,
+  resolveCaughtObjectReportRedactPolicy,
+});
 export type {
   /** Any value that survives `JSON.stringify`: a string, number, boolean, `null`, or an array or object of those. */
   CorjJsonValue,

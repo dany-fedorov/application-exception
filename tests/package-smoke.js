@@ -134,7 +134,7 @@ try {
   }
 
   const api = consumerRequire('application-exception');
-  const dependencyCorj = consumerRequire('caught-object-report-json').Corj;
+  const dependencyCorj = consumerRequire('caught-object-report-json');
   assert.deepEqual(Object.keys(api).sort(), [
     'APPEX_ERROR_CODES',
     'Corj',
@@ -150,7 +150,15 @@ try {
     'makeReportPair',
     'makeTrustRealm',
   ]);
-  assert.equal(api.Corj, dependencyCorj);
+  assert.deepEqual(Object.keys(api.Corj).sort(), [
+    'makeCaughtObjectReport',
+    'makeCaughtObjectReportArray',
+    'resolveCaughtObjectReportRedactPolicy',
+    'restoreCaughtObjectReportExpectedValues',
+  ]);
+  for (const [name, utility] of Object.entries(api.Corj)) {
+    assert.equal(utility, dependencyCorj[name]);
+  }
   assert.equal(Object.isFrozen(api.Corj), true);
   assert.equal('restoreExpectedValues' in api, false);
   assert.throws(
@@ -222,7 +230,7 @@ try {
   assert.equal(bounded.context_omitted, 'max_size');
   assert.ok(Buffer.byteLength(JSON.stringify(bounded), 'utf8') <= 512);
   assert.equal(
-    api.Corj.restoreExpectedValues(diagnostic).message,
+    api.Corj.restoreCaughtObjectReportExpectedValues(diagnostic).message,
     'search failed',
   );
   assert.equal(
@@ -276,7 +284,7 @@ try {
       "const error = new Failure({ details: { tool: 'search' } });",
       "const tag: 'agent/Failure' = error._tag;",
       'const diagnostic: DiagnosticReport = makeDiagnosticReport(error, { maxReportBytes: 4096  });',
-      'const full: DiagnosticReport = Corj.restoreExpectedValues(diagnostic);',
+      'const full: DiagnosticReport = Corj.restoreCaughtObjectReportExpectedValues(diagnostic);',
       '// @ts-expect-error restoration moved under the Corj namespace',
       'applicationException.restoreExpectedValues;',
       "const response: PublicReport = makePublicReport(error, { policyOverride: { message: 'Down.' } });",
