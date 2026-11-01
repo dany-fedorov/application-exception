@@ -79,7 +79,7 @@ describe('shipped schemas', () => {
   });
 
   test('accept a report with its expected values restored', () => {
-    const restored = Corj.restoreExpectedValues(
+    const restored = Corj.restoreCaughtObjectReportExpectedValues(
       makeDiagnosticReport(new Error('outer', { cause: new Error('inner') })),
     );
     expect(restored.v).toBe(`${CORJ_VERSION}-full`);

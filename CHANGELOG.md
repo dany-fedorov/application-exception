@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.9.0 — 2026-11-02
+
+**Breaking.** The dependency moves to caught-object-report-json ^15.0.0
+(through 14.0.0). corj 15 removed its frozen `Corj` object, so `AppEx.Corj` is
+now this package's own frozen object holding corj's four root functions under
+their corj names. Report formats are unchanged: diagnostic reports use
+`corj/v0.15` (or `corj/v0.15-full` after restoration), public reports use
+`appex/public/v4`, and the published schemas keep their shapes.
+
+- `AppEx.Corj` members are renamed to match corj 15:
+  `makeReport` → `makeCaughtObjectReport`,
+  `makeReportArray` → `makeCaughtObjectReportArray`,
+  `restoreExpectedValues` → `restoreCaughtObjectReportExpectedValues`,
+  `resolveRedactPolicy` → `resolveCaughtObjectReportRedactPolicy`. Each member
+  is the dependency's own function; the object itself is no longer identical to
+  anything corj exports.
+- corj 14 hands a `transform` a detached, policy-sanitized snapshot instead of
+  the raw container: skipped members are already `[redacted]`, and accessors,
+  functions, symbols and BigInts are `[not-inspected]`. Preparing it runs no
+  getter, so with a `transform` in the policy a plain object's getters are no
+  longer read into the diagnostic `as_json`; they show as `[not-inspected]`.
+  Policies without a `transform` read getters as before.
+- corj 14 omits a computed `fingerprint`, with a `reporting_errors` row
+  (`reportKey: 'fingerprint'`, `stage: 'other'`), when it cannot rebuild the
+  `fp1_` input faithfully — for example when the error's `message` getter
+  throws. The diagnostic report of such an error now has one more
+  `reporting_errors` entry and no `fingerprint`; the schemas always allowed that.
+- corj 14 keeps colliding scrubbed property names with ` (2)` suffixes instead
+  of letting the last write win, and enforces finite work and text ceilings even
+  under `maxReportBytes: null`.
+- Docs: the redaction design record and recipes describe the snapshot a
+  `transform` sees; AGENTS.md and README note the second way a diagnostic
+  `fingerprint` can be absent.
+
+**Migration.** Rename the `AppEx.Corj` members above, for example
+`AppEx.Corj.restoreExpectedValues(report)` →
+`AppEx.Corj.restoreCaughtObjectReportExpectedValues(report)`. An application
+that also depends on caught-object-report-json directly needs ^15.0.0 to keep a
+single copy, and replaces `import { Corj } from 'caught-object-report-json'`
+with `import * as Corj from 'caught-object-report-json'`. Code that compared
+`AppEx.Corj` to corj's own `Corj` object compares the members instead. A
+`transform` that read a getter or called a method on its input must read the
+snapshot as plain data.
+
 ## 0.8.1 — 2026-10-31
 
 Documentation only. No runtime change; the emitted declarations differ in

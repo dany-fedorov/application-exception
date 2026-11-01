@@ -89,7 +89,8 @@ Errors this package throws: [docs/agent/errors.md](docs/agent/errors.md).
 ## Report shapes
 
 Diagnostic report (`v: "corj/v0.15"`): a corj report plus `occurrence_id`,
-`fingerprint` (absent when `corj: { fingerprintParts: null }` turns it off),
+`fingerprint` (absent when `corj: { fingerprintParts: null }` turns it off, or
+when corj cannot hash the error faithfully and says so in `reporting_errors`),
 optional `context`, optional `reporting_errors`, and the
 `context_omitted` / `reporting_errors_omitted` flags a budget sets. A missing
 corj field holds its expected value; `null` means reading it failed. Field

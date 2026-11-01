@@ -51,7 +51,7 @@ describe('makeDiagnosticReport', () => {
     expect(report).not.toHaveProperty('reporting_errors');
     expect(Object.keys(report)[0]).toBe('occurrence_id');
 
-    const full = Corj.restoreExpectedValues(report);
+    const full = Corj.restoreCaughtObjectReportExpectedValues(report);
     expect(full.occurrence_id).toBe(report.occurrence_id);
     expect(full.v).toBe('corj/v0.15-full');
     expect(full.constructor_name).toBe('agent/ToolFailure');
@@ -357,7 +357,14 @@ describe('makeDiagnosticReport with maxReportBytes', () => {
     const context = { runId: 'r'.repeat(200) };
     const complete = makeDiagnosticReport(error, { context });
     expect(complete.context).toBeDefined();
-    expect(complete.reporting_errors).toHaveLength(3);
+    // Three failed reads, plus corj 14's row for the fingerprint it omits
+    // because the unreadable message leaves no faithful `fp1_` input.
+    expect(complete.reporting_errors).toHaveLength(4);
+    expect(complete).not.toHaveProperty('fingerprint');
+    expect(complete.reporting_errors?.[3]).toMatchObject({
+      reportKey: 'fingerprint',
+      stage: 'other',
+    });
 
     const one = makeDiagnosticReport(error, {
       context,
@@ -365,7 +372,7 @@ describe('makeDiagnosticReport with maxReportBytes', () => {
     });
     expect(one.context_omitted).toBe('max_size');
     expect(one).not.toHaveProperty('context');
-    expect(one.reporting_errors).toHaveLength(3);
+    expect(one.reporting_errors).toHaveLength(4);
     expect(one).not.toHaveProperty('reporting_errors_omitted');
     expect(bytes(one)).toBeLessThanOrEqual(bytes(complete) - 1);
 

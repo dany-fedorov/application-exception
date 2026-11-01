@@ -203,7 +203,7 @@
       "required": ["v", "occurrence_id"],
       "properties": {
         "v": {
-          "description": "The corj report version. corj/v0.15-full marks a complete report, as produced by restoreExpectedValues or when corj could not omit expected values.",
+          "description": "The corj report version. corj/v0.15-full marks a complete report, as produced by restoreCaughtObjectReportExpectedValues or when corj could not omit expected values.",
           "enum": ["corj/v0.15", "corj/v0.15-full"]
         },
         "occurrence_id": { "$ref": "#/$defs/corjBase/properties/occurrence_id" }

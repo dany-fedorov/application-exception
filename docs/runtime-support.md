@@ -25,7 +25,7 @@ public report, decodes the public one after a JSON round trip, and checks that
 - `error.occurrenceId`, `diagnostic.occurrence_id`, `publicReport.occurrence_id` and the decoded
   report's `occurrence_id` are the same string, in every runtime;
 - `diagnostic.v` is `corj/v0.15` and equals the exported `DIAGNOSTIC_REPORT_VERSION`;
-- the exported `Corj` is frozen, and its extracted `restoreExpectedValues`
+- the exported `Corj` is frozen, and its extracted `restoreCaughtObjectReportExpectedValues`
   method preserves application fields while changing `v` to `corj/v0.15-full`;
 - `publicReport.v` is `appex/public/v4` and equals the exported `PUBLIC_REPORT_VERSION`;
 - both reports carry a `fp1_` `fingerprint`, and the pair `makeReportPair` returns carries one

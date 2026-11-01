@@ -179,9 +179,13 @@ export function runFlow(appex, { runtime }) {
     'the diagnostic report carries the cause',
   );
   ok(Object.isFrozen(appex.Corj), 'Corj must be immutable');
-  const restoreExpectedValues = appex.Corj.restoreExpectedValues;
-  const full = restoreExpectedValues(diagnostic);
-  equal(full.message, 'search failed', 'Corj.restoreExpectedValues');
+  const restoreExpected = appex.Corj.restoreCaughtObjectReportExpectedValues;
+  const full = restoreExpected(diagnostic);
+  equal(
+    full.message,
+    'search failed',
+    'Corj.restoreCaughtObjectReportExpectedValues',
+  );
   equal(
     full.occurrence_id,
     diagnostic.occurrence_id,

@@ -43,7 +43,7 @@ avoid duplicating corj's traversal. It is not duplicated: `new CorjMaker({
 redact })` consults `keys` and `paths` *before* reading a property, and applies
 `patterns` and then `transform` to every value it emits. `src/redaction.ts` in
 this package is validation plus forwarding — it validates the options by calling
-`Corj.resolveRedactPolicy`, rewraps corj's `TypeError` as
+corj's `resolveCaughtObjectReportRedactPolicy`, rewraps corj's `TypeError` as
 `APPEX_INVALID_REDACTION_POLICY`, and freezes the result into an opaque policy
 object. corj 11 bounds `replacement` at 128 characters itself, so this package
 no longer carries its own bound; the rejection a caller sees is corj's, rewrapped
@@ -156,8 +156,9 @@ across `message`, `stack` and `as_string`, and neither the object's own
 
 **Property names are scrubbed too, and can collide.** `patterns` apply to
 property names inside `as_json` as well as to values, so `{ 'sk-live-abc': 1 }`
-becomes `{ '[redacted]': 1 }`. Two names that scrub to the same text collapse
-into one key and the last write wins; corj documents and tests this.
+becomes `{ '[redacted]': 1 }`. Since corj 14, two names that scrub to the same
+text both survive: the later one gets a suffix, `'[redacted] (2)'`, and policy
+paths still match the original names.
 
 **Selection and redaction stay distinct.** On a public report the policy is
 given only the output of the kind's `public.detailsSelector`; the library never
@@ -166,10 +167,15 @@ feeds it anything the selector left out. A kind with no selector emits no
 `transform` is application code and can rewrite what it is given, so keep it free
 of outside data.
 
-**A `transform` sees raw input.** corj hands it whole objects, including members
-a skip rule excludes, and property names as well as values. It must never quote
-its input in an error it throws. It also does not quite run last: corj re-applies
-`patterns` to a string it returns.
+**A `transform` sees a detached snapshot.** Since corj 14 an object or array
+reaches it as plain data copied after the skip rules and `patterns` ran: a
+skipped member is already `[redacted]`, and accessors, functions, symbols and
+BigInts are `[not-inspected]`. Preparing the snapshot runs no getter, so a policy
+with a `transform` also leaves the caught value's getters unread in `as_json`,
+where they show as `[not-inspected]`. It sees property names as well as values,
+and the context `path` and `sourceProperty` still carry original names, so it
+must never quote its input or context in an error it throws. It also does not
+quite run last: corj re-applies `patterns` to a string it returns.
 
 **A policy failure shows only in the diagnostic report.** `makePublicReport` has no
 `reporting_errors`; there the value is simply the replacement.

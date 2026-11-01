@@ -28,7 +28,7 @@ Rules: [AGENTS.md](../../AGENTS.md). Tasks: [recipes.md](recipes.md). Error code
 | Keep secrets out of either report | `makeRedactionPolicy({ keys, paths, patterns })` passed as `redact` |
 | Freeze details against later mutation | `defineException({ tag, message, snapshotDetails: true })` |
 | Trust failures from another loaded copy | `makeTrustRealm()` passed as `realm` to `defineException` and `makePublicReport` |
-| Read omitted corj fields of a diagnostic report | `Corj.restoreExpectedValues(report)` |
+| Read omitted corj fields of a diagnostic report | `Corj.restoreCaughtObjectReportExpectedValues(report)` |
 
 ## Runtime exports
 
@@ -267,15 +267,17 @@ else console.log(decoded.reason, decoded.path); // e.g. 'Expected a string' '$.c
 ### `Corj`
 
 ```ts signature
-const Corj: { readonly makeReport: (caught: unknown, input?: CorjReportInput) => CorjReport; readonly makeReportArray: (caught: unknown, input?: CorjReportInput) => CorjReportNode[]; readonly restoreExpectedValues: <T extends CorjReport | CorjReportNode[]>(report: T) => T; readonly resolveRedactPolicy: (input: CorjRedactPolicyInput | null | undefined) => CorjRedactPolicy | null; };
+const Corj: { readonly makeCaughtObjectReport: (caught: unknown, input?: CorjReportInput) => CorjReport; readonly makeCaughtObjectReportArray: (caught: unknown, input?: CorjReportInput) => CorjReportNode[]; readonly restoreCaughtObjectReportExpectedValues: <T extends CorjReport | CorjReportNode[]>(report: T) => T; readonly resolveCaughtObjectReportRedactPolicy: (input: CorjRedactPolicyInput | null | undefined) => CorjRedactPolicy | null; };
 ```
 
-The exact frozen CORJ utility namespace for one-off reports, policy resolution, and restoration of omitted fields.
+The four stateless CORJ utilities under their corj names, frozen: one-off
+reports, redaction-policy resolution, and restoration of omitted fields. Each
+member is the dependency's own root function.
 
 ```ts
 import * as AppEx from 'application-exception';
 const report = AppEx.makeDiagnosticReport(new Error('connection refused'));
-const full = AppEx.Corj.restoreExpectedValues(report);
+const full = AppEx.Corj.restoreCaughtObjectReportExpectedValues(report);
 console.log(full.v, full.message); // 'corj/v0.15-full' 'connection refused'
 ```
 
