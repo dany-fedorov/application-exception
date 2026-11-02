@@ -90,6 +90,6 @@
   },
   "dependencies": {
     "caught-object-report-json": "^15.0.0",
-    "nanoid": "^3.3.19"
+    "nanoid": "^6.0.2"
   }
 }
